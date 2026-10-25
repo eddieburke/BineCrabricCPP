@@ -166,6 +166,13 @@ struct CelestialStateEvent {
  float siderealAngle = 0.0f;
  bool overrideDirections = false;
  bool overrideStarFrame = false;
+ // Claim the world clock. A hook that sets this owns the celestial phase: lighting,
+ // fog, clouds and the sunset fan follow its celestial_angle instead of the Time
+ // option, and the Time button shows it as the owner rather than silently losing.
+ bool overridePhase = false;
+ std::string phaseOwner;
+ // The phase the Time option alone would have produced, before any claim.
+ float clockAngle = 0.0f;
 };
 enum class LifecyclePhase {
  NotStarted,

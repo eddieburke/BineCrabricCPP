@@ -161,6 +161,8 @@ std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(ChunkBuilder& owner,
  const int maxChunkZ = maxBlockZ >> 4;
  std::vector<RegionSnapshot::SourceChunk> sourceChunks;
  sourceChunks.reserve(static_cast<std::size_t>((maxChunkX - minChunkX + 1) * (maxChunkZ - minChunkZ + 1)));
+ // Released by the job (buildSnapshot, or its destructor if the job is cancelled
+ // before a worker runs it); the guard only covers the refusals below.
  RenderPinGuard pinGuard(sourceChunks);
  for(int chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) {
   for(int chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) {
@@ -189,17 +191,18 @@ std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(ChunkBuilder& owner,
    lightLevelToLuminance[static_cast<std::size_t>(level)] = Dimension::luminanceForLightLevel(level);
   }
  }
- auto snapshot = std::make_unique<RegionSnapshot>(sourceChunks,
-                                                  owner.world->ambientDarkness,
-                                                  lightLevelToLuminance,
-                                                  std::move(biomeSource),
-                                                  owner.x - 1,
-                                                  owner.y - 1,
-                                                  owner.z - 1,
-                                                  owner.x + kSectionBlocks + 1,
-                                                  owner.y + kSectionBlocks,
-                                                  owner.z + kSectionBlocks + 1);
- auto job = std::shared_ptr<ChunkMeshJob>(new ChunkMeshJob(owner, options, std::move(snapshot)));
+ auto job = std::shared_ptr<ChunkMeshJob>(new ChunkMeshJob(owner, options));
+ job->pinnedChunks = std::move(sourceChunks);
+ sourceChunks.clear();
+ job->lightLevelToLuminance = lightLevelToLuminance;
+ job->biomeSource = std::move(biomeSource);
+ job->ambientDarkness = owner.world->ambientDarkness;
+ job->minBlockX = owner.x - 1;
+ job->minBlockY = owner.y - 1;
+ job->minBlockZ = owner.z - 1;
+ job->maxBlockX = owner.x + kSectionBlocks + 1;
+ job->maxBlockY = owner.y + kSectionBlocks;
+ job->maxBlockZ = owner.z + kSectionBlocks + 1;
  if(auto* minecraft = net::minecraft::client::Minecraft::INSTANCE;
     minecraft != nullptr && minecraft->gameRenderer != nullptr &&
     minecraft->gameRenderer->shaderPipeline() != nullptr) {
@@ -207,18 +210,42 @@ std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(ChunkBuilder& owner,
  }
  return job;
 }
-ChunkMeshJob::ChunkMeshJob(ChunkBuilder& owner,
-                           client::option::RenderSettings options,
-                           std::unique_ptr<RegionSnapshot> capturedSnapshot)
+ChunkMeshJob::ChunkMeshJob(ChunkBuilder& owner, client::option::RenderSettings options)
     : builder(owner.weak_from_this()),
       version(owner.version),
       x(owner.x),
       y(owner.y),
       z(owner.z),
-      snapshot(std::move(capturedSnapshot)),
       opts(options) {
 }
+void ChunkMeshJob::releasePins() noexcept {
+ for(const RegionSnapshot::SourceChunk& sourceChunk : pinnedChunks) {
+  if(sourceChunk.chunk != nullptr) {
+   const_cast<Chunk*>(sourceChunk.chunk)->releaseRenderPin();
+  }
+ }
+ pinnedChunks.clear();
+}
+void ChunkMeshJob::buildSnapshot() {
+ if(snapshot != nullptr) {
+  return;
+ }
+ snapshot = std::make_unique<RegionSnapshot>(pinnedChunks,
+                                             ambientDarkness,
+                                             lightLevelToLuminance,
+                                             std::move(biomeSource),
+                                             minBlockX,
+                                             minBlockY,
+                                             minBlockZ,
+                                             maxBlockX,
+                                             maxBlockY,
+                                             maxBlockZ);
+ releasePins();
+}
 ChunkMeshJob::~ChunkMeshJob() {
+ // A job cancelled before any worker ran it still holds its pins, and a chunk
+ // whose pin never drains is never evicted.
+ releasePins();
  // An evicted section is already gone; lock() simply fails and there is no
  // flag left to clear.
  if(const std::shared_ptr<ChunkBuilder> owner = builder.lock()) {

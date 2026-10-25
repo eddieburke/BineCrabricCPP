@@ -79,8 +79,7 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
   logOnce(pack, "pack GPU resources could not be allocated", LogLevel::Severe);
   return false;
  }
- int destinationFramebuffer = 0;
- ::glGetIntegerv(static_cast<unsigned>(gl::query::FramebufferBinding), &destinationFramebuffer);
+ const int destinationFramebuffer = gl::GLCore::drawFramebufferBinding();
  struct ViewportGuard {
   int saved[4]{};
   bool valid = false;
@@ -137,7 +136,7 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
  bool ranCompute = false;
  const auto prepareComputeBinds = [&]() {
   if(!shadowStage && gl::GLCore::bindFramebuffer != nullptr) {
-   gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
+   gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
   }
   refreshColorMaps(targets, textures, colorImages, true);
   refreshTextureAliases(textures, pack.definition.usesWaterShadow);
@@ -155,7 +154,7 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
   if(present) {
    finishFinalPass(targets, false);
   } else if(gl::GLCore::bindFramebuffer != nullptr) {
-   gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), static_cast<unsigned int>(destinationFramebuffer));
+   gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::Framebuffer), static_cast<unsigned int>(destinationFramebuffer));
    core::viewport(0, 0, width, height);
   }
   releaseSamplers(maxTextureUnits());
@@ -241,7 +240,7 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
   } else {
    const unsigned int drawFbo =
        present ? screenDrawFramebuffer(width, height) : static_cast<unsigned int>(destinationFramebuffer);
-   gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), drawFbo);
+   gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::Framebuffer), drawFbo);
    core::viewport(0, 0, width, height);
   }
   program->bind();
@@ -290,7 +289,7 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
   finishFinalPass(targets, wroteToScreen);
  }
  if(!present) {
-  gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), static_cast<unsigned int>(destinationFramebuffer));
+  gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::Framebuffer), static_cast<unsigned int>(destinationFramebuffer));
   core::viewport(0, 0, width, height);
  }
  releaseSamplers(maxTextureUnits());

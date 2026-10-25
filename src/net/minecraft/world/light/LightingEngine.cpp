@@ -1,6 +1,7 @@
 #include "net/minecraft/world/light/LightingEngine.hpp"
 #include <algorithm>
 #include <utility>
+#include <vector>
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
@@ -219,31 +220,41 @@ void LightingEngine::releaseClaimedBoxLocked(const Box& box) {
  pendingCount_.store(queue_.size() + activeBoxes_.size(), std::memory_order_relaxed);
 }
 void LightingEngine::runScheduledWork() {
- Box box{LightType::Block, 0, 0, 0, 0, 0, 0};
- {
-  const std::lock_guard lock(queueMutex_);
-  if(stopping_ || !tryClaimBox(box)) {
-   --scheduledWorkers_;
-   if(scheduledWorkers_ == 0) {
-    idleCv_.notify_all();
-   }
-   return;
-  }
- }
+ // One WorkerState per run, not per box: its pinCache is an unordered_map and every
+ // miss takes registryMutex_, so a fresh one per box re-pinned the same chunks and
+ // re-locked the registry for each of the many small boxes one tick produces. The
+ // box cap bounds how long this run holds its pins against chunk eviction.
  WorkerState state;
- try {
-  runUpdate(box, state);
+ std::size_t handled = 0;
+ for(;;) {
+  Box box{LightType::Block, 0, 0, 0, 0, 0, 0};
+  const bool capped = handled >= kMaxBoxesPerRun;
+  {
+   const std::lock_guard lock(queueMutex_);
+   if(stopping_ || capped || !tryClaimBox(box)) {
+    --scheduledWorkers_;
+    if(!stopping_ && capped) {
+     scheduleWorkersLocked();
+    }
+    if(scheduledWorkers_ == 0) {
+     idleCv_.notify_all();
+    }
+    break;
+   }
+  }
+  try {
+   runUpdate(box, state);
   } catch(...) {
   }
-  releasePins(state);
   flushStaging();
-  const std::lock_guard lock(queueMutex_);
- releaseClaimedBoxLocked(box);
- --scheduledWorkers_;
- scheduleWorkersLocked();
- if(scheduledWorkers_ == 0) {
-  idleCv_.notify_all();
+  {
+   const std::lock_guard lock(queueMutex_);
+   releaseClaimedBoxLocked(box);
+   scheduleWorkersLocked();
+  }
+  ++handled;
  }
+ releasePins(state);
 }
 Chunk* LightingEngine::chunkAt(int chunkX, int chunkZ, WorkerState& state) {
  const std::uint64_t key = chunkKey(chunkX, chunkZ);
@@ -379,79 +390,128 @@ void LightingEngine::runUpdate(const Box& update, WorkerState& state) {
  };
  Spill spill[6];
  bool anyChanged = false;
- bool changed = true;
- while(changed) {
-  changed = false;
-  for(int x = update.minX; x <= update.maxX; ++x) {
-   for(int z = update.minZ; z <= update.maxZ; ++z) {
-    Chunk* const selfChunk = chunkAt(x >> 4, z >> 4, state);
-    Chunk* const negXChunk = chunkAt((x - 1) >> 4, z >> 4, state);
-    Chunk* const posXChunk = chunkAt((x + 1) >> 4, z >> 4, state);
-    Chunk* const negZChunk = chunkAt(x >> 4, (z - 1) >> 4, state);
-    Chunk* const posZChunk = chunkAt(x >> 4, (z + 1) >> 4, state);
-    if(selfChunk == nullptr || negXChunk == nullptr || posXChunk == nullptr || negZChunk == nullptr ||
-       posZChunk == nullptr) {
-     continue;
-    }
-    const int lx = x & 15;
-    const int lz = z & 15;
-    const int negLx = (x - 1) & 15;
-    const int posLx = (x + 1) & 15;
-    const int negLz = (z - 1) & 15;
-    const int posLz = (z + 1) & 15;
-    for(int y = minY; y <= maxY; ++y) {
-     const int current = selfChunk->getLight(lightType, lx, y, lz);
-     const int block = selfChunk->getBlockId(lx, y, lz);
-     int opacity = Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(block)];
-     if(opacity == 0) {
-      opacity = 1;
-     }
-     int emission = 0;
-     if(lightType == LightType::Sky) {
-      if(selfChunk->isAboveMaxHeight(lx, y, lz)) {
-       emission = 15;
-      }
-     } else {
-      emission = lightRegistry_.blockEmission(block);
-     }
-     int newLight = 0;
-     if(opacity < 15 || emission != 0) {
-      int best = negXChunk->getLight(lightType, negLx, y, lz);
-      best = std::max(best, posXChunk->getLight(lightType, posLx, y, lz));
-      best = std::max(best, selfChunk->getLight(lightType, lx, std::max(y - 1, 0), lz));
-      best = std::max(best, selfChunk->getLight(lightType, lx, std::min(y + 1, Chunk::height - 1), lz));
-      best = std::max(best, negZChunk->getLight(lightType, lx, y, negLz));
-      best = std::max(best, posZChunk->getLight(lightType, lx, y, posLz));
-      best = std::max(0, best - opacity);
-      newLight = std::max(best, emission);
-     }
-     if(current == newLight) {
-      continue;
-     }
-     selfChunk->setLight(lightType, lx, y, lz, newLight);
-     changed = true;
-     anyChanged = true;
-     if(x <= update.minX) {
-      spill[0].include(x - 1, y, z);
-     }
-     if(y <= minY) {
-      spill[1].include(x, y - 1, z);
-     }
-     if(z <= update.minZ) {
-      spill[2].include(x, y, z - 1);
-     }
-     if(x >= update.maxX) {
-      spill[3].include(x + 1, y, z);
-     }
-     if(y >= maxY) {
-      spill[4].include(x, y + 1, z);
-     }
-     if(z >= update.maxZ) {
-      spill[5].include(x, y, z + 1);
-     }
-    }
+ const std::size_t cap = static_cast<std::size_t>(volume);
+ std::vector<std::uint32_t>& ring = state.ring;
+ std::vector<std::uint8_t>& queued = state.queued;
+ ring.resize(cap);
+ queued.assign(cap, 0);
+ std::size_t head = 0;
+ std::size_t count = 0;
+ const auto enqueue = [&](int x, int y, int z) {
+  if(x < update.minX || x > update.maxX || y < minY || y > maxY || z < update.minZ || z > update.maxZ) {
+   return;
+  }
+  const std::size_t idx = (static_cast<std::size_t>(x - update.minX) * static_cast<std::size_t>(dz) +
+                           static_cast<std::size_t>(z - update.minZ)) *
+                              static_cast<std::size_t>(dy) +
+                          static_cast<std::size_t>(y - minY);
+  if(queued[idx] != 0) {
+   return;
+  }
+  queued[idx] = 1;
+  std::size_t tail = head + count;
+  if(tail >= cap) {
+   tail -= cap;
+  }
+  ring[tail] = static_cast<std::uint32_t>(idx);
+  ++count;
+ };
+ const auto visit = [&](int x, int y, int z, Chunk* selfChunk, Chunk* negXChunk, Chunk* posXChunk,
+                        Chunk* negZChunk, Chunk* posZChunk) {
+  const int lx = x & 15;
+  const int lz = z & 15;
+  const int current = selfChunk->getLight(lightType, lx, y, lz);
+  const int block = selfChunk->getBlockId(lx, y, lz);
+  int opacity = Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(block)];
+  if(opacity == 0) {
+   opacity = 1;
+  }
+  int emission = 0;
+  if(lightType == LightType::Sky) {
+   if(selfChunk->isAboveMaxHeight(lx, y, lz)) {
+    emission = 15;
+   }
+  } else {
+   emission = lightRegistry_.blockEmission(block);
+  }
+  int newLight = 0;
+  if(opacity < 15 || emission != 0) {
+   int best = negXChunk->getLight(lightType, (x - 1) & 15, y, lz);
+   best = std::max(best, posXChunk->getLight(lightType, (x + 1) & 15, y, lz));
+   best = std::max(best, selfChunk->getLight(lightType, lx, std::max(y - 1, 0), lz));
+   best = std::max(best, selfChunk->getLight(lightType, lx, std::min(y + 1, Chunk::height - 1), lz));
+   best = std::max(best, negZChunk->getLight(lightType, lx, y, (z - 1) & 15));
+   best = std::max(best, posZChunk->getLight(lightType, lx, y, (z + 1) & 15));
+   best = std::max(0, best - opacity);
+   newLight = std::max(best, emission);
+  }
+  if(current == newLight) {
+   return;
+  }
+  selfChunk->setLight(lightType, lx, y, lz, newLight);
+  anyChanged = true;
+  if(x <= update.minX) {
+   spill[0].include(x - 1, y, z);
+  }
+  if(y <= minY) {
+   spill[1].include(x, y - 1, z);
+  }
+  if(z <= update.minZ) {
+   spill[2].include(x, y, z - 1);
+  }
+  if(x >= update.maxX) {
+   spill[3].include(x + 1, y, z);
+  }
+  if(y >= maxY) {
+   spill[4].include(x, y + 1, z);
+  }
+  if(z >= update.maxZ) {
+   spill[5].include(x, y, z + 1);
+  }
+  enqueue(x - 1, y, z);
+  enqueue(x + 1, y, z);
+  enqueue(x, y - 1, z);
+  enqueue(x, y + 1, z);
+  enqueue(x, y, z - 1);
+  enqueue(x, y, z + 1);
+ };
+ for(int x = update.minX; x <= update.maxX; ++x) {
+  for(int z = update.minZ; z <= update.maxZ; ++z) {
+   Chunk* const selfChunk = chunkAt(x >> 4, z >> 4, state);
+   Chunk* const negXChunk = chunkAt((x - 1) >> 4, z >> 4, state);
+   Chunk* const posXChunk = chunkAt((x + 1) >> 4, z >> 4, state);
+   Chunk* const negZChunk = chunkAt(x >> 4, (z - 1) >> 4, state);
+   Chunk* const posZChunk = chunkAt(x >> 4, (z + 1) >> 4, state);
+   if(selfChunk == nullptr || negXChunk == nullptr || posXChunk == nullptr || negZChunk == nullptr ||
+      posZChunk == nullptr) {
+    continue;
+   }
+   for(int y = minY; y <= maxY; ++y) {
+    visit(x, y, z, selfChunk, negXChunk, posXChunk, negZChunk, posZChunk);
    }
   }
+ }
+ while(count != 0) {
+  const std::uint32_t idx = ring[head];
+  if(++head == cap) {
+   head = 0;
+  }
+  --count;
+  queued[idx] = 0;
+  const int y = minY + static_cast<int>(idx % static_cast<std::uint32_t>(dy));
+  const std::uint32_t column = idx / static_cast<std::uint32_t>(dy);
+  const int z = update.minZ + static_cast<int>(column % static_cast<std::uint32_t>(dz));
+  const int x = update.minX + static_cast<int>(column / static_cast<std::uint32_t>(dz));
+  Chunk* const selfChunk = chunkAt(x >> 4, z >> 4, state);
+  Chunk* const negXChunk = chunkAt((x - 1) >> 4, z >> 4, state);
+  Chunk* const posXChunk = chunkAt((x + 1) >> 4, z >> 4, state);
+  Chunk* const negZChunk = chunkAt(x >> 4, (z - 1) >> 4, state);
+  Chunk* const posZChunk = chunkAt(x >> 4, (z + 1) >> 4, state);
+  if(selfChunk == nullptr || negXChunk == nullptr || posXChunk == nullptr || negZChunk == nullptr ||
+     posZChunk == nullptr) {
+   continue;
+  }
+  visit(x, y, z, selfChunk, negXChunk, posXChunk, negZChunk, posZChunk);
  }
  if(!anyChanged) {
   return;

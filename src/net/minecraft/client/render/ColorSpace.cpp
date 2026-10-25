@@ -81,7 +81,7 @@ bool ColorSpaceConverter::ensureTargets(int width, int height) {
     !swapFbo_.addColorAttachment(0, swapTexture_.handle())) {
   return false;
  }
- gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
+ gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
  return true;
 }
 
@@ -116,18 +116,18 @@ void ColorSpaceConverter::process(unsigned int targetTexture) {
  swapFbo_.bind();
  core::bindTexture(static_cast<int>(targetTexture));
  ::glCopyTexSubImage2D(gl::cap::Texture2D, 0, 0, 0, 0, 0, width_, height_);
- gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
+ gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
 }
 
 bool ColorSpaceConverter::blitPresentToScreen(int screenWidth, int screenHeight) {
  if(!presentFbo_.valid() || width_ <= 0 || height_ <= 0 || gl::GLCore::blitFramebuffer == nullptr) return false;
  presentFbo_.bindAsReadBuffer();
- gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::DrawFramebuffer), 0);
+ gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::DrawFramebuffer), 0);
  core::viewport(0, 0, screenWidth, screenHeight);
  gl::GLCore::blitFramebuffer(0, 0, width_, height_, 0, 0, screenWidth, screenHeight,
                              gl::attrib::ColorBufferBit, gl::filter::Nearest);
- gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::ReadFramebuffer), 0);
- gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
+ gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::ReadFramebuffer), 0);
+ gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
  return true;
 }
 

@@ -246,8 +246,7 @@ struct BlockRenderContext {
   sampleFaceLightWith(
       x, y, z, blockIdHere < 0 ? lightSnapshot->getBlockId(x, y, z) : blockIdHere,
       [this](int sampleX, int sampleY, int sampleZ, int& blockLight, int& skyLight) {
-       blockLight = lightSnapshot->getBlockLight(sampleX, sampleY, sampleZ);
-       skyLight = lightSnapshot->getSkyLight(sampleX, sampleY, sampleZ);
+       lightSnapshot->sampleLight(sampleX, sampleY, sampleZ, blockLight, skyLight);
       });
  }
  // One body, two light sources: the snapshot binds it inline above, the

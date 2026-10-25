@@ -16,7 +16,7 @@ enum class Domain { Compute,
 class ThreadCoordinator {
  public:
  struct Options {
-  unsigned maxComputeThreads = 8;
+  unsigned maxComputeThreads = 16;
  };
  static ThreadCoordinator& instance() noexcept;
  void configure(unsigned hardwareThreads, unsigned reservedThreads);

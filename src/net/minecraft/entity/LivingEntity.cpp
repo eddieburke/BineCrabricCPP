@@ -564,7 +564,7 @@ bool LivingEntity::canSpawn() const {
   return false;
  }
  return world->canSpawnEntity(boundingBox) &&
-        world->getEntityCollisions(const_cast<LivingEntity*>(this), boundingBox).empty() &&
+        !world->hasEntityCollision(const_cast<LivingEntity*>(this), boundingBox) &&
         !world->isBoxSubmergedInFluid(boundingBox);
 }
 void LivingEntity::tickInVoid() {

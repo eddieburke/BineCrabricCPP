@@ -502,7 +502,7 @@ void Entity::nudgeOutOfCollision() {
  }
  while(y > 0.0) {
   setPosition(x, y, z);
-  if(world->getEntityCollisions(this, boundingBox).empty()) {
+  if(!world->hasEntityCollision(this, boundingBox)) {
    break;
   }
   y += 1.0;
@@ -533,7 +533,7 @@ bool Entity::getEntitiesInside(double offsetX, double offsetY, double offsetZ) {
   return false;
  }
  const Box probe = boundingBox.offset(offsetX, offsetY, offsetZ);
- if(!world->getEntityCollisions(this, probe).empty()) {
+ if(world->hasEntityCollision(this, probe)) {
   return false;
  }
  return !world->isBoxSubmergedInFluid(probe);
@@ -581,6 +581,17 @@ void Entity::sampleLightLevels(int& blockLight, int& skyLight) const {
  lightSamplePos(blockX, blockY, blockZ);
  blockLight = world->getBrightness(net::minecraft::LightType::Block, blockX, blockY, blockZ);
  skyLight = world->getBrightness(net::minecraft::LightType::Sky, blockX, blockY, blockZ);
+ if(world->getChunkIfLoaded(blockX, blockZ) == nullptr ||
+    &world->getMaterial(blockX, blockY, blockZ) != &block::material::Material::WATER ||
+    isInFluid(block::material::Material::WATER)) {
+  return;
+ }
+ int exposedY = MathHelper::floor(y + static_cast<double>(getEyeHeight()));
+ if(&world->getMaterial(blockX, exposedY, blockZ) == &block::material::Material::WATER) {
+  ++exposedY;
+ }
+ blockLight = std::max(blockLight, world->getBrightness(net::minecraft::LightType::Block, blockX, exposedY, blockZ));
+ skyLight = std::max(skyLight, world->getBrightness(net::minecraft::LightType::Sky, blockX, exposedY, blockZ));
 }
 float Entity::getBrightnessAtEyes(float tickDelta) const {
  // MCP Entity.getEntityBrightness(float): partial-tick arg is unused. Sample the

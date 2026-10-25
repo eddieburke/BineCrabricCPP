@@ -190,7 +190,6 @@ Chunk& ChunkCache::adoptChunk(int chunkX, int chunkZ, std::unique_ptr<Chunk> own
  chunksByPos_[pos] = chunk;
  chunks_.push_back(chunk);
  if(chunk != &empty_) {
-  chunk->populateBlockLight();
   chunk->load();
  }
  if(generator_ != nullptr) {

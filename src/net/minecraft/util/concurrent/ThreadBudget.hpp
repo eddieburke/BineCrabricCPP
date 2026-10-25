@@ -8,14 +8,14 @@ struct ThreadBudget {
  unsigned glCompile = 1;
  unsigned io = 2;
  unsigned compute = 1;
- unsigned maxComputeThreads = 8;
+ unsigned maxComputeThreads = 16;
  // cpuBudget = max(1, hw - reserved); glCompile = clamp(cpu/4, 1, 2);
  // io = clamp(cpu/4, 2, 3); compute = min(maxComputeThreads, max(1, cpu - glCompile - io)).
- // Worked table (reserved 2, maxComputeThreads 8): 8-core -> cpu 6, glCompile 1,
- // io 2, compute 3; 16-core -> 14/2/3/8; 32-core -> 30/2/3/8 (compute capped).
+ // Worked table (reserved 2, maxComputeThreads 16): 8-core -> cpu 6, glCompile 1,
+ // io 2, compute 3; 16-core -> 14/2/3/9; 24-core -> 22/2/3/16; 32-core -> 30/2/3/16.
  [[nodiscard]] static ThreadBudget derive(unsigned hardwareThreads,
                                           unsigned reservedThreads = 2,
-                                          unsigned maxComputeThreads = 8) noexcept {
+                                          unsigned maxComputeThreads = 16) noexcept {
   ThreadBudget budget;
   budget.cpuBudget = std::max(1U, hardwareThreads > reservedThreads ? hardwareThreads - reservedThreads : 0U);
   budget.glCompile = std::clamp(budget.cpuBudget / 4U, 1U, 2U);

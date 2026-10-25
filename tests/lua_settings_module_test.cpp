@@ -90,7 +90,7 @@ TEST(LuaSettingsModule, RealtimeSkySourcesParse) {
  }
  api.close(state);
 }
-TEST(LuaSettingsModule, RealtimeSkyRestoresExpectedWorldClockWhenDisabled) {
+TEST(LuaSettingsModule, RealtimeSkyClaimsPhaseWithoutWritingWorldClock) {
  auto& api = net::minecraft::mod::lua::luaApi();
  if(!api.ready()) {
   GTEST_SKIP() << "Lua runtime unavailable";
@@ -100,6 +100,7 @@ TEST(LuaSettingsModule, RealtimeSkyRestoresExpectedWorldClockWhenDisabled) {
  api.openlibs(state);
  const std::string bootstrap = R"lua(
 world_time = 1000
+world_time_writes = 0
 callbacks = {}
 world_settings_button = nil
 save_settings_callback = nil
@@ -113,7 +114,17 @@ config = {
 package.preload["config"] = function() return config end
 package.preload["scripts.solar"] = function()
   return {
-    build_frame = function() return { day_tick = 6000 } end,
+    build_frame = function()
+      return {
+        day_tick = 6000,
+        celestial = 0.25,
+        is_daylight = true,
+        moon_phase = 0.5,
+        sidereal_turns = 0.125,
+        sun_direction_x = 0.0, sun_direction_y = 1.0, sun_direction_z = 0.0,
+        moon_direction_x = 0.0, moon_direction_y = -1.0, moon_direction_z = 0.0,
+      }
+    end,
     time_zone_info = function() return { offset_minutes = 0 } end,
   }
 end
@@ -134,7 +145,7 @@ minecraft = {
   time = { utc_millis = function() return 0 end },
   world = {
     get_time = function() return world_time end,
-    set_time = function(value) world_time = value return true end,
+    set_time = function(value) world_time = value world_time_writes = world_time_writes + 1 return true end,
   },
   on = function(name, options, callback)
     callbacks[name] = callbacks[name] or {}
@@ -162,21 +173,32 @@ local ui = {
   end,
 }
 callbacks.screen_ui[1].callback({ ui = ui })
-callbacks.world_tick[1].callback({})
-assert(world_time == 6000)
-world_time = world_time + 1
-callbacks.world_tick[1].callback({})
-assert(world_time == 6000)
+
+-- The sky is driven entirely through the celestial_state claim.
+assert(callbacks.world_tick == nil, "realtime_sky must not tick the world clock")
+
+local celestial = callbacks.celestial_state[1]
+assert(celestial.options.when(), "claim should be live while enabled and driving the sun")
+local event = { tick_delta = 0.0 }
+celestial.callback(event)
+assert(event.override_phase == true, "the sky provider must claim the celestial phase")
+assert(event.phase_owner == "Realtime Sky")
+assert(event.celestial_angle == 0.25)
+assert(event.override_directions == true)
+
+-- Base sky colour has to land before tint mods, which sit near priority 20.
+assert(callbacks.world_color[1].options.priority > 20)
+
 world_settings_button()
 assert(config.enabled == false)
-assert(world_time == 1001)
+assert(celestial.options.when() == false, "claim should drop when the mod is switched off")
 world_settings_button()
-world_time = world_time + 1
-callbacks.world_tick[1].callback({})
-assert(world_time == 6000)
 config.drive_sun = false
 save_settings_callback()
-assert(world_time == 1002)
+assert(celestial.options.when() == false)
+
+assert(world_time == 1000, "world clock must be untouched")
+assert(world_time_writes == 0, "realtime_sky must never call set_time")
 )lua";
  ASSERT_EQ(api.loadbufferx(state, assertions.data(), assertions.size(), "@realtime_restore_assertions.lua", "t"),
            net::minecraft::mod::lua::kLuaOk);

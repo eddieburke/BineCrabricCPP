@@ -103,7 +103,7 @@ void Pipeline::reset() {
  gl::ShaderProgram::unbind();
  releaseSamplers(maxTextureUnits());
  if(gl::GLCore::bindFramebuffer != nullptr) {
-  gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
+  gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
  }
  core::activeTexture(gl::tex::Texture0);
  core::invalidateTextureBindCache();
@@ -367,8 +367,7 @@ void Pipeline::prepareFrame(net::minecraft::World* world, PackInstance* activePa
    } else if(gl::GLCore::bindFramebuffer != nullptr && gl::GLCore::framebufferTexture2D != nullptr) {
     static gl::GlFramebuffer clearFbo;
     if(clearFbo.addColorAttachment(0, found->second.texture.handle())) {
-     int prevDraw = 0;
-     ::glGetIntegerv(static_cast<unsigned>(gl::query::FramebufferBinding), &prevDraw);
+     const int prevDraw = gl::GLCore::drawFramebufferBinding();
      clearFbo.bind();
      const float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
      if(gl::GLCore::clearBufferfv != nullptr) {
@@ -377,7 +376,7 @@ void Pipeline::prepareFrame(net::minecraft::World* world, PackInstance* activePa
       ::glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
       ::glClear(gl::attrib::ColorBufferBit);
      }
-     gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer),
+     gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::Framebuffer),
                                  static_cast<unsigned int>(prevDraw));
     }
    }
@@ -850,13 +849,13 @@ bool Pipeline::blitColortex0ToScreen(PackInstance& pack, int screenWidth, int sc
   if(screenDrawFramebuffer(width, height) == 0) return false;
   presentReadFbo_.addColorAttachment(0, color0);
   presentReadFbo_.bindAsReadBuffer();
-  gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::DrawFramebuffer),
+  gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::DrawFramebuffer),
                               colorSpace_.writeFramebuffer());
   core::viewport(0, 0, width, height);
   gl::GLCore::blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl::attrib::ColorBufferBit,
                               gl::filter::Nearest);
-  gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::ReadFramebuffer), 0);
-  gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
+  gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::ReadFramebuffer), 0);
+  gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
   return true;
  }
  if(gl::GLCore::blitFramebuffer == nullptr) {
@@ -864,12 +863,12 @@ bool Pipeline::blitColortex0ToScreen(PackInstance& pack, int screenWidth, int sc
  }
  presentReadFbo_.addColorAttachment(0, color0);
  presentReadFbo_.bindAsReadBuffer();
- gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::DrawFramebuffer), 0);
+ gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::DrawFramebuffer), 0);
  core::viewport(0, 0, screenWidth, screenHeight);
  gl::GLCore::blitFramebuffer(0, 0, width, height, 0, 0, screenWidth, screenHeight, gl::attrib::ColorBufferBit,
                              gl::filter::Nearest);
- gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::ReadFramebuffer), 0);
- gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
+ gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::ReadFramebuffer), 0);
+ gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
  return true;
 }
 void Pipeline::presentFinalToScreen(PackInstance* scenePack, int screenWidth, int screenHeight) {
@@ -911,7 +910,7 @@ void Pipeline::presentFinalToScreen(PackInstance* scenePack, int screenWidth, in
  targets.fillReadSamplers(textures, true);
  textures["depthtex0"] = static_cast<int>(targets.depthTexture());
  const unsigned int drawFbo = screenDrawFramebuffer(width, height);
- gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), drawFbo);
+ gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::Framebuffer), drawFbo);
  core::viewport(0, 0, engineColorCorrect_ ? width : screenWidth,
                 engineColorCorrect_ ? height : screenHeight);
  applyBufferBlends(scenePack->definition, "final", {});

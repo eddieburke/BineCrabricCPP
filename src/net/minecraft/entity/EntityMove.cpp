@@ -99,16 +99,17 @@ void Entity::move(double dx, double dy, double dz) {
    }
    return movement + (movement > 0.0 ? -step : step);
   };
-  while(dx != 0.0 && world->getEntityCollisions(this, boundingBox.offset(dx, -1.0, 0.0)).empty()) {
+  while(dx != 0.0 && !world->hasEntityCollision(this, boundingBox.offset(dx, -1.0, 0.0))) {
    dx = clampSneakMovement(dx);
    intendedDx = dx;
   }
-  while(dz != 0.0 && world->getEntityCollisions(this, boundingBox.offset(0.0, -1.0, dz)).empty()) {
+  while(dz != 0.0 && !world->hasEntityCollision(this, boundingBox.offset(0.0, -1.0, dz))) {
    dz = clampSneakMovement(dz);
    intendedDz = dz;
   }
  }
- std::vector<Box> collisions = world->getEntityCollisions(this, boundingBox.stretch(dx, dy, dz));
+ std::vector<Box> collisions;
+ world->getEntityCollisions(this, boundingBox.stretch(dx, dy, dz), collisions);
  resolveY(dx, dy, dz, collisions);
  const bool canStep = movement::PlayerMovement::canStepUp(onGround, intendedDy, dy);
  resolveX(dx, dy, dz, collisions);
@@ -122,7 +123,7 @@ void Entity::move(double dx, double dy, double dz) {
   dz = intendedDz;
   const Box savedBox = boundingBox;
   boundingBox = preCollisionBox;
-  collisions = world->getEntityCollisions(this, boundingBox.stretch(dx, dy, dz));
+  world->getEntityCollisions(this, boundingBox.stretch(dx, dy, dz), collisions);
   resolveY(dx, dy, dz, collisions);
   resolveX(dx, dy, dz, collisions);
   resolveZ(dx, dy, dz, collisions);

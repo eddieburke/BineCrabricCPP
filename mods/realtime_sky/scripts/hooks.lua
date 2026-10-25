@@ -7,7 +7,10 @@ local config = require("config")
 
 local SCREEN_ID = "realtime_sky:globe"
 local SEARCH_FIELD = "place_search"
-local SKY_COLOR_PRIORITY = 10
+-- Higher priority runs first. We replace the base sky and fog outright, so we must
+-- run ahead of tint mods (colorful_skies and friends sit near 20) and let them blend on
+-- top of our colour rather than having their work silently overwritten.
+local SKY_COLOR_PRIORITY = 900
 local SKY_PROVIDER_PRIORITY = 50
 
 local clamp = minecraft.util.clamp
@@ -31,25 +34,6 @@ local ui = {
 }
 
 local solar_frame_cache
-local expected_world_time
-local synchronized_world_time
-
-local function restore_expected_world_time()
-  if expected_world_time ~= nil then
-    minecraft.world.set_time(expected_world_time)
-  end
-  expected_world_time = nil
-  synchronized_world_time = nil
-end
-
-local function track_expected_world_time(world_time)
-  if expected_world_time == nil or synchronized_world_time == nil or
-      world_time ~= synchronized_world_time + 1 then
-    expected_world_time = world_time
-  else
-    expected_world_time = expected_world_time + 1
-  end
-end
 
 local function normalize_time_zone_id(value)
   local text = type(value) == "string" and value:gsub("%s+", "") or ""
@@ -72,9 +56,6 @@ end
 local function save_settings()
   solar_frame_cache = nil
   config.time_zone_id = normalize_time_zone_id(config.time_zone_id)
-  if config.enabled ~= true or config.drive_sun ~= true then
-    restore_expected_world_time()
-  end
 end
 
 local function realtime_active()
@@ -300,18 +281,6 @@ local function open_globe_screen()
   minecraft.screen.open(SCREEN_ID, { title = "" })
 end
 
-local function nearest_world_time_with_phase(world_time, target_tick)
-  local day_start = math.floor(world_time / 24000.0) * 24000.0
-  local candidate = day_start + target_tick
-  local delta = candidate - world_time
-  if delta >= 12000.0 then
-    candidate = candidate - 24000.0
-  elseif delta < -12000.0 then
-    candidate = candidate + 24000.0
-  end
-  return math.floor(candidate + 0.5)
-end
-
 local function register()
   minecraft.on("screen_ui", {
     screen_id = minecraft.screen.ids.world_settings,
@@ -360,6 +329,11 @@ local function register()
     event.sidereal_angle = frame.sidereal_turns
     event.override_directions = true
     event.override_star_frame = true
+    -- Own the clock for as long as we are on. Ambient darkness, sky light, fog, clouds
+    -- and the sunset fan follow event.celestial_angle from here, so the lighting matches
+    -- the sky we draw without touching world time.
+    event.override_phase = true
+    event.phase_owner = "Realtime Sky"
   end)
 
   minecraft.on("world_color", {
@@ -550,24 +524,6 @@ local function register()
     event.observer_latitude_deg = config.latitude
     event.observer_longitude_deg = config.longitude
     return event
-  end)
-
-  minecraft.on("world_tick", { before = false }, function()
-    if not realtime_active() or not config.drive_sun then
-      restore_expected_world_time()
-      return
-    end
-
-    local frame = current_solar_frame(0.0)
-    local target_tick = math.floor(frame.day_tick + 0.5) % 24000
-    local world_time = minecraft.world.get_time()
-    track_expected_world_time(world_time)
-    local synchronized_time = nearest_world_time_with_phase(world_time, target_tick)
-
-    if synchronized_time ~= world_time then
-      minecraft.world.set_time(synchronized_time)
-    end
-    synchronized_world_time = synchronized_time
   end)
 
   settings_ui.register(config, save_settings)

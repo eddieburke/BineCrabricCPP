@@ -505,6 +505,14 @@ void Chunk::load() {
   return;
  }
  world->registerChunkForLighting(this);
+ if(!world->isRemote() && !empty) {
+  const int blockX = x * 16;
+  const int blockZ = z * 16;
+  world->queueLightUpdate(LightType::Sky, blockX - 1, 0, blockZ - 1,
+                         blockX + 16, height - 1, blockZ + 16);
+  world->queueLightUpdate(LightType::Block, blockX - 1, 0, blockZ - 1,
+                         blockX + 16, height - 1, blockZ + 16);
+ }
  {
   const std::lock_guard lock(*entityMutex_);
   std::vector<block::entity::BlockEntity*> loadedBlockEntities;

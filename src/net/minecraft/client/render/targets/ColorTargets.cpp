@@ -209,7 +209,7 @@ void ColorTargets::rebuildGbufferFbo() {
   return;
  }
  const unsigned status = gbufferFbo_.checkStatus();
- gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
+ gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
  if(status != static_cast<unsigned>(gl::framebuffer::Complete)) {
   char hex[32];
   std::snprintf(hex, sizeof(hex), "0x%X", status);
@@ -229,7 +229,7 @@ void ColorTargets::bindGbuffers() {
   rebuildGbufferFbo();
  }
  if(!gbufferActive_) {
-  ::glGetIntegerv(static_cast<unsigned>(gl::query::FramebufferBinding), &previousBoundFbo_);
+  previousBoundFbo_ = gl::GLCore::drawFramebufferBinding();
   core::getCachedViewport(savedViewport_);
   gbufferActive_ = true;
  }
@@ -240,7 +240,7 @@ void ColorTargets::endGbuffers() {
  if(!gbufferActive_) {
   return;
  }
- gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer),
+ gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::Framebuffer),
                              static_cast<unsigned>(previousBoundFbo_));
  core::viewport(savedViewport_[0], savedViewport_[1], savedViewport_[2], savedViewport_[3]);
  gbufferActive_ = false;
@@ -401,11 +401,10 @@ void ColorTargets::clearColors(const std::vector<bool>& enabled,
  if(full) {
   effective.assign(slots_.size(), true);
  }
- int previousFbo = 0;
- ::glGetIntegerv(static_cast<unsigned>(gl::query::FramebufferBinding), &previousFbo);
+ const int previousFbo = gl::GLCore::drawFramebufferBinding();
  clearAttachmentSet(mainTextures, formats, effective, colors);
  clearAttachmentSet(altTextures, formats, effective, colors);
- gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer),
+ gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::Framebuffer),
                              static_cast<unsigned>(previousFbo));
  bindGbuffers();
 }
@@ -414,8 +413,7 @@ void ColorTargets::clearNamedColors(const std::string& name, const std::array<fl
  if(slot == nullptr || !slot->allocated()) {
   return;
  }
- int previousFbo = 0;
- ::glGetIntegerv(static_cast<unsigned>(gl::query::FramebufferBinding), &previousFbo);
+ const int previousFbo = gl::GLCore::drawFramebufferBinding();
  for(const gl::GlTexture& tex : slot->tex) {
   writeFbo_.destroy();
   writeFbo_.addColorAttachment(0, tex.handle());
@@ -447,7 +445,7 @@ void ColorTargets::clearNamedColors(const std::string& name, const std::array<fl
   }
   gl::GLCore::clearBufferfv(gl::framebuffer::Color, 0, color.data());
  }
- gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer),
+ gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::Framebuffer),
                              static_cast<unsigned>(previousFbo));
 }
 unsigned int ColorTargets::readTexture(int index) const noexcept {
@@ -551,8 +549,7 @@ void ColorTargets::flip(const std::string& name) {
  }
 }
 void ColorTargets::resetFlips() {
- int previousFbo = 0;
- ::glGetIntegerv(static_cast<unsigned>(gl::query::FramebufferBinding), &previousFbo);
+ const int previousFbo = gl::GLCore::drawFramebufferBinding();
  const core::TextureBindScope textureScope;
  const auto reset = [this](Slot& slot) {
   if(slot.main == 0 || !slot.allocated()) return;
@@ -581,7 +578,7 @@ void ColorTargets::resetFlips() {
    gbufferFboDirty_ = true;
   }
  }
- gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer),
+ gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::Framebuffer),
                              static_cast<unsigned>(previousFbo));
 }
 bool ColorTargets::flipExplicitlyBlocked(const PackDefinition& definition,

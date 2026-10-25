@@ -16,16 +16,6 @@
 #include "net/minecraft/world/storage/WorldStorageSource.hpp"
 namespace net::minecraft::client::core {
 namespace {
-void relightSkylightForPreparedArea(World& world, int centerX, int centerZ, int radiusBlocks) {
- for(int dx = -radiusBlocks; dx <= radiusBlocks; dx += 16) {
-  for(int dz = -radiusBlocks; dz <= radiusBlocks; dz += 16) {
-   if(Chunk* chunk = world.getChunkIfLoaded(centerX + dx, centerZ + dz);
-      chunk != nullptr && !chunk->isEmpty()) {
-    chunk->relightSkylightGaps();
-   }
-  }
- }
-}
 void saveLocalWorld(Minecraft& client, bool saveDedicatedPlayerData) {
  World* world = client.world;
  if(world == nullptr || world->isRemote()) {
@@ -224,7 +214,6 @@ void WorldSession::prepareWorld(Minecraft& client, const std::string& worldName)
    source->pumpChunkPublish();
   }
  }
- relightSkylightForPreparedArea(*client.world, center.x, center.z, radius);
  client.world->finishLightingUpdates();
  client.progressRenderer.progressStage("Simulating world for a bit");
  client.world->tickChunks();

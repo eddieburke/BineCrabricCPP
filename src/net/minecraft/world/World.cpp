@@ -942,15 +942,44 @@ bool World::isEmittingRedstonePower(int x, int y, int z) {
  }
  return isEmittingRedstonePowerInDirection(x + 1, y, z, 5);
 }
-float World::getTime(float partialTicks) const {
- if(clientTimeMode_ != 0 && dimension) {
+float World::getClockTimeOfDay(float partialTicks) const {
+ if(dimension == nullptr) {
+  return 0.0f;
+ }
+ if(clientTimeMode_ != 0) {
   const long long baseTime = clientTimeMode_ == 1 ? 6000LL : 18000LL;
   return dimension->getTimeOfDay(baseTime, partialTicks);
  }
- if(dimension) {
-  return dimension->getTimeOfDay(static_cast<long long>(time_), partialTicks);
+ return dimension->getTimeOfDay(static_cast<long long>(time_), partialTicks);
+}
+float World::getTime(float partialTicks) const {
+ // One answer per frame: the resolver publishes what it drew, and every lighting and
+ // atmosphere consumer below reads it here. Without a claim this is just the clock.
+ if(celestialPhaseClaimed_) {
+  return celestialPhase_;
  }
- return 0.0f;
+ return getClockTimeOfDay(partialTicks);
+}
+void World::claimCelestialPhase(float angle, const std::string& owner) {
+ if(!std::isfinite(angle)) {
+  return;
+ }
+ float wrapped = angle - std::floor(angle);
+ const bool changed = !celestialPhaseClaimed_ || wrapped != celestialPhase_;
+ celestialPhaseClaimed_ = true;
+ celestialPhase_ = wrapped;
+ celestialPhaseOwner_ = owner;
+ if(changed) {
+  updateSkyBrightness();
+ }
+}
+void World::releaseCelestialPhase() {
+ if(!celestialPhaseClaimed_) {
+  return;
+ }
+ celestialPhaseClaimed_ = false;
+ celestialPhaseOwner_.clear();
+ updateSkyBrightness();
 }
 Vec3d World::getFogColor(float partialTicks) const {
  if(dimension) {

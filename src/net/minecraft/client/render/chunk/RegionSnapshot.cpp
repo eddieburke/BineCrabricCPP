@@ -262,13 +262,6 @@ RegionSnapshot::ColumnNeighbourhood RegionSnapshot::columnNeighbourhood(int x, i
                     columns.negZ != nullptr && columns.posZ != nullptr;
  return columns;
 }
-int RegionSnapshot::getBlockId(int x, int y, int z) const {
- const int column = columnIndex(x, z);
- if(column < 0 || !containsY(y)) {
-  return 0;
- }
- return static_cast<int>(blocks_[static_cast<std::size_t>(column * ySpan_ + (y - minY_))]);
-}
 int RegionSnapshot::getBlockMeta(int x, int y, int z) const {
  const int column = columnIndex(x, z);
  if(column < 0 || !containsY(y)) {

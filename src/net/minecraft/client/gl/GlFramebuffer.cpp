@@ -36,7 +36,7 @@ bool GlFramebuffer::addDepthAttachment(unsigned texture) {
   if(!ensureCreated()) {
     return false;
   }
-  GLCore::bindFramebuffer(static_cast<unsigned>(framebuffer::Framebuffer), id_);
+  GLCore::bindFramebufferTracked(static_cast<unsigned>(framebuffer::Framebuffer), id_);
   GLCore::framebufferTexture2D(static_cast<unsigned>(framebuffer::Framebuffer),
                                static_cast<unsigned>(framebuffer::DepthAttachment),
                                static_cast<unsigned>(cap::Texture2D), texture, 0);
@@ -47,7 +47,7 @@ bool GlFramebuffer::removeDepthAttachment() {
   if(!ensureCreated()) {
     return false;
   }
-  GLCore::bindFramebuffer(static_cast<unsigned>(framebuffer::Framebuffer), id_);
+  GLCore::bindFramebufferTracked(static_cast<unsigned>(framebuffer::Framebuffer), id_);
   GLCore::framebufferTexture2D(static_cast<unsigned>(framebuffer::Framebuffer),
                                static_cast<unsigned>(framebuffer::DepthAttachment),
                                static_cast<unsigned>(cap::Texture2D), 0, 0);
@@ -58,7 +58,7 @@ bool GlFramebuffer::addColorAttachment(int index, unsigned texture) {
   if(!ensureCreated()) {
     return false;
   }
-  GLCore::bindFramebuffer(static_cast<unsigned>(framebuffer::Framebuffer), id_);
+  GLCore::bindFramebufferTracked(static_cast<unsigned>(framebuffer::Framebuffer), id_);
   GLCore::framebufferTexture2D(static_cast<unsigned>(framebuffer::Framebuffer),
                                static_cast<unsigned>(framebuffer::ColorAttachment0) + static_cast<unsigned>(index),
                                static_cast<unsigned>(cap::Texture2D), texture, 0);
@@ -72,8 +72,8 @@ bool GlFramebuffer::noDrawBuffers() {
     return false;
   }
   constexpr unsigned none = 0; // GL_NONE
-  GLCore::bindFramebuffer(static_cast<unsigned>(framebuffer::Framebuffer), id_);
-  GLCore::drawBuffers(1, &none);
+  GLCore::bindFramebufferTracked(static_cast<unsigned>(framebuffer::Framebuffer), id_);
+  GLCore::setDrawBuffersTracked(1, &none);
   return true;
 }
 bool GlFramebuffer::drawBuffers(const std::vector<int>& buffers) {
@@ -88,29 +88,29 @@ bool GlFramebuffer::drawBuffers(const std::vector<int>& buffers) {
   for(int buffer : buffers) {
     glBuffers.push_back(static_cast<unsigned>(framebuffer::ColorAttachment0) + static_cast<unsigned>(buffer));
   }
-  GLCore::bindFramebuffer(static_cast<unsigned>(framebuffer::Framebuffer), id_);
-  GLCore::drawBuffers(static_cast<int>(glBuffers.size()), glBuffers.data());
+  GLCore::bindFramebufferTracked(static_cast<unsigned>(framebuffer::Framebuffer), id_);
+  GLCore::setDrawBuffersTracked(static_cast<int>(glBuffers.size()), glBuffers.data());
   return true;
 }
 void GlFramebuffer::readBuffer(int buffer) {
   if(!ensureCreated()) {
     return;
   }
-  GLCore::bindFramebuffer(static_cast<unsigned>(framebuffer::Framebuffer), id_);
+  GLCore::bindFramebufferTracked(static_cast<unsigned>(framebuffer::Framebuffer), id_);
   ::glReadBuffer(static_cast<unsigned>(framebuffer::ColorAttachment0) + static_cast<unsigned>(buffer));
 }
 void GlFramebuffer::bind() const {
-  GLCore::bindFramebuffer(static_cast<unsigned>(framebuffer::Framebuffer), id_);
+  GLCore::bindFramebufferTracked(static_cast<unsigned>(framebuffer::Framebuffer), id_);
 }
 void GlFramebuffer::bindAsReadBuffer() const {
-  GLCore::bindFramebuffer(static_cast<unsigned>(framebuffer::ReadFramebuffer), id_);
+  GLCore::bindFramebufferTracked(static_cast<unsigned>(framebuffer::ReadFramebuffer), id_);
 }
 void GlFramebuffer::bindAsDrawBuffer() const {
-  GLCore::bindFramebuffer(static_cast<unsigned>(framebuffer::DrawFramebuffer), id_);
+  GLCore::bindFramebufferTracked(static_cast<unsigned>(framebuffer::DrawFramebuffer), id_);
 }
 unsigned GlFramebuffer::checkStatus() const {
   // Java getStatus: bind() then checkFramebufferStatus (GlFramebuffer.java:108-112).
-  GLCore::bindFramebuffer(static_cast<unsigned>(framebuffer::Framebuffer), id_);
+  GLCore::bindFramebufferTracked(static_cast<unsigned>(framebuffer::Framebuffer), id_);
   return GLCore::checkFramebufferStatus(static_cast<unsigned>(framebuffer::Framebuffer));
 }
 unsigned GlFramebuffer::colorAttachment(int index) const noexcept {

@@ -339,6 +339,21 @@ T lookup(std::string value,
  });
  return found == entries.end() ? fallback : found->second;
 }
+bool equalsIgnoreCase(std::string_view a, std::string_view b) {
+ return a.size() == b.size() &&
+        std::equal(a.begin(), a.end(), b.begin(), [](unsigned char x, unsigned char y) {
+         return std::tolower(x) == std::tolower(y);
+        });
+}
+template <typename T, std::size_t N>
+T lookupView(std::string_view value,
+             const std::array<std::pair<std::string_view, T>, N>& entries,
+             T fallback) {
+ const auto found = std::find_if(entries.begin(), entries.end(), [&](const auto& entry) {
+  return equalsIgnoreCase(entry.first, value);
+ });
+ return found == entries.end() ? fallback : found->second;
+}
 } // namespace
 std::string_view canonicalFormatName(std::string_view format) {
  const FormatInfo* info = findFormat(std::string(format));
@@ -428,9 +443,12 @@ unsigned int bindColorImages(gl::ShaderProgram& program,
  const unsigned int imageUnits = maxImageUnits();
  unsigned int unit = 0;
  const auto bindPrefix = [&](const char* imagePrefix, const char* bufferPrefix, int count, bool sceneColor) {
+  char nameBuffer[40];
   for(int index = 0; index < count && unit < imageUnits; ++index) {
-   const std::string imageName = std::string(imagePrefix) + std::to_string(index);
-   if(program.location(imageName) < 0) continue;
+   const int written = std::snprintf(nameBuffer, sizeof(nameBuffer), "%s%d", imagePrefix, index);
+   if(written <= 0) continue;
+   if(program.location(std::string_view(nameBuffer, static_cast<std::size_t>(written))) < 0) continue;
+   const std::string imageName(nameBuffer, static_cast<std::size_t>(written));
    const std::string bufferName = std::string(bufferPrefix) + std::to_string(index);
    const auto found = colorTextures.find(bufferName);
    if(found == colorTextures.end() || found->second <= 0) continue;
@@ -456,7 +474,7 @@ unsigned int textureTarget(std::string value, std::size_t dimensions) {
  if(value.find("1d") != std::string::npos || dimensions == 1) return 0x0DE0;
  return gl::cap::Texture2D;
 }
-unsigned int blendFactor(std::string value) {
+unsigned int blendFactor(std::string_view value) {
  // https://shaders.properties/current/reference/shadersproperties/rendering/
  static constexpr std::array<std::pair<std::string_view, unsigned int>, 20> entries = {
      std::pair<std::string_view, unsigned int>{"zero", 0},
@@ -479,7 +497,7 @@ unsigned int blendFactor(std::string value) {
      {"one_minus_dst_color", 0x0307},
      {"src_alpha_saturate", 0x0308},
      {"srcalphasaturate", 0x0308}};
- return lookup(std::move(value), entries, 1u);
+ return lookupView(value, entries, 1u);
 }
 int colortexToDrawBufferIndex(const std::vector<int>& rendertargets, int colortexIndex) {
  if(colortexIndex < 0) {
@@ -498,8 +516,7 @@ void applyBufferBlends(const PackDefinition& pack, const std::string& program,
                        const std::vector<int>& rendertargets) {
  // https://shaders.properties/current/reference/shadersproperties/rendering/
  // https://github.com/IrisShaders/Iris/blob/1.20.1/src/main/java/net/irisshaders/iris/gl/blending/BlendModeStorage.java
- int drawFbo = 0;
- ::glGetIntegerv(static_cast<unsigned>(gl::query::FramebufferBinding), &drawFbo);
+ const int drawFbo = gl::GLCore::drawFramebufferBinding();
  const bool indexed = drawFbo != 0 && gl::GLCore::perBufferBlendingSupported && gl::GLCore::blendFunci != nullptr;
  for(const BufferBlend& blend : pack.bufferBlends) {
   if(blend.program != program) continue;
@@ -524,8 +541,7 @@ void applyAlphaTest(const PackDefinition& pack, const std::string& program) {
    core::setAlphaTestRef(-1.0f);
    return;
   }
-  const std::string func = lower(directive.func);
-  if(func == "always" || func == "gl_always") {
+  if(equalsIgnoreCase(directive.func, "always") || equalsIgnoreCase(directive.func, "gl_always")) {
    core::setAlphaTestRef(-1.0f);
   } else {
    core::setAlphaTestRef(directive.ref);

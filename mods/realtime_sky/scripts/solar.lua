@@ -140,6 +140,32 @@ local function mean_obliquity_iau2006(t)
     7.12 * u * u * u * u * u * u * u
 end
 
+local NUTATION_TERMS = {
+  { -172064161, 174666, 0, 0, 0, 0, 1 },
+  { -13170906, -13696, 0, 0, 0, 0, 2 },
+  { -2276413, -279, 0, 0, 0, 0, 3 },
+  { -2074554, 207, 0, 0, 2, -2, 2 },
+  { 1475877, -3633, 0, 0, 2, -2, 1 },
+  { -516821, 1226, 0, 0, 2, -2, 0 },
+  { 711159, -73, 0, 0, 2, 0, 3 },
+  { -387298, -367, 0, 0, 2, 0, 2 },
+  { -301461, -36, 0, 0, 0, 2, 3 },
+  { 215829, -494, 0, 0, 0, 2, 2 },
+  { 128227, 137, 0, 0, 0, 2, 1 },
+  { 123457, 11, 0, 0, 2, -2, 3 },
+  { 156994, 1, 0, 0, 2, 0, 1 },
+  { 63110, -63, 0, 0, 0, 2, 0 },
+  { -57976, -63, 0, 0, 2, 0, 0 },
+  { -59641, -11, 0, 0, 2, 2, 3 },
+  { -51613, -42, 0, 0, 2, 2, 2 },
+  { 45803, 50, 0, 0, 0, 2, 4 },
+  { -6339, 3, 0, 0, 2, -2, 4 },
+  { 38571, -3, 0, 0, 0, 0, 4 },
+  { -4773, 0, 0, 0, 0, 0, 5 },
+  { 3248, 0, 0, 0, 0, 0, 6 },
+
+}
+
 local function nutation_iau2000(t)
   local t2 = t * t
   local D = normalize_deg(297.8501954 + 445267.1114414 * t -
@@ -153,34 +179,10 @@ local function nutation_iau2000(t)
   local Omega = normalize_deg(125.0445550 - 1934.1361849 * t +
     0.0020756 * t2 + t2 * t / 466900.0 - t2 * t2 / 15318000.0)
 
-  local terms = {
-    { -172064161, 174666, 0, 0, 0, 0, 1 },
-    { -13170906, -13696, 0, 0, 0, 0, 2 },
-    { -2276413, -279, 0, 0, 0, 0, 3 },
-    { -2074554, 207, 0, 0, 2, -2, 2 },
-    { 1475877, -3633, 0, 0, 2, -2, 1 },
-    { -516821, 1226, 0, 0, 2, -2, 0 },
-    { 711159, -73, 0, 0, 2, 0, 3 },
-    { -387298, -367, 0, 0, 2, 0, 2 },
-    { -301461, -36, 0, 0, 0, 2, 3 },
-    { 215829, -494, 0, 0, 0, 2, 2 },
-    { 128227, 137, 0, 0, 0, 2, 1 },
-    { 123457, 11, 0, 0, 2, -2, 3 },
-    { 156994, 1, 0, 0, 2, 0, 1 },
-    { 63110, -63, 0, 0, 0, 2, 0 },
-    { -57976, -63, 0, 0, 2, 0, 0 },
-    { -59641, -11, 0, 0, 2, 2, 3 },
-    { -51613, -42, 0, 0, 2, 2, 2 },
-    { 45803, 50, 0, 0, 0, 2, 4 },
-    { -6339, 3, 0, 0, 2, -2, 4 },
-    { 38571, -3, 0, 0, 0, 0, 4 },
-    { -4773, 0, 0, 0, 0, 0, 5 },
-    { 3248, 0, 0, 0, 0, 0, 6 },
-  }
 
   local dpsi_asec = 0.0
   local deps_asec = 0.0
-  for _, term in ipairs(terms) do
+  for _, term in ipairs(NUTATION_TERMS) do
     local arg = term[3] * D + term[4] * M + term[5] * Mp + term[6] * F + term[7] * Omega
     local sin_arg, cos_arg = math.sin(arg * DEG), math.cos(arg * DEG)
     dpsi_asec = dpsi_asec + term[1] * sin_arg
@@ -190,13 +192,23 @@ local function nutation_iau2000(t)
   return dpsi_asec * 0.0001, deps_asec * 0.0001
 end
 
+-- Solar and lunar positions both need this for the same instant, so keep the
+-- last answer: it saves a full nutation series per frame.
+local equator_cache_t
+local equator_cache_eps, equator_cache_dpsi, equator_cache_eps0
+
 local function true_equator(t)
+  if t == equator_cache_t then
+    return equator_cache_eps, equator_cache_dpsi, equator_cache_eps0
+  end
   local eps0_asec = mean_obliquity_iau2006(t)
   local dpsi_asec, deps_asec = nutation_iau2000(t)
   local eps_asec = eps0_asec + deps_asec
-  local eps = eps_asec * ARCSEC
-  local dpsi = dpsi_asec * ARCSEC
-  return eps, dpsi, eps0_asec * ARCSEC
+  equator_cache_eps = eps_asec * ARCSEC
+  equator_cache_dpsi = dpsi_asec * ARCSEC
+  equator_cache_eps0 = eps0_asec * ARCSEC
+  equator_cache_t = t
+  return equator_cache_eps, equator_cache_dpsi, equator_cache_eps0
 end
 
 -- ---------------------------------------------------------------------------

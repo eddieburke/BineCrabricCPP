@@ -62,3 +62,61 @@ build.ninja
 *.sqlite
 *.sqlite3
 *.user
+
+# ---------------------------------------------------------------------------
+# Profiler output
+# ---------------------------------------------------------------------------
+# Nsight Systems writes .nsys-rep plus a .qdstrm staging file and exports a
+# multi-GB .sqlite per capture; Nsight Compute and Nsight Graphics have their
+# own formats. All of it is machine-local and far too large to track.
+*.qdstrm
+*.qdrep
+*.ncu-rep
+*.nvvp
+*.nsight-gfxr
+*.gfxr
+# VTune result directories when collected in place (r000hs, r001gpu, ...) and
+# the per-run files inside them.
+r0[0-9][0-9]*/
+*.vtune
+*.dataLim
+
+# ---------------------------------------------------------------------------
+# Scratch, temp and crash debris
+# ---------------------------------------------------------------------------
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*.stackdump
+*~
+*.build-omega-backup
+crash-report.txt
+hang-report.txt
+scratch/
+scratchpad/
+tmp/
+temp/
+
+# ---------------------------------------------------------------------------
+# Agent and assistant state
+# ---------------------------------------------------------------------------
+# Instruction files and per-tool state directories. CLAUDE.md is deliberately
+# absent: it is checked in as project documentation.
+.aider*
+.continue/
+.gemini/
+GEMINI.md
+.roo/
+.cline/
+.clinerules
+.github/instructions/
+.github/chatmodes/
+
+# ---------------------------------------------------------------------------
+# OS cruft
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini

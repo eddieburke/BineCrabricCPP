@@ -1,6 +1,7 @@
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <limits>
 #include <mutex>
@@ -89,6 +90,8 @@ GLFN(PFN_EndQuery, endQuery);
 GLFN(PFN_GetQueryObjectiv, getQueryObjectiv);
 GLFN(PFN_GetQueryObjectui64v, getQueryObjectui64v);
 GLFN(PFN_QueryCounter, queryCounter);
+GLFN(PFN_PushDebugGroup, pushDebugGroup);
+GLFN(PFN_PopDebugGroup, popDebugGroup);
 GLFN(PFN_CopyImageSubData, copyImageSubData);
 GLFN(PFN_DispatchCompute, dispatchCompute);
 GLFN(PFN_DispatchComputeIndirect, dispatchComputeIndirect);
@@ -110,6 +113,7 @@ bool GLCore::framebufferSupported = false;
 bool GLCore::vaoSupported = false;
 bool GLCore::shaderSupported = false;
 bool GLCore::timerQuerySupported = false;
+bool GLCore::debugGroupSupported = false;
 bool GLCore::computeSupported = false;
 bool GLCore::instancedDrawSupported = false;
 bool GLCore::ssboSupported = false;
@@ -120,6 +124,10 @@ bool GLCore::perBufferBlendingSupported = false;
 bool GLCore::swapControlTearSupported = false;
 static std::once_flag g_initOnce;
 static int g_appliedSwapInterval = std::numeric_limits<int>::min();
+static int g_drawFramebufferBinding = 0;
+static std::array<unsigned int, 32> g_appliedDrawBuffers{};
+static int g_appliedDrawBufferCount = -1;
+static int g_appliedDrawBufferFbo = -1;
 static void* loadProc(const char* name) {
  return reinterpret_cast<void*>(glfwGetProcAddress(name));
 }
@@ -226,6 +234,8 @@ void GLCore::init() {
  LOAD_TRY(getQueryObjectiv, "glGetQueryObjectiv", "glGetQueryObjectivARB");
  LOAD_TRY(getQueryObjectui64v, "glGetQueryObjectui64v", "glGetQueryObjectui64vEXT");
  LOAD_TRY(queryCounter, "glQueryCounter", "glQueryCounterARB");
+ LOAD_TRY(pushDebugGroup, "glPushDebugGroup", "glPushDebugGroupKHR");
+ LOAD_TRY(popDebugGroup, "glPopDebugGroup", "glPopDebugGroupKHR");
  // DepthCopyStrategy.fastest probes the FUNCTION, not the version: a 3.2
  // forward-compatible context reports OpenGL43 false while still exporting this.
  LOAD_TRY(copyImageSubData, "glCopyImageSubData", "glCopyImageSubDataARB", "glCopyImageSubDataEXT", "glCopyImageSubDataNV");
@@ -250,6 +260,7 @@ void GLCore::init() {
  vaoSupported = genVertexArrays && bindVertexArray && deleteVertexArrays;
  timerQuerySupported =
      genQueries && deleteQueries && beginQuery && endQuery && getQueryObjectiv && getQueryObjectui64v;
+ debugGroupSupported = pushDebugGroup && popDebugGroup;
  shaderSupported = createShader && shaderSource && compileShader && createProgram && linkProgram && useProgram &&
                    getUniformLocation && vertexAttribPointer && vertexAttribIPointer && enableVertexAttribArray;
  computeSupported = shaderSupported && dispatchCompute && memoryBarrier;
@@ -274,6 +285,38 @@ void GLCore::init() {
 #undef LOAD_TRY
 void GLCore::ensureLoaded() {
  init();
+}
+void GLCore::bindFramebufferTracked(unsigned int target, unsigned int framebuffer) {
+ if(bindFramebuffer == nullptr) {
+  return;
+ }
+ bindFramebuffer(target, framebuffer);
+ if(target != static_cast<unsigned>(framebuffer::ReadFramebuffer)) {
+  g_drawFramebufferBinding = static_cast<int>(framebuffer);
+ }
+}
+int GLCore::drawFramebufferBinding() {
+ return g_drawFramebufferBinding;
+}
+void GLCore::setDrawBuffersTracked(int count, const unsigned int* buffers) {
+ if(drawBuffers == nullptr || count <= 0 || buffers == nullptr) {
+  return;
+ }
+ const std::size_t total = static_cast<std::size_t>(count);
+ if(total <= g_appliedDrawBuffers.size() && g_appliedDrawBufferFbo == g_drawFramebufferBinding &&
+    g_appliedDrawBufferCount == count &&
+    std::equal(buffers, buffers + total, g_appliedDrawBuffers.begin())) {
+  return;
+ }
+ drawBuffers(count, buffers);
+ if(total <= g_appliedDrawBuffers.size()) {
+  std::copy(buffers, buffers + total, g_appliedDrawBuffers.begin());
+  g_appliedDrawBufferCount = count;
+  g_appliedDrawBufferFbo = g_drawFramebufferBinding;
+ } else {
+  g_appliedDrawBufferCount = -1;
+  g_appliedDrawBufferFbo = -1;
+ }
 }
 void GLCore::setSwapPacing(SwapPacing pacing) {
  ensureLoaded();

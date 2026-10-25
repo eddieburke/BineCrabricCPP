@@ -95,6 +95,7 @@ bool ChunkCompilePipeline::startMeshJob(chunk::ChunkBuilder* chunk,
       [](chunk::ChunkMeshJob& meshJob) {
        const auto buildStart = std::chrono::steady_clock::now();
        try {
+        meshJob.buildSnapshot();
         chunk::ChunkBuilder::buildMesh(meshJob);
        } catch(...) {
         meshJob.failed = true;

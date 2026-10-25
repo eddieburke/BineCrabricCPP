@@ -1007,7 +1007,11 @@ void luaHookCelestialState(CelestialStateEvent& e) {
                 "override_directions",
                 ev.overrideDirections,
                 "override_star_frame",
-                ev.overrideStarFrame);
+                ev.overrideStarFrame,
+                "override_phase",
+                ev.overridePhase,
+                "clock_angle",
+                ev.clockAngle);
       setWorldContextFields(state, ev.world);
      },
      [](lua_State* state, CelestialStateEvent& ev) {
@@ -1041,7 +1045,11 @@ void luaHookCelestialState(CelestialStateEvent& e) {
                  "override_directions",
                  ev.overrideDirections,
                  "override_star_frame",
-                 ev.overrideStarFrame);
+                 ev.overrideStarFrame,
+                 "override_phase",
+                 ev.overridePhase,
+                 "phase_owner",
+                 ev.phaseOwner);
      });
 }
 void luaHookWorldColor(WorldColorEvent& e) {

@@ -451,7 +451,7 @@ function Test-NeedsConfigure{param([string]$BP,[string]$EC,[string]$ETR,[string]
 $cp="$BP\CMakeCache.txt"
 if(!(Test-Path -Li $cp)){return $true}
 if(!(Test-Path -Li "$BP\build.ninja")){return $true}
-$gn=$null;$co=$null;$tr=$null;$bt=$null;$ip=$null;$ucc=$null;$cfr=$null;$cfrd=$null
+$gn=$null;$co=$null;$tr=$null;$bt=$null;$ip=$null;$ucc=$null;$cfr=$null;$cfrd=$null;$fetchPolicy=$null
 foreach($ln in gc -Li $cp){
 $v=$ln.Substring($ln.IndexOf("=")+1)
 if($ln -like "CMAKE_GENERATOR:INTERNAL=*"){$gn=$v}
@@ -462,8 +462,10 @@ elseif($ln -like "CMAKE_INTERPROCEDURAL_OPTIMIZATION:BOOL=*"){$ip=$v}
 elseif($ln -like "MINECRAFT_USE_CCACHE:BOOL=*"){$ucc=$v}
 elseif($ln -like "CMAKE_CXX_FLAGS_RELEASE:STRING=*"){$cfr=$v.Trim()}
 elseif($ln -like "CMAKE_CXX_FLAGS_RELWITHDEBINFO:STRING=*"){$cfrd=$v.Trim()}
+elseif($ln -like "CMAKE_POLICY_DEFAULT_CMP0168:UNINITIALIZED=*" -or $ln -like "CMAKE_POLICY_DEFAULT_CMP0168:STRING=*"){$fetchPolicy=$v}
 }
 if($gn -ne "Ninja"){return $true}
+if($fetchPolicy -ne "NEW"){return $true}
 if((Normalize-ToolPath $co) -ne (Normalize-ToolPath $EC)){return $true}
 if($tr -and((Normalize-ToolPath $tr) -ne (Normalize-ToolPath $ETR))){return $true}
 if($bt -ne $EBT){return $true}
@@ -482,12 +484,12 @@ try {
 if(Test-Path -Li $BuildOmegaLockPath){Remove-StaleBuildOmegaLockFile -LPa $BuildOmegaLockPath}
 try{$BuildOmegaLockStream=[System.IO.File]::Open($BuildOmegaLockPath,[System.IO.FileMode]::Create,[System.IO.FileAccess]::ReadWrite,[System.IO.FileShare]::None);$pb=[System.Text.Encoding]::ASCII.GetBytes("$PID`n");$BuildOmegaLockStream.Write($pb,0,$pb.Length);$BuildOmegaLockStream.Flush()}catch{Fail "Already in use"}
 if($Jobs -le 0){$Jobs=[Math]::Min(4,[Math]::Max(1,[Environment]::ProcessorCount-2))}
-if($Jobs -gt 4){Write-Host "Limiting parallel jobs to 4 to avoid MinGW compiler out-of-memory failures." -ForegroundColor Yellow;$Jobs=4}
+if($Jobs -gt 16){Write-Host "Limiting parallel jobs to 16 to avoid MinGW compiler out-of-memory failures." -ForegroundColor Yellow;$Jobs=16}
 if($Clean -and(Test-Path $BuildDir)){Assert-BuildDirAvailable -BN $BuildDir -SDP $ScriptDir;Write-Host "Removing $BuildDir ...";ri -R -Fo $BuildDir;$cc="$MingwBin\ccache.exe";if(Test-Path -Li $cc){Write-Host "Clearing ccache (stale LTO objects) ...";&$cc -C}}
 Assert-BuildDirAvailable -BN $BuildDir -SDP $ScriptDir
 Write-Host "Toolchain: $RelToolchainRoot"
 Write-Host "Compiler:  $RelGpp"
-$CmakeArgs=@("-S",".","-B",$BuildDir,"-G","Ninja","-DCMAKE_MAKE_PROGRAM=$NinjaExe","-DCMAKE_CXX_COMPILER=$GppExe","-DCMAKE_BUILD_TYPE=$BuildType","-DMINECRAFT_TOOLCHAIN_ROOT=$RelToolchainRoot")
+$CmakeArgs=@("-S",".","-B",$BuildDir,"-G","Ninja","-DCMAKE_MAKE_PROGRAM=$NinjaExe","-DCMAKE_CXX_COMPILER=$GppExe","-DCMAKE_BUILD_TYPE=$BuildType","-DMINECRAFT_TOOLCHAIN_ROOT=$RelToolchainRoot","-DCMAKE_POLICY_DEFAULT_CMP0168=NEW")
 $UseLto=$Lto -and(-not $NoLto)
 $UseCcache=-not $NoCcache
 $CmakeArgs+="-DMINECRAFT_USE_CCACHE=$(if($UseCcache){'ON'}else{'OFF'})"
@@ -517,7 +519,22 @@ $OC="-O2 -g"
 $OmegaCxx=$OC
 $CmakeArgs+="-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=$OC"
 }
-$NeedsConfigure=Test-NeedsConfigure -BP "$ScriptDir\$BuildDir" -EC $GppExe -ETR $RelToolchainRoot -EBT $BuildType -UL $UseLto -UCC $UseCcache -ECFR $OmegaCxx
+$FreshConfigure=$false
+$BuildCachePath=Join-Path (Join-Path $ScriptDir $BuildDir) "CMakeCache.txt"
+if(Test-Path -LiteralPath $BuildCachePath){
+foreach($line in Get-Content -LiteralPath $BuildCachePath){
+if($line -match '^CMAKE_HOME_DIRECTORY:INTERNAL=(.*)$'){
+if((Normalize-ToolPath $Matches[1]) -ne (Normalize-ToolPath $ScriptDir)){$FreshConfigure=$true}
+}elseif($line -match '^CMAKE_CACHEFILE_DIR:INTERNAL=(.*)$'){
+if((Normalize-ToolPath $Matches[1]) -ne (Normalize-ToolPath ([System.IO.Path]::GetDirectoryName($BuildCachePath)))){$FreshConfigure=$true}
+}
+}
+}
+if($FreshConfigure){
+Write-Host "Project or build folder moved; regenerating CMake configuration for $ScriptDir."
+$CmakeArgs+="--fresh"
+}
+$NeedsConfigure=$FreshConfigure -or (Test-NeedsConfigure -BP "$ScriptDir\$BuildDir" -EC $GppExe -ETR $RelToolchainRoot -EBT $BuildType -UL $UseLto -UCC $UseCcache -ECFR $OmegaCxx)
 if($NeedsConfigure){
     if($BuildType -eq "Debug"){Write-Host "build-omega Debug build started";Write-Host "WARNING: This will take a very long time (1.3h+)"}
     Assert-BuildDirAvailable -BN $BuildDir -SDP $ScriptDir

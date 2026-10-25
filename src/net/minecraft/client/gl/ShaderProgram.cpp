@@ -1,5 +1,6 @@
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdint>
 #include <iterator>
@@ -343,24 +344,22 @@ void ShaderProgram::applyDrawBuffers(int colorAttachmentCount) const {
  if(drawBuffers_.empty() || GLCore::drawBuffers == nullptr) {
   return;
  }
- int currentFbo = 0;
- ::glGetIntegerv(query::FramebufferBinding, &currentFbo);
- if(currentFbo == 0) {
+ if(GLCore::drawFramebufferBinding() == 0) {
   return;
  }
  const int maxAttachments = std::max(1, colorAttachmentCount);
- std::vector<unsigned int> attached;
- attached.reserve(drawBuffers_.size());
+ std::array<unsigned int, 32> attached{};
+ std::size_t count = 0;
  for(unsigned int buffer : drawBuffers_) {
   const int index = static_cast<int>(buffer - kColorAttachment0);
-  if(index >= 0 && index < maxAttachments) {
-   attached.push_back(buffer);
+  if(index >= 0 && index < maxAttachments && count < attached.size()) {
+   attached[count++] = buffer;
   }
  }
- if(attached.empty()) {
-  attached.push_back(kColorAttachment0);
+ if(count == 0) {
+  attached[count++] = kColorAttachment0;
  }
- GLCore::drawBuffers(static_cast<int>(attached.size()), attached.data());
+ GLCore::setDrawBuffersTracked(static_cast<int>(count), attached.data());
 }
 int ShaderProgram::location(std::string_view name) const {
  if(program_ == 0 || GLCore::getUniformLocation == nullptr) {

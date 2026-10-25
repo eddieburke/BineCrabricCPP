@@ -39,6 +39,23 @@ struct ChunkMeshJob {
  int z = 0;
  std::unique_ptr<RegionSnapshot> snapshot;
  client::option::RenderSettings opts{};
+ // Snapshot inputs resolved on the main thread; the shell copy itself runs on the
+ // worker in buildSnapshot(). Chunk::renderVersion's optimistic-read protocol and
+ // the render pins below are what make reading live chunks off-thread safe.
+ std::vector<RegionSnapshot::SourceChunk> pinnedChunks;
+ std::array<float, 16> lightLevelToLuminance{};
+ std::unique_ptr<net::minecraft::BiomeSource> biomeSource;
+ int ambientDarkness = 0;
+ int minBlockX = 0;
+ int minBlockY = 0;
+ int minBlockZ = 0;
+ int maxBlockX = 0;
+ int maxBlockY = 0;
+ int maxBlockZ = 0;
+ // Builds `snapshot` from the pinned chunks and drops the pins. Worker-side: it is
+ // the bulk byte copy that used to gate every frame's capture budget.
+ void buildSnapshot();
+ void releasePins() noexcept;
  ChunkMeshResult result{};
  // Set when the worker hit an exception; the main thread reschedules.
  bool failed = false;
@@ -54,8 +71,6 @@ struct ChunkMeshJob {
                                                             client::option::RenderSettings options);
 
  private:
- explicit ChunkMeshJob(ChunkBuilder& owner,
-                       client::option::RenderSettings options,
-                       std::unique_ptr<RegionSnapshot> snapshot);
+ explicit ChunkMeshJob(ChunkBuilder& owner, client::option::RenderSettings options);
 };
 } // namespace net::minecraft::client::render::chunk

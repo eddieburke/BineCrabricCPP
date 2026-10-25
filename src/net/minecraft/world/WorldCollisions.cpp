@@ -66,6 +66,22 @@ bool forEachBlockInBounds(const World& world, const BlockScanBounds& bounds, Fn&
  return false;
 }
 template <typename Fn>
+bool forEachLoadedBlockInBoundsUntil(const World& world, const BlockScanBounds& bounds, Fn&& fn) {
+ for(int x = bounds.minX; x < bounds.maxX; ++x) {
+  for(int z = bounds.minZ; z < bounds.maxZ; ++z) {
+   if(!world.isPosLoaded(x, 64, z)) {
+    continue;
+   }
+   for(int y = bounds.minY; y < bounds.maxY; ++y) {
+    if(Block* block = resolveBlock(world, x, y, z); block != nullptr && fn(x, y, z, *block)) {
+     return true;
+    }
+   }
+  }
+ }
+ return false;
+}
+template <typename Fn>
 void forEachLoadedBlockInBounds(const World& world, const BlockScanBounds& bounds, Fn&& fn) {
  for(int x = bounds.minX; x < bounds.maxX; ++x) {
   for(int z = bounds.minZ; z < bounds.maxZ; ++z) {
@@ -129,8 +145,39 @@ bool World::isBlockOpaqueCube(int x, int y, int z) const {
  }
  return false;
 }
-std::vector<Box> World::getEntityCollisions(Entity* except, const Box& box) {
- std::vector<Box> result;
+bool World::hasEntityCollision(Entity* except, const Box& box) {
+ BlockScanBounds bounds = blockScanBounds(box);
+ --bounds.minY;
+ std::vector<Box> hit;
+ if(forEachLoadedBlockInBoundsUntil(*this, bounds, [&](int x, int y, int z, Block& block) {
+     block.addIntersectingBoundingBox(this, x, y, z, box, hit);
+     return !hit.empty();
+    })) {
+  return true;
+ }
+ collisionEntityScratch_.clear();
+ getEntities(except, box.expand(0.25), collisionEntityScratch_);
+ for(Entity* other : collisionEntityScratch_) {
+  if(other == nullptr) {
+   continue;
+  }
+  if(const std::optional<Box> otherBox = other->getBoundingBox()) {
+   if(otherBox->intersects(box)) {
+    return true;
+   }
+  }
+  if(except != nullptr) {
+   if(const std::optional<Box> collisionShape = except->getCollisionAgainstShape(other)) {
+    if(collisionShape->intersects(box)) {
+     return true;
+    }
+   }
+  }
+ }
+ return false;
+}
+void World::getEntityCollisions(Entity* except, const Box& box, std::vector<Box>& result) {
+ result.clear();
  BlockScanBounds bounds = blockScanBounds(box);
  --bounds.minY;
  forEachLoadedBlockInBounds(*this, bounds, [&](int x, int y, int z, Block& block) {
@@ -153,6 +200,10 @@ std::vector<Box> World::getEntityCollisions(Entity* except, const Box& box) {
    }
   }
  }
+}
+std::vector<Box> World::getEntityCollisions(Entity* except, const Box& box) {
+ std::vector<Box> result;
+ getEntityCollisions(except, box, result);
  return result;
 }
 std::vector<Box> World::getBlockCollisions(const Box& box) const {

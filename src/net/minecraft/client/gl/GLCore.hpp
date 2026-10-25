@@ -83,6 +83,8 @@ using PFN_EndQuery = void(APIENTRY*)(unsigned);
 using PFN_GetQueryObjectiv = void(APIENTRY*)(unsigned, unsigned, int*);
 using PFN_GetQueryObjectui64v = void(APIENTRY*)(unsigned, unsigned, std::uint64_t*);
 using PFN_QueryCounter = void(APIENTRY*)(unsigned, unsigned);
+using PFN_PushDebugGroup = void(APIENTRY*)(unsigned, unsigned, int, const char*);
+using PFN_PopDebugGroup = void(APIENTRY*)();
 // see third_party/mcp/iris/gl/texture/DepthCopyStrategy.java Gl43CopyImage
 using PFN_CopyImageSubData = void(APIENTRY*)(unsigned, unsigned, int, int, int, int,
                                              unsigned, unsigned, int, int, int, int,
@@ -187,6 +189,8 @@ struct GLCore {
  static PFN_GetQueryObjectiv getQueryObjectiv;
  static PFN_GetQueryObjectui64v getQueryObjectui64v;
  static PFN_QueryCounter queryCounter;
+ static PFN_PushDebugGroup pushDebugGroup;
+ static PFN_PopDebugGroup popDebugGroup;
  static PFN_CopyImageSubData copyImageSubData;
  static PFN_DispatchCompute dispatchCompute;
  static PFN_DispatchComputeIndirect dispatchComputeIndirect;
@@ -207,6 +211,9 @@ struct GLCore {
  static bool vaoSupported;
  static bool shaderSupported;
  static bool timerQuerySupported;
+ // KHR_debug group markers. Purely an annotation channel for external profilers
+ // (Nsight, RenderDoc); nothing in the engine reads them back.
+ static bool debugGroupSupported;
  static bool computeSupported;
  static bool instancedDrawSupported;
  static bool ssboSupported;
@@ -215,6 +222,15 @@ struct GLCore {
  static bool samplerObjectsSupported;
  static bool perBufferBlendingSupported;
  static bool swapControlTearSupported;
+ // Sole writer of the draw-framebuffer shadow. Every FBO bind in the engine goes
+ // through here so drawFramebufferBinding() can answer without a glGetIntegerv
+ // round-trip; binding through the raw pointer leaves the shadow stale.
+ static void bindFramebufferTracked(unsigned int target, unsigned int framebuffer);
+ [[nodiscard]] static int drawFramebufferBinding();
+ // glDrawBuffers is per-FBO state, so the memo is keyed on the draw binding as well as
+ // the list. Returning to an FBO re-issues the call rather than trusting a remembered
+ // list per handle: redundant applies are free, a wrong draw-buffer set is not.
+ static void setDrawBuffersTracked(int count, const unsigned int* buffers);
  static void init();
  static void ensureLoaded();
  static void setSwapPacing(SwapPacing pacing);

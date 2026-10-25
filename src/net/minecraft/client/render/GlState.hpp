@@ -61,7 +61,7 @@ unsigned int internalFormat(std::string value);
 unsigned int internalFormat(ColorFormat format);
 [[nodiscard]] bool integerInternalFormat(std::string value);
 unsigned int textureTarget(std::string value, std::size_t dimensions);
-unsigned int blendFactor(std::string value);
+unsigned int blendFactor(std::string_view value);
 void applyBufferBlends(const PackDefinition& pack, const std::string& program,
                        const std::vector<int>& rendertargets);
 [[nodiscard]] int colortexToDrawBufferIndex(const std::vector<int>& rendertargets, int colortexIndex);

@@ -78,6 +78,10 @@ class LightingEngine {
   std::uint64_t lastKeys[kCacheSlots] = {};
   Chunk* lastChunks[kCacheSlots] = {};
   int lastValidCount = 0;
+  // runUpdate's worklist and its dedup flags, reused across every box one worker
+  // run drains so a 32768-cell box does not allocate 160 KB per box.
+  std::vector<std::uint32_t> ring;
+  std::vector<std::uint8_t> queued;
  };
  void scheduleWorkersLocked();
  void runScheduledWork();
@@ -101,6 +105,9 @@ class LightingEngine {
  }
 
 
+ // Boxes one worker run drains before yielding, so its chunk pins cannot be held
+ // across an unbounded amount of work.
+ static constexpr std::size_t kMaxBoxesPerRun = 64;
  static constexpr std::size_t kStagingFlushBoxes = 1024;
  static constexpr std::size_t kStagingMergeScan = 32;
  static constexpr std::size_t kMaxPendingRegions = 64;

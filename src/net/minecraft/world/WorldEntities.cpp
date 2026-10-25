@@ -16,19 +16,31 @@ bool isInvalidDouble(double value) {
  return std::isnan(value) || std::isinf(value);
 }
 } // namespace
-std::vector<Entity*> World::getEntities(Entity* except, const Box& box) {
- std::vector<Entity*> result;
- for(Entity* entity : entities_) {
-  if(entity == nullptr || entity == except || entity->dead) {
-   continue;
-  }
-  if(*reinterpret_cast<const void* const*>(entity) == nullptr) {
-   continue;
-  }
-  if(entity->boundingBox.intersects(box)) {
-   result.push_back(entity);
+void World::getEntities(Entity* except, const Box& box, std::vector<Entity*>& result) {
+ result.clear();
+ // Chunk::addEntity / the per-tick reindex below keep every entity in a loaded
+ // chunk's slice index, so this reads the slices that overlap the box instead of
+ // scanning entities_. One chunk of margin covers an entity whose index slot still
+ // holds last tick's position; the slice walk already pads +/-2 blocks in Y.
+ const int minChunkX = MathHelper::floor(box.minX / 16.0) - 1;
+ const int maxChunkX = MathHelper::floor(box.maxX / 16.0) + 1;
+ const int minChunkZ = MathHelper::floor(box.minZ / 16.0) - 1;
+ const int maxChunkZ = MathHelper::floor(box.maxZ / 16.0) + 1;
+ for(int chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) {
+  for(int chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) {
+   if(Chunk* chunk = getChunkIfLoaded(chunkX << 4, chunkZ << 4); chunk != nullptr) {
+    chunk->collectOtherEntities(except, box, result);
+   }
   }
  }
+ std::erase_if(result, [](Entity* entity) {
+  return entity == nullptr || entity->dead ||
+         *reinterpret_cast<const void* const*>(entity) == nullptr;
+ });
+}
+std::vector<Entity*> World::getEntities(Entity* except, const Box& box) {
+ std::vector<Entity*> result;
+ getEntities(except, box, result);
  return result;
 }
 Entity* World::findEntity(int id) const noexcept {

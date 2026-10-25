@@ -42,7 +42,13 @@ class RegionSnapshot final : public net::minecraft::BlockView {
  ~RegionSnapshot() override;
  RegionSnapshot(const RegionSnapshot&) = delete;
  RegionSnapshot& operator=(const RegionSnapshot&) = delete;
- [[nodiscard]] int getBlockId(int x, int y, int z) const override;
+ [[nodiscard]] int getBlockId(int x, int y, int z) const override {
+  const int column = columnIndex(x, z);
+  if(column < 0 || !containsY(y)) {
+   return 0;
+  }
+  return static_cast<int>(blocks_[static_cast<std::size_t>(column * ySpan_ + (y - minY_))]);
+ }
  [[nodiscard]] net::minecraft::block::entity::BlockEntity* getBlockEntity(int, int, int) override {
   return nullptr;
  }
@@ -58,6 +64,22 @@ class RegionSnapshot final : public net::minecraft::BlockView {
  [[nodiscard]] int getRawBrightness(int x, int y, int z, bool useNeighborLight) const;
  [[nodiscard]] int getBlockLight(int x, int y, int z) const;
  [[nodiscard]] int getSkyLight(int x, int y, int z) const;
+ void sampleLight(int x, int y, int z, int& blockLight, int& skyLight) const noexcept {
+  blockLight = 0;
+  skyLight = y < 0 ? 0 : 15;
+  const int column = columnIndex(x, z);
+  if(column < 0 || !containsY(y)) {
+   return;
+  }
+  const int row = y - minY_;
+  const auto index = static_cast<std::size_t>(column * (ySpan_ >> 1) + (row >> 1));
+  const int shift = (row & 1) * 4;
+  blockLight = (blockLight_[index] >> shift) & 15;
+  skyLight = (skyLight_[index] >> shift) & 15;
+  if(skyLight > 0) {
+   sawSkyLight_ = true;
+  }
+ }
  [[nodiscard]] bool sawSkyLight() const noexcept { return sawSkyLight_; }
  [[nodiscard]] bool columnHasBlocks(int blockX, int blockZ, int minY, int maxY) const;
  // Captures that had to fall back to the chunk write lock. Per-cell writers are

@@ -114,7 +114,7 @@ bool PaintingEntity::canStayAttached() const {
  if(world == nullptr || variant.width <= 0 || variant.height <= 0) {
   return false;
  }
- if(!world->getEntityCollisions(const_cast<PaintingEntity*>(this), boundingBox).empty()) {
+ if(world->hasEntityCollision(const_cast<PaintingEntity*>(this), boundingBox)) {
   return false;
  }
  const int blockWidth = variant.width / 16;

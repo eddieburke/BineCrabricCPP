@@ -130,7 +130,7 @@ bool ShadowTargets::ensure(int resolutionIn, int colorBuffers, const PackDefinit
  applyDepthSwizzle(shadowtex0);
  fbo.addDepthAttachment(shadowtex0);
  const bool ok = fbo.checkStatus() == static_cast<unsigned>(gl::framebuffer::Complete);
- gl::GLCore::bindFramebuffer(gl::framebuffer::Framebuffer, 0);
+ gl::GLCore::bindFramebufferTracked(gl::framebuffer::Framebuffer, 0);
  if(!ok) {
   destroy();
   return false;
@@ -170,7 +170,7 @@ void ShadowTargets::prepareForShadowRender(const PackDefinition& definition) {
  if(!valid()) {
   return;
  }
- gl::GLCore::bindFramebuffer(gl::framebuffer::Framebuffer, fbo.id());
+ gl::GLCore::bindFramebufferTracked(gl::framebuffer::Framebuffer, fbo.id());
  std::vector<int> drawBuffers;
  drawBuffers.reserve(static_cast<std::size_t>(colorCount));
  for(int i = 0; i < colorCount; ++i) {

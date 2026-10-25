@@ -3,6 +3,7 @@
 #include <charconv>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/material/Material.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
@@ -62,7 +63,8 @@ void updateSunLight(World* world, float tickDelta, ::net::minecraft::entity::Ent
  if(world == nullptr || camera == nullptr) {
   return;
  }
- const float celestialAngle = world->getTime(tickDelta);
+ // Resolve from the clock phase, never from the previous frame's resolved answer.
+ const float celestialAngle = world->getClockTimeOfDay(tickDelta);
  const net::minecraft::client::Minecraft* celestialClient = net::minecraft::client::Minecraft::INSTANCE;
  const float sunPathRotation = celestialClient != nullptr && celestialClient->gameRenderer != nullptr
                                    ? celestialClient->gameRenderer->packDefinition().sunPathRotation
@@ -82,7 +84,15 @@ void updateSunLight(World* world, float tickDelta, ::net::minecraft::entity::Ent
                                          state.moonDirectionWorld[1],
                                          state.moonDirectionWorld[2],
                                          state.day};
+ celestialEvent.clockAngle = celestialAngle;
  mod::runtime::luaHookCelestialState(celestialEvent);
+ // A hook that claimed the phase owns the clock: publish what we are about to draw so
+ // ambient darkness, sky light, fog, clouds and the sunset fan all agree with it.
+ if(celestialEvent.overridePhase) {
+  world->claimCelestialPhase(celestialEvent.celestialAngle, celestialEvent.phaseOwner);
+ } else {
+  world->releaseCelestialPhase();
+ }
  const auto applyDirection = [](float x, float y, float z, float out[3]) {
   const float length = std::sqrt(x * x + y * y + z * z);
   if(std::isfinite(length) && length > 1.0e-6f) {
@@ -695,7 +705,7 @@ void GameRenderer::resolveSceneCapture() {
  shaderPipeline_->endScene();
  const int width = std::max(1, client->displayWidth);
  const int height = std::max(1, client->displayHeight);
- gl::GLCore::bindFramebuffer(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
+ gl::GLCore::bindFramebufferTracked(static_cast<unsigned>(gl::framebuffer::Framebuffer), 0);
  core::viewport(0, 0, width, height);
  core::clear(gl::attrib::ColorBufferBit | gl::attrib::DepthBufferBit);
  shaderPipeline_->renderPostProcess(frameShadow_.depthTexture, frameShadow_.opaqueDepthTexture,
@@ -822,6 +832,63 @@ void renderBlockOverlay(WorldRenderer& worldRenderer,
  worldRenderer.renderMiningProgress(&player, *client->crosshairTarget, 0, hand, tickDelta);
  worldRenderer.renderBlockOutline(&player, *client->crosshairTarget, 0, hand, tickDelta);
 }
+constexpr unsigned kDebugSourceApplication = 0x824A; // GL_DEBUG_SOURCE_APPLICATION
+[[nodiscard]] const char* stageDebugName(mod::WorldRenderStage stage) {
+ switch(stage) {
+ case mod::WorldRenderStage::Sky:
+  return "sky";
+ case mod::WorldRenderStage::Stars:
+  return "stars";
+ case mod::WorldRenderStage::OpaqueTerrain:
+  return "terrainOpaque";
+ case mod::WorldRenderStage::Entities:
+  return "entities";
+ case mod::WorldRenderStage::LitParticles:
+  return "particlesLit";
+ case mod::WorldRenderStage::Particles:
+  return "particles";
+ case mod::WorldRenderStage::TranslucentTerrain:
+  return "terrainTranslucent";
+ case mod::WorldRenderStage::Weather:
+  return "weather";
+ case mod::WorldRenderStage::Clouds:
+  return "clouds";
+ case mod::WorldRenderStage::Hand:
+  return "hand";
+ case mod::WorldRenderStage::Framebuffer:
+  return "framebuffer";
+ }
+ return "unknown";
+}
+// Names the stage's draws for an external GPU profiler (Nsight, RenderDoc). The engine
+// never reads these back, so a driver without KHR_debug just gets no markers; the
+// shadow pass is labelled apart because it replays the same stages a second time.
+class DebugGroupScope {
+public:
+ DebugGroupScope(const char* name, bool shadowPass) {
+  if(!gl::GLCore::debugGroupSupported) {
+   return;
+  }
+  active_ = true;
+  if(shadowPass) {
+   char buffer[64];
+   const int written = std::snprintf(buffer, sizeof(buffer), "shadow/%s", name);
+   gl::GLCore::pushDebugGroup(kDebugSourceApplication, 0, written > 0 ? written : -1, buffer);
+   return;
+  }
+  gl::GLCore::pushDebugGroup(kDebugSourceApplication, 0, -1, name);
+ }
+ DebugGroupScope(const DebugGroupScope&) = delete;
+ DebugGroupScope& operator=(const DebugGroupScope&) = delete;
+ ~DebugGroupScope() {
+  if(active_) {
+   gl::GLCore::popDebugGroup();
+  }
+ }
+
+private:
+ bool active_ = false;
+};
 template <typename Draw>
 bool renderWorldStage(const AtmosphereContext& context,
                       float tickDelta,
@@ -851,6 +918,7 @@ bool renderWorldStage(const AtmosphereContext& context,
   mod::runtime::luaHookWorldRender(event);
  }
  if(enabled && !event.cancelVanilla) {
+  const DebugGroupScope debugGroup(stageDebugName(stage), shadowPass);
   if constexpr(requires { draw(event); }) {
    draw(event);
   } else {
@@ -911,7 +979,7 @@ bool GameRenderer::renderWorldToFbo(unsigned int fbo,
   chunkCullGuard.emplace(*worldRenderer);
  }
  {
-  gl::GLCore::bindFramebuffer(gl::framebuffer::Framebuffer, fbo);
+  gl::GLCore::bindFramebufferTracked(gl::framebuffer::Framebuffer, fbo);
   core::viewport(0, 0, width, height);
  }
  const PackDefinition& packDef = packDefinition();
@@ -939,7 +1007,7 @@ bool GameRenderer::renderWorldToFbo(unsigned int fbo,
  frameCamera_ = prevFrameCamera;
  core::setCameraFrame(prevPublishedCamera);
  {
-  gl::GLCore::bindFramebuffer(gl::framebuffer::Framebuffer, static_cast<unsigned>(prevFbo));
+  gl::GLCore::bindFramebufferTracked(gl::framebuffer::Framebuffer, static_cast<unsigned>(prevFbo));
   core::viewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
  }
  return true;

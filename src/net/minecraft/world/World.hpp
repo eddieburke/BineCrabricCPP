@@ -96,10 +96,27 @@ class World : public IEntityWorld {
  [[nodiscard]] std::uint64_t getTime() const noexcept {
   return time_;
  }
+ // The resolved celestial phase: whatever the frame actually drew. Lighting, fog,
+ // clouds and the sunset fan all read this so they cannot disagree with the sky.
+ // Falls back to the clock phase when nothing has claimed it (servers, no renderer).
  [[nodiscard]] float getTime(float partialTicks) const;
+ // The clock phase before any claim: simulation time folded through the Time option.
+ // Only the resolver (GameRenderer::updateSunLight) should need this.
+ [[nodiscard]] float getClockTimeOfDay(float partialTicks) const;
  // 0 Default, 1 Day, 2 Night — client visual override for celestial phase.
  [[nodiscard]] int clientTimeMode() const noexcept {
   return clientTimeMode_;
+ }
+ // Celestial phase ownership. The Time option is the base provider; a mod that sets
+ // override_phase on celestial_state takes the clock over for as long as it stays on,
+ // and the Time button defers to it rather than fighting it.
+ void claimCelestialPhase(float angle, const std::string& owner);
+ void releaseCelestialPhase();
+ [[nodiscard]] bool celestialPhaseClaimed() const noexcept {
+  return celestialPhaseClaimed_;
+ }
+ [[nodiscard]] const std::string& celestialPhaseOwner() const noexcept {
+  return celestialPhaseOwner_;
  }
  void applyWorldSettings(bool weatherEnabled, int autoSaveTicks, int timeMode);
  void setChunkResidentRadius(int radiusChunks);
@@ -232,7 +249,13 @@ class World : public IEntityWorld {
  [[nodiscard]] Entity* findEntity(int id) const noexcept;
  void reassignEntityId(Entity& entity, int id);
  [[nodiscard]] std::vector<Entity*> getEntities(Entity* except, const Box& box);
+ // Buffer-filling form for per-tick callers; `result` is cleared first.
+ void getEntities(Entity* except, const Box& box, std::vector<Entity*>& result);
  [[nodiscard]] std::vector<Box> getEntityCollisions(Entity* except, const Box& box);
+ void getEntityCollisions(Entity* except, const Box& box, std::vector<Box>& result);
+ // Short-circuits on the first intersecting box; for the callers that only asked
+ // whether anything collides and threw the collected list away.
+ [[nodiscard]] bool hasEntityCollision(Entity* except, const Box& box);
  [[nodiscard]] std::vector<Box> getBlockCollisions(const Box& box) const;
  [[nodiscard]] bool isAnyBlockInBox(const Box& box) const;
  [[nodiscard]] bool shouldSuffocate(int x, int y, int z) const override;
@@ -391,6 +414,9 @@ class World : public IEntityWorld {
  int chunkResidentRadiusChunks_ = 15;
  WorldWeather weather_;
  int clientTimeMode_ = 0;
+ bool celestialPhaseClaimed_ = false;
+ float celestialPhase_ = 0.0f;
+ std::string celestialPhaseOwner_;
  WorldProperties properties_{};
  bool hasStorageBackedProperties_ = false;
  std::unique_ptr<ChunkSource> chunkCache_;
@@ -398,6 +424,8 @@ class World : public IEntityWorld {
   chunkCache_ = std::move(cache);
  }
  std::vector<Entity*> entities_;
+ // Reused by hasEntityCollision so the per-entity-per-tick query allocates nothing.
+ std::vector<Entity*> collisionEntityScratch_;
  ScheduledTickQueue scheduledTicks_;
  int lcgBlockSeed_ = 0;
  int ambientSoundCounter_ = 0;
