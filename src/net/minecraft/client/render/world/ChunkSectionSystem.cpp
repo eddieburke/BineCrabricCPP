@@ -503,20 +503,26 @@ void cullByOcclusionWalk(chunk::ChunkBuilder* start,
  // so a plane test on it decides nothing and failing it would cull the world.
  (void)start->occlusion.enter(stamp, -1);
  start->visibleStamp = stamp;
+ if(!start->hasNoGeometry()) {
+  out.push_back(start);
+ }
  queue.push_back({start, -1});
  for(std::size_t head = 0; head < queue.size(); ++head) {
   const OcclusionQueueEntry entry = queue[head];
   chunk::ChunkBuilder* node = entry.section;
-  if(entry.entryFace < 0 && !node->hasNoGeometry()) {
-   out.push_back(node);
-  }
   for(int face = 0; face < 6; ++face) {
    if(!node->occlusion.claimExit(stamp, entry.entryFace, face, node->built)) {
     continue;
    }
    chunk::ChunkBuilder* neighbor = node->neighbors[face];
-   const int neighborEntryFace = face ^ 1;
-   if(neighbor == nullptr || !neighbor->occlusion.enter(stamp, neighborEntryFace)) {
+   if(neighbor == nullptr) {
+    continue;
+   }
+   constexpr std::uint64_t allConnections = (1ULL << 36) - 1;
+   const bool fullyOpen = !neighbor->built ||
+                          (neighbor->occlusion.visBits & allConnections) == allConnections;
+   const int neighborEntryFace = fullyOpen ? -1 : face ^ 1;
+   if(!neighbor->occlusion.enter(stamp, neighborEntryFace)) {
     continue;
    }
    const bool alreadyVisible = neighbor->visibleIn(stamp);

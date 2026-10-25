@@ -170,8 +170,6 @@ void WorldRenderer::buildTerrainDrawLists(const Vec3d& camPos) {
   terrainDrawLists_[static_cast<std::size_t>(layer)].regionCount = 0;
   modMeshDraws_[static_cast<std::size_t>(layer)].clear();
  }
- std::array<chunk::TerrainRegion*, chunk::terrain_layer::Count> lastRegions{};
- std::array<std::size_t, chunk::terrain_layer::Count> lastRegionIndices{};
  const auto& visible = chunkSections_.visibleSections();
  for(std::size_t visibleIndex = 0; visibleIndex < visible.size(); ++visibleIndex) {
   chunk::ChunkBuilder* chunk = visible[visibleIndex];
@@ -184,18 +182,13 @@ void WorldRenderer::buildTerrainDrawLists(const Vec3d& camPos) {
    const chunk::TerrainAllocation& allocation = chunk->terrainAllocation(layer);
    if(region != nullptr && allocation.valid()) {
     TerrainDrawList& list = terrainDrawLists_[layerIndex];
-    std::size_t regionIndex = lastRegionIndices[layerIndex];
-    if(region != lastRegions[layerIndex]) {
-     regionIndex = 0;
-     while(regionIndex < list.regionCount && list.regions[regionIndex].region != region) ++regionIndex;
-     if(regionIndex == list.regionCount) {
-      ++list.regionCount;
-      if(regionIndex == list.regions.size()) list.regions.push_back({});
-      list.regions[regionIndex].region = region;
-      list.regions[regionIndex].allocations.clear();
-     }
-     lastRegions[layerIndex] = region;
-     lastRegionIndices[layerIndex] = regionIndex;
+    std::size_t regionIndex = region->drawListIndices[layerIndex];
+    if(regionIndex >= list.regionCount || list.regions[regionIndex].region != region) {
+     regionIndex = list.regionCount++;
+     if(regionIndex == list.regions.size()) list.regions.push_back({});
+     list.regions[regionIndex].region = region;
+     list.regions[regionIndex].allocations.clear();
+     region->drawListIndices[layerIndex] = regionIndex;
     }
     list.regions[regionIndex].allocations.push_back(&allocation);
    }

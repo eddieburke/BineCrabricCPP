@@ -33,3 +33,32 @@ RULES FOR AGENTS.md
 # Shaderpacks kept local-only; only the embedded vanilla pack is tracked (src/.../glsl/vanilla)
 shaders/*
 tools/
+
+**/AGENTS.md
+**/agents.md
+**/RULES FOR AGENTS.md
+CURRENT_STATE.md
+artifacts/
+.vs/
+.idea/
+.cache/
+.vscode/
+.codex/
+.cmake/
+CMakeFiles/
+CMakeCache.txt
+CMakeUserPresets.json
+CTestTestfile.cmake
+cmake_install.cmake
+compile_commands.json
+build.ninja
+.ninja_deps
+.ninja_log
+*.obj
+*.pdb
+*.ilk
+*.dmp
+*.nsys-rep
+*.sqlite
+*.sqlite3
+*.user

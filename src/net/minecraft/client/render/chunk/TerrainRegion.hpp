@@ -31,6 +31,7 @@ class TerrainRegion {
  bool upload(int layer, TerrainAllocation& allocation, std::span<const TessellatorVertex> vertices);
  void release(int layer, TerrainAllocation& allocation) noexcept;
  int drawLayer(int layer, std::span<const TerrainAllocation* const> allocations);
+ std::array<std::size_t, terrain_layer::Count> drawListIndices{};
 
  private:
  static constexpr int kMinSizeClass = 8;
