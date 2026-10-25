@@ -553,16 +553,14 @@ local function local_sidereal_time_rad(utc_millis, longitude_deg)
   local gmst = normalize_deg(280.460618375 + 360.9856473662860 * (jd - J2000_JD) +
     0.000387933 * t2 - t3 / 38710000.0)
 
-  local dpsi_asec = nutation_iau2000(t)
-  local eps0 = mean_obliquity_iau2006(t) * ARCSEC
-  local eq_eqox = dpsi_asec * ARCSEC * math.cos(eps0)
+  local _, dpsi, eps0 = true_equator(t)
+  local eq_eqox = dpsi * math.cos(eps0)
 
   return (gmst + eq_eqox * RAD_TO_DEG + (longitude_deg or 0.0)) * DEG
 end
 
-local function horizontal_from_ra_dec(ra, dec, utc_millis, latitude_deg, longitude_deg)
+local function horizontal_from_sidereal(sidereal, ra, dec, latitude_deg)
   local latitude = clamp(latitude_deg or 45.0, -90.0, 90.0) * DEG
-  local sidereal = local_sidereal_time_rad(utc_millis, longitude_deg or 0.0)
   local hour_angle = normalize_rad(sidereal - ra)
   local sin_altitude = clamp(
     math.sin(latitude) * math.sin(dec) +
@@ -575,8 +573,12 @@ local function horizontal_from_ra_dec(ra, dec, utc_millis, latitude_deg, longitu
   return azimuth, apparent_altitude, hour_angle, geometric_altitude
 end
 
-local function moon_topocentric(ra, dec, dist_km, utc_millis, latitude_deg, longitude_deg)
-  local sidereal = local_sidereal_time_rad(utc_millis, longitude_deg or 0.0)
+local function horizontal_from_ra_dec(ra, dec, utc_millis, latitude_deg, longitude_deg)
+  return horizontal_from_sidereal(
+    local_sidereal_time_rad(utc_millis, longitude_deg or 0.0), ra, dec, latitude_deg)
+end
+
+local function moon_topocentric(sidereal, ra, dec, dist_km, latitude_deg)
   local lat = clamp(latitude_deg or 45.0, -90.0, 90.0) * DEG
   local geodetic_lat = math.atan(0.99664719 * math.tan(lat))
 
@@ -691,21 +693,43 @@ end
 
 function solar.moon_azimuth_altitude(utc_millis, settings)
   local ra, dec, dist = lunar_position(utc_millis)
-  local topo_ra, topo_dec = moon_topocentric(ra, dec, dist, utc_millis, settings.latitude, settings.longitude)
-  local azimuth, altitude = horizontal_from_ra_dec(
-    topo_ra, topo_dec, utc_millis, settings.latitude, settings.longitude)
+  local sidereal = local_sidereal_time_rad(utc_millis, settings.longitude)
+  local topo_ra, topo_dec = moon_topocentric(sidereal, ra, dec, dist, settings.latitude)
+  local azimuth, altitude = horizontal_from_sidereal(sidereal, topo_ra, topo_dec, settings.latitude)
   return azimuth, altitude
 end
 
+-- Equatorial positions drift by arcseconds a second, while local sidereal time moves
+-- 15 arcseconds a second. Splitting them means the expensive series (nutation, VSOP,
+-- the 153-term lunar sum) run about once a second while the sky still tracks smoothly
+-- every frame through the hour angle.
+local slow_cache
+local slow_cache_key
+
+local function slow_astro(observer_millis)
+  local key = math.floor(observer_millis / 1000.0)
+  if slow_cache ~= nil and slow_cache_key == key then
+    return slow_cache
+  end
+  local state = slow_cache or {}
+  local jd = julian_day(observer_millis)
+  state.sun_ra, state.sun_dec = solar_ra_dec(observer_millis)
+  state.sun_lon_deg = math.deg(solar_position(jd, julian_centuries(jd)))
+  state.moon_ra, state.moon_dec, state.moon_dist, state.moon_lon = lunar_position(observer_millis)
+  slow_cache = state
+  slow_cache_key = key
+  return state
+end
+
+-- Reused so a per-frame sample does not allocate; callers only ever read it.
+local frame_scratch = {}
+
 function solar.build_frame(settings, partial_ticks, utc_millis)
   local observer_millis = solar.resolve_observer_millis(settings, utc_millis)
-  local right_ascension, declination = solar_ra_dec(observer_millis)
-  local sun_azimuth, sun_altitude, hour_angle, geometric_altitude = horizontal_from_ra_dec(
-    right_ascension,
-    declination,
-    observer_millis,
-    settings.latitude,
-    settings.longitude)
+  local astro = slow_astro(observer_millis)
+  local sidereal = local_sidereal_time_rad(observer_millis, settings.longitude)
+  local sun_azimuth, sun_altitude, hour_angle, geometric_altitude = horizontal_from_sidereal(
+    sidereal, astro.sun_ra, astro.sun_dec, settings.latitude)
 
   local ha_unwrapped = hour_angle % TWO_PI
   if ha_unwrapped < 0.0 then ha_unwrapped = ha_unwrapped + TWO_PI end
@@ -714,19 +738,16 @@ function solar.build_frame(settings, partial_ticks, utc_millis)
   local zenith_deg = clamp(90.0 - sun_altitude, 0.0, 180.0)
   local sun_angle = zenith_deg * DEG
 
-  local moon_ra, moon_dec, moon_dist, moon_lon, moon_lat = lunar_position(observer_millis)
-  local topo_moon_ra, topo_moon_dec = moon_topocentric(moon_ra, moon_dec, moon_dist,
-    observer_millis, settings.latitude, settings.longitude)
-  local moon_azimuth, moon_altitude, _, moon_geometric_altitude = horizontal_from_ra_dec(
-    topo_moon_ra, topo_moon_dec, observer_millis, settings.latitude, settings.longitude)
+  local moon_dist = astro.moon_dist
+  local topo_moon_ra, topo_moon_dec = moon_topocentric(
+    sidereal, astro.moon_ra, astro.moon_dec, moon_dist, settings.latitude)
+  local moon_azimuth, moon_altitude, _, moon_geometric_altitude = horizontal_from_sidereal(
+    sidereal, topo_moon_ra, topo_moon_dec, settings.latitude)
 
   local moon_zenith_deg = clamp(90.0 - moon_altitude, 0.0, 180.0)
   local moon_angle = moon_zenith_deg * DEG
 
-  local jd = julian_day(observer_millis)
-  local sun_lon_rad = solar_position(jd, julian_centuries(jd))
-  local sun_lon_deg = math.deg(sun_lon_rad)
-  local phase_deg = normalize_deg(moon_lon - sun_lon_deg)
+  local phase_deg = normalize_deg(astro.moon_lon - astro.sun_lon_deg)
   local illuminated_fraction = (1.0 - math.cos(phase_deg * DEG)) * 0.5
   local moon_phase = phase_deg / 360.0
 
@@ -735,43 +756,43 @@ function solar.build_frame(settings, partial_ticks, utc_millis)
   local moon_direction_x, moon_direction_y, moon_direction_z =
     direction_from_azimuth_altitude(moon_azimuth, moon_altitude)
 
-  local sidereal_turns = local_sidereal_time_rad(observer_millis, settings.longitude) / TWO_PI
+  local sidereal_turns = sidereal / TWO_PI
   sidereal_turns = sidereal_turns - math.floor(sidereal_turns)
 
   local solar_time_hours = (day_tick / 1000.0 + 6.0) % 24.0
   local zone = solar.time_zone_info(settings)
 
-  return {
-    utc_millis = observer_millis,
-    day_tick = day_tick,
-    partial_ticks = partial_ticks or 0.0,
-    celestial = solar.vanilla_celestial_from_day_tick(day_tick),
-    skydome_yaw_deg = normalize_signed_deg(180.0 - sun_azimuth),
-    color_cycle_phase = solar.color_cycle_phase_from_day_tick(day_tick),
-    sun_angle = sun_angle,
-    moon_angle = moon_angle,
-    sun_azimuth_deg = sun_azimuth,
-    sun_altitude_deg = sun_altitude,
-    sun_geometric_altitude_deg = geometric_altitude,
-    sun_direction_x = sun_direction_x,
-    sun_direction_y = sun_direction_y,
-    sun_direction_z = sun_direction_z,
-    moon_azimuth_deg = moon_azimuth,
-    moon_altitude_deg = moon_altitude,
-    moon_geometric_altitude_deg = moon_geometric_altitude,
-    moon_distance_earth_radii = moon_dist / EARTH_RADIUS_KM,
-    moon_illumination = illuminated_fraction,
-    moon_phase = moon_phase,
-    moon_direction_x = moon_direction_x,
-    moon_direction_y = moon_direction_y,
-    moon_direction_z = moon_direction_z,
-    solar_hour_angle_rad = hour_angle,
-    sidereal_turns = sidereal_turns,
-    solar_time_hours = solar_time_hours,
-    is_daylight = sun_altitude > -0.833,
-    twilight = 1.0 - smoothstep(-18.0, 0.0, sun_altitude),
-    time_zone_offset_minutes = zone.offset_minutes,
-  }
+  local frame = frame_scratch
+  frame.utc_millis = observer_millis
+  frame.day_tick = day_tick
+  frame.partial_ticks = partial_ticks or 0.0
+  frame.celestial = solar.vanilla_celestial_from_day_tick(day_tick)
+  frame.skydome_yaw_deg = normalize_signed_deg(180.0 - sun_azimuth)
+  frame.color_cycle_phase = solar.color_cycle_phase_from_day_tick(day_tick)
+  frame.sun_angle = sun_angle
+  frame.moon_angle = moon_angle
+  frame.sun_azimuth_deg = sun_azimuth
+  frame.sun_altitude_deg = sun_altitude
+  frame.sun_geometric_altitude_deg = geometric_altitude
+  frame.sun_direction_x = sun_direction_x
+  frame.sun_direction_y = sun_direction_y
+  frame.sun_direction_z = sun_direction_z
+  frame.moon_azimuth_deg = moon_azimuth
+  frame.moon_altitude_deg = moon_altitude
+  frame.moon_geometric_altitude_deg = moon_geometric_altitude
+  frame.moon_distance_earth_radii = moon_dist / EARTH_RADIUS_KM
+  frame.moon_illumination = illuminated_fraction
+  frame.moon_phase = moon_phase
+  frame.moon_direction_x = moon_direction_x
+  frame.moon_direction_y = moon_direction_y
+  frame.moon_direction_z = moon_direction_z
+  frame.solar_hour_angle_rad = hour_angle
+  frame.sidereal_turns = sidereal_turns
+  frame.solar_time_hours = solar_time_hours
+  frame.is_daylight = sun_altitude > -0.833
+  frame.twilight = 1.0 - smoothstep(-18.0, 0.0, sun_altitude)
+  frame.time_zone_offset_minutes = zone.offset_minutes
+  return frame
 end
 
 return solar

@@ -62,10 +62,15 @@ local function realtime_active()
   return config.enabled == true
 end
 
+-- One sample per display frame, shared by every hook in that frame. build_frame keeps
+-- the expensive series on a slower clock of its own, so this only pays for the hour
+-- angle and the horizontal transforms.
+local SAMPLE_INTERVAL_MS = 16.0
+
 local function current_solar_frame(partial_ticks)
   local now = minecraft.time.utc_millis()
   if solar_frame_cache == nil or now < solar_frame_cache.sample_millis or
-      now - solar_frame_cache.sample_millis >= 50.0 then
+      now - solar_frame_cache.sample_millis >= SAMPLE_INTERVAL_MS then
     solar_frame_cache = solar.build_frame(config, partial_ticks or 0.0, now)
     solar_frame_cache.sample_millis = now
   end
