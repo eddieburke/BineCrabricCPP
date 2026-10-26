@@ -448,6 +448,7 @@ void InGameHud::render(float tickDelta, bool screenOpen, int mouseX, int mouseY)
  minecraft->textureManager.bindTexture(minecraft->textureManager.getTextureId("/gui/icons.png"));
   {
    const render::RenderPassScope passScope(render::RenderType::guiTextured());
+   core::blendFunc(0x0307, 0x0301);
    const float* c = core::constColor();
    render::Tessellator& tess = render::Tessellator::INSTANCE;
    tess.startQuads();
