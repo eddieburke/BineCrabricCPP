@@ -15,6 +15,20 @@ class LightingEngineTestAccess {
   static void setPendingWork(LightingEngine& lighting, std::size_t count) {
    lighting.pendingCount_.store(count, std::memory_order_relaxed);
   }
+  static void hold(LightingEngine& lighting, LightType type, int chunkX, int chunkZ) {
+   const std::lock_guard lock(lighting.queueMutex_);
+   LightingEngine::Box box{type, chunkX * 16, 0, chunkZ * 16, chunkX * 16 + 15, 127, chunkZ * 16 + 15};
+   lighting.activeBoxes_.push_back(box);
+   lighting.trackBoxLocked(box, true);
+   lighting.pendingCount_.store(lighting.activeBoxes_.size());
+  }
+  static void finish(LightingEngine& lighting, LightType type, int chunkX, int chunkZ) {
+   const std::lock_guard lock(lighting.queueMutex_);
+   lighting.releaseClaimedBoxLocked({type, chunkX * 16, 0, chunkZ * 16, chunkX * 16 + 15, 127, chunkZ * 16 + 15});
+  }
+  static void publish(LightingEngine& lighting, LightingEngine::DirtyRegion region) {
+   lighting.publishDirtyRegion(region);
+  }
 };
 namespace test {
 TEST(LightingChannel, ComputeTaskPublishesAndBoundedDrainConsumesDirtyRegion) {
@@ -50,19 +64,93 @@ TEST(LightingChannel, ComputeTaskPublishesAndBoundedDrainConsumesDirtyRegion) {
  EXPECT_FALSE(lighting.hasDirtyRegions());
  lighting.stop();
 }
-TEST(LightingChannel, FarRegionsWaitUntilAllLightingWorkSettles) {
+TEST(LightingChannel, FarRegionsPublishWhileUnrelatedLightingRemainsBusy) {
  world::light::UnifiedLightRegistry registry;
  LightingEngine lighting(registry);
  LightingEngineTestAccess::stageFarRegion(lighting, LightingEngine::DirtyRegion{128, 64, 128, 128, 64, 128});
  LightingEngineTestAccess::setPendingWork(lighting, 1);
- EXPECT_TRUE(lighting.drainDirtyRegions(1).empty());
- EXPECT_TRUE(lighting.hasDirtyRegions());
- LightingEngineTestAccess::setPendingWork(lighting, 0);
  const std::vector<LightingEngine::DirtyRegion> drained = lighting.drainDirtyRegions(1);
  ASSERT_EQ(drained.size(), 1U);
  EXPECT_EQ(drained.front().minX, 128);
+ EXPECT_TRUE(lighting.busy());
  EXPECT_FALSE(lighting.hasDirtyRegions());
  lighting.stop();
+}
+TEST(LightingChannel, ColumnCompletionWaitsForBothChannelsAndPropagationButNotOtherColumns) {
+ world::light::UnifiedLightRegistry registry;
+ LightingEngine lighting(registry);
+ lighting.awaitColumn(-1, 0);
+ lighting.awaitColumn(80, 0);
+ LightingEngineTestAccess::hold(lighting, LightType::Sky, -1, 0);
+ LightingEngineTestAccess::hold(lighting, LightType::Block, -1, 0);
+ LightingEngineTestAccess::hold(lighting, LightType::Block, 80, 0);
+ EXPECT_TRUE(lighting.drainReadyColumns(10).empty());
+ LightingEngineTestAccess::finish(lighting, LightType::Sky, -1, 0);
+ EXPECT_TRUE(lighting.drainReadyColumns(10).empty());
+ LightingEngineTestAccess::hold(lighting, LightType::Sky, -1, 0);
+ LightingEngineTestAccess::finish(lighting, LightType::Block, -1, 0);
+ EXPECT_TRUE(lighting.drainReadyColumns(10).empty());
+ LightingEngineTestAccess::finish(lighting, LightType::Sky, -1, 0);
+ const auto ready = lighting.drainReadyColumns(10);
+ ASSERT_EQ(ready.size(), 1u);
+ EXPECT_EQ(ready[0].x, -1);
+ EXPECT_EQ(ready[0].z, 0);
+ EXPECT_TRUE(lighting.busy());
+ EXPECT_TRUE(lighting.drainReadyColumns(10).empty());
+ LightingEngineTestAccess::finish(lighting, LightType::Block, 80, 0);
+ const auto far = lighting.drainReadyColumns(10);
+ ASSERT_EQ(far.size(), 1u);
+ EXPECT_EQ(far[0].x, 80);
+ EXPECT_FALSE(lighting.busy());
+}
+TEST(LightingChannel, UnchangedLocalWorkCompletesDuringAnUnrelatedFarBacklog) {
+ world::light::UnifiedLightRegistry registry;
+ LightingEngine lighting(registry);
+ Chunk chunk(0, 0);
+ lighting.registerChunk(&chunk);
+ lighting.awaitColumn(0, 0);
+ LightingEngineTestAccess::hold(lighting, LightType::Block, 80, 0);
+ lighting.push(LightType::Block, 8, 64, 8, 8, 64, 8, false);
+ std::vector<LightingEngine::ReadyColumn> ready;
+ const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+ do {
+  ready = lighting.drainReadyColumns(1);
+  std::this_thread::yield();
+ } while(ready.empty() && std::chrono::steady_clock::now() < deadline);
+ EXPECT_EQ(ready.size(), 1u);
+ EXPECT_TRUE(lighting.busy());
+ EXPECT_FALSE(lighting.hasDirtyRegions());
+ LightingEngineTestAccess::finish(lighting, LightType::Block, 80, 0);
+ lighting.stop();
+ lighting.unregisterChunk(&chunk);
+}
+TEST(LightingChannel, ReadyColumnsAreBoundedAndPrioritizeTheCamera) {
+ world::light::UnifiedLightRegistry registry;
+ LightingEngine lighting(registry);
+ lighting.setCameraPosition(-1, 64, 0);
+ for(const int x : {100, -1, 50}) lighting.awaitColumn(x, 0);
+ EXPECT_TRUE(lighting.drainReadyColumns(0).empty());
+ const auto first = lighting.drainReadyColumns(1);
+ ASSERT_EQ(first.size(), 1u);
+ EXPECT_EQ(first[0].x, -1);
+ const auto rest = lighting.drainReadyColumns(20);
+ ASSERT_EQ(rest.size(), 2u);
+ EXPECT_EQ(rest[0].x, 50);
+ EXPECT_EQ(rest[1].x, 100);
+}
+TEST(LightingChannel, StreamingDirtyRegionsStayLocalAndDoNotLoseCoverageAtTheMergeLimit) {
+ world::light::UnifiedLightRegistry registry;
+ LightingEngine lighting(registry);
+ for(int x = 0; x < 1000; ++x)
+  LightingEngineTestAccess::publish(lighting, {x * 16, 0, 0, x * 16 + 15, 127, 15});
+ const auto regions = lighting.drainDirtyRegions(4096);
+ int width = 0;
+ for(const auto& region : regions) {
+  EXPECT_LE(region.maxX - region.minX + 1, 64);
+  width += region.maxX - region.minX + 1;
+ }
+ EXPECT_EQ(width, 16000);
+ EXPECT_FALSE(lighting.hasDirtyRegions());
 }
 TEST(LightingChannel, CornerUpdateNeedsCardinalChunksOnly) {
  util::concurrent::ThreadCoordinator::instance().configure(8, 2, {.maxComputeThreads = 8});

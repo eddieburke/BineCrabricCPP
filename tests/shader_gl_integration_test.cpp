@@ -33,7 +33,6 @@
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/chunk/ChunkBuilder.hpp"
-#include "net/minecraft/client/render/chunk/TerrainLod.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderer.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/shaders/IncludeResolver.hpp"
@@ -359,7 +358,7 @@ TEST_F(ShaderGlIntegrationTest, CachedMeshColorOverrideReplacesStoredVertexColor
  EXPECT_GT(pixel[3], 250);
  client::render::core::setActiveProgram(nullptr);
 }
-TEST_F(ShaderGlIntegrationTest, TerrainLodArenaUploadPreservesRasterizedCoverageAndHoles) {
+TEST_F(ShaderGlIntegrationTest, TerrainArenaUploadPreservesRasterizedCoverageAndHoles) {
  using namespace client::render;
  client::gl::ShaderProgram program;
  ASSERT_TRUE(program.compile(
@@ -382,29 +381,22 @@ TEST_F(ShaderGlIntegrationTest, TerrainLodArenaUploadPreservesRasterizedCoverage
   }
  }
  auto detailedMesh = tess.takeMesh();
- auto distantMesh = detailedMesh;
- ASSERT_GT(chunk::simplifyTerrainMesh(distantMesh, 3, std::vector<std::uint8_t>(255, 1)), 0u);
  std::vector<net::minecraft::block::entity::BlockEntity*> entities;
  chunk::TerrainRegion region(0, 0, 0);
  chunk::ChunkBuilder section(nullptr, entities, 0, 0, 0);
  section.setTerrainRegion(region);
  region.addSection(&section);
- std::array<unsigned char, 64 * 64 * 4> nearPixels{}, farPixels{};
+ std::array<unsigned char, 64 * 64 * 4> pixels{};
  core::setActiveProgram(&program);
  core::viewport(0, 0, 64, 64);
  const std::array<const chunk::TerrainAllocation*, 1> allocations{&section.terrainAllocation(0)};
- const auto render = [&](TessellatorMesh& mesh, auto& pixels) {
-  EXPECT_TRUE(region.upload(0, section.terrainAllocations_[0], mesh.vertices));
+  EXPECT_TRUE(region.upload(0, section.terrainAllocations_[0], detailedMesh.vertices));
   ::glClearColor(0, 0, 0, 1);
   ::glClear(client::gl::attrib::ColorBufferBit);
   EXPECT_GT(region.drawLayer(0, allocations), 0);
   ::glReadPixels(0, 0, 64, 64, client::gl::pixel::Rgba, client::gl::pixel::UnsignedByte, pixels.data());
- };
- render(detailedMesh, nearPixels);
- render(distantMesh, farPixels);
- EXPECT_EQ(nearPixels, farPixels);
- EXPECT_EQ(farPixels[(30 * 64 + 30) * 4], 0);
- EXPECT_EQ(farPixels[(10 * 64 + 10) * 4], 255);
+ EXPECT_EQ(pixels[(30 * 64 + 30) * 4], 0);
+ EXPECT_EQ(pixels[(10 * 64 + 10) * 4], 255);
  EXPECT_EQ(::glGetError(), 0u);
  core::setActiveProgram(nullptr);
 }
@@ -460,7 +452,7 @@ TEST_F(ShaderGlIntegrationTest, ComputeImageBindingsUseCurrentReadSide) {
  EXPECT_NE(targets.readTexture(0), first);
  targets.destroy();
 }
-TEST_F(ShaderGlIntegrationTest, ExplicitTrueFlipDoesNotCancelWrittenTargetFlip) {
+TEST_F(ShaderGlIntegrationTest, ExplicitTrueFlipsWrittenTargetTwiceLikeIris) {
  client::render::ColorTargets targets;
  ASSERT_TRUE(targets.ensure(4, 4,
                             {client::render::ColorFormat::Rgba8,
@@ -473,8 +465,8 @@ TEST_F(ShaderGlIntegrationTest, ExplicitTrueFlipDoesNotCancelWrittenTargetFlip) 
  definition.flips["composite2.colortex0"] = true;
  definition.flips["composite2.colortex1"] = true;
  targets.applyPassFlips(definition, "composite2", {"colortex0"});
- EXPECT_EQ(targets.readTexture(0), firstWrite);
- EXPECT_NE(targets.readTexture(0), firstRead);
+ EXPECT_EQ(targets.readTexture(0), firstRead);
+ EXPECT_NE(targets.readTexture(0), firstWrite);
  EXPECT_EQ(targets.readTexture(1), secondWrite);
  targets.destroy();
 }
@@ -709,6 +701,8 @@ TEST_F(ShaderGlIntegrationTest, ReplicatedDynamicAtlasTilesUpdateEveryMipmapLeve
  ReplicatedDynamicTexture dynamic(texture);
  textureManager.addDynamicTexture(&dynamic);
  textureManager.tick();
+ EXPECT_EQ(textureManager.terrainTileColor(34), (std::array<std::uint8_t, 4>{17, 83, 149, 255}));
+ EXPECT_FALSE(textureManager.terrainTileColor(35).has_value());
  client::render::core::bindTexture(texture);
  for(int level = 0; level <= 4; ++level) {
   const int dimension = 256 >> level;

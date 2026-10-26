@@ -45,7 +45,10 @@ class GameOptions {
  bool entityShadows = true;
  float chunkUpdates = 0.5f;
  bool chunkUpdatesDynamic = false;
- bool terrainLod = true;
+ bool distantTerrain = true;
+ int lodNativeRadius = 16;
+ int lodQuality = 1;
+ int lodMemoryMiB = 256;
  int preloadedChunks = 0;
  float entityDistanceScale = 1.0f;
  // Details

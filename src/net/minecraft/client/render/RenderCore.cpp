@@ -20,6 +20,7 @@
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 #include "net/minecraft/client/render/VertexAbi.hpp"
+#include "net/minecraft/client/render/QuadIndexBuffer.hpp"
 #include "net/minecraft/client/render/uniforms/Uniforms.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
@@ -1350,6 +1351,7 @@ void releaseGlResources() {
  g_fullscreenVbo.reset();
  g_vao.reset();
  g_streamVbo.reset();
+ quad_index::destroy();
  g_fullscreenReady = false;
  g_triedFullscreen = false;
  invalidateAttribCache();

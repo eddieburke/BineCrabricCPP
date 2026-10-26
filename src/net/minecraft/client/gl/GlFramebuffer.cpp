@@ -8,6 +8,7 @@ GlFramebuffer::~GlFramebuffer() {
 }
 void GlFramebuffer::destroy() {
   if(id_ != 0) {
+    GLCore::forgetFramebuffer(id_);
     GLCore::deleteFramebuffers(1, &id_);
     id_ = 0;
   }

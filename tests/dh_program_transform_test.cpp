@@ -14,8 +14,11 @@
 #include "net/minecraft/client/gl/ProgramCache.hpp"
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
+#include "net/minecraft/client/render/targets/RenderTargets.hpp"
 #include "net/minecraft/client/render/pipeline/Instance.hpp"
 #include "net/minecraft/client/render/shaderpack/Loader.hpp"
+#include "net/minecraft/client/render/shaderpack/Catalog.hpp"
 #include "net/minecraft/client/render/shaderpack/VanillaPackEmbed.hpp"
 #include "net/minecraft/client/render/shaders/Compiler.hpp"
 #include "net/minecraft/client/render/shaders/IncludeResolver.hpp"
@@ -196,8 +199,125 @@ TEST_F(DhProgramTransform, VanillaEmbeddedProgramsCompile) {
   const auto log = [&failure](PackInstance&, const std::string& message, ::net::minecraft::util::logging::LogLevel) {
    failure += message + "\n";
   };
-  EXPECT_NE(PackCompiler::compile(pack, "dh_terrain", log), nullptr) << failure;
-  EXPECT_NE(PackCompiler::compile(pack, "dh_water", log), nullptr) << failure;
+  if(distantHorizons) {
+   EXPECT_NE(PackCompiler::compile(pack, "dh_terrain", log), nullptr) << failure;
+   EXPECT_NE(PackCompiler::compile(pack, "dh_water", log), nullptr) << failure;
+  } else {
+   EXPECT_EQ(PackCompiler::compile(pack, "dh_terrain", log), nullptr);
+   EXPECT_EQ(PackCompiler::compile(pack, "dh_water", log), nullptr);
+   EXPECT_TRUE(pack.compiledPrograms.empty());
+   EXPECT_TRUE(pack.preparedSourceCache.empty());
+  }
+  EXPECT_TRUE(failure.empty()) << failure;
+ }
+}
+TEST_F(DhProgramTransform, VanillaWaterUsesNativeProjectionToRejectForegroundTerrain) {
+ PackDefinition definition;
+ definition.distantHorizons = true;
+ std::unordered_map<std::string, std::string> memo;
+ const std::string fragment = client::render::prepareSource("dh_water", ShaderStage::Fragment, definition,
+     client::render::resolveShaderIncludes([](std::string_view path) { return VanillaPackEmbed::get(path); },
+                                          "shaders/dh_water.fsh", false, memo));
+ const std::string vertex =
+     "out vec2 lmcoord;out vec4 color;out float viewDistance;out vec2 horizontalPosition;"
+     "out vec3 nativeViewPosition;void main(){"
+     "vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));"
+     "gl_Position=vec4(p*2.0-1.0,0.0,1.0);lmcoord=vec2(0.5);"
+     "color=vec4(0.0,0.0,1.0,0.6);viewDistance=500.0;"
+     "horizontalPosition=vec2(500.0,0.0);nativeViewPosition=vec3(0.0,0.0,-500.0);}";
+ client::gl::ShaderProgram program;
+ ASSERT_TRUE(program.compile(vertex, fragment, "#version 430 core\n")) << program.lastError();
+ client::render::ColorTargets targets;
+ ASSERT_TRUE(targets.ensure(4, 4, {client::render::ColorFormat::Rgba8}, 1));
+ client::gl::GlTexture lightmap(core::genTexture());
+ client::gl::GlTexture nativeDepth(core::genTexture());
+ core::activeTexture(0x84C0);
+ core::bindTexture(lightmap.handle());
+ const std::array<unsigned char, 4> white{255, 255, 255, 255};
+ ::glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, white.data());
+ ::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+ ::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+ client::render::FrameRenderCamera camera;
+ camera.farPlane = 2560.0f;
+ float projection[16];
+ client::render::buildCameraProjection(projection, camera);
+ program.bind();
+ program.setMatrix4("gbufferProjection", projection);
+ program.set1i("lightmap", 0);
+ program.set1i("depthtex1", 1);
+ program.set1i("fogMode", 0);
+ program.set1f("clipDistance", 100.0f);
+ core::disableDepthTest();
+ core::disableCull();
+ core::disableBlend();
+ for(const float distance : {50.0f, 1000.0f, 0.0f}) {
+  SCOPED_TRACE(distance);
+  const float depth = distance == 0.0f ? 1.0f :
+      (-projection[10] + projection[14] / distance) * 0.5f + 0.5f;
+  std::array<float, 16> samples;
+  samples.fill(depth);
+  core::activeTexture(0x84C1);
+  core::bindTexture(nativeDepth.handle());
+  ::glTexImage2D(GL_TEXTURE_2D, 0, 0x8CAC, 4, 4, 0, GL_DEPTH_COMPONENT, GL_FLOAT, samples.data());
+  ::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  ::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  targets.clearColors({true}, {{{1.0f, 0.0f, 0.0f, 1.0f}}});
+  targets.bindGbuffers();
+  ::glViewport(0, 0, 4, 4);
+  core::drawFullscreen();
+  std::array<unsigned char, 4> pixel{};
+  ::glReadBuffer(0x8CE0);
+  ::glReadPixels(2, 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel.data());
+  EXPECT_EQ(pixel[0], distance == 50.0f ? 255 : 0);
+  EXPECT_EQ(pixel[2], distance == 50.0f ? 0 : 255);
+  EXPECT_EQ(::glGetError(), 0u);
+ }
+ client::gl::ShaderProgram::unbind();
+ targets.endGbuffers();
+ targets.destroy();
+ core::activeTexture(0x84C0);
+}
+TEST_F(DhProgramTransform, DisabledProviderSkipsRealPackProgramsAndCanBeReenabled) {
+ for(const auto& [name, directory] : std::vector<std::pair<std::string, std::string>>{
+         {"ComplementaryReimagined_r5.8.1", "world0"},
+         {"RenderPearl v2.8.0-beta.4", "world_default"}}) {
+  SCOPED_TRACE(name);
+  PackInstance pack;
+  pack.path = packRoot(name);
+  pack.directory = true;
+  ASSERT_TRUE(std::filesystem::is_directory(pack.path));
+  const auto resources = client::render::PackCatalog::directoryResources(pack.path);
+  ASSERT_TRUE(PackLoader::load(resources, [&pack](std::string_view path) {
+    return PackCompiler::cachedText(pack, std::string(path));
+   }, pack.definition, pack.sourceOptions, pack.summary.error)) << pack.summary.error;
+  pack.summary.valid = true;
+  for(const std::string program : {"dh_terrain", "dh_water"}) {
+   auto& source = pack.definition.programs[program];
+   source.vertex = "shaders/" + directory + "/" + program + ".vsh";
+   source.fragment = "shaders/" + directory + "/" + program + ".fsh";
+  }
+  pack.resetPrograms();
+  std::string failure;
+  const auto log = [&failure](PackInstance&, const std::string& message, ::net::minecraft::util::logging::LogLevel) {
+   failure += message + "\n";
+  };
+  for(const bool enabled : {false, true, false, true}) {
+   pack.definition.distantHorizons = enabled;
+   pack.resetPrograms();
+   for(const std::string program : {"dh_terrain", "dh_water"}) {
+    const auto* compiled = PackCompiler::compile(pack, program, log);
+    if(enabled) {
+     EXPECT_NE(compiled, nullptr) << program << "\n" << failure;
+    } else {
+     EXPECT_EQ(compiled, nullptr);
+    }
+   }
+   if(!enabled) {
+    EXPECT_TRUE(pack.compiledPrograms.empty());
+    EXPECT_TRUE(pack.preparedSourceCache.empty());
+   }
+   EXPECT_TRUE(failure.empty()) << failure;
+  }
  }
 }
 }

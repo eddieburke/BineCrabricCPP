@@ -22,4 +22,15 @@ TEST(ChunkCompilePriority, VisibleSectionsPrecedeCloserInvisibleSections) {
  EXPECT_EQ(candidates[2], &invisibleNear);
  EXPECT_EQ(candidates[3], &invisibleFar);
 }
+TEST(ChunkCompilePriority, MissingVisibleGeometryPrecedesRefreshesOfAlreadyVisibleTerrain) {
+ using client::render::chunk::ChunkBuilder;
+ std::vector<block::entity::BlockEntity*> blockEntities;
+ ChunkBuilder refresh(nullptr, blockEntities, 16, 64, 0);
+ ChunkBuilder missing(nullptr, blockEntities, 64, 64, 0);
+ refresh.built = true;
+ refresh.visibleStamp = missing.visibleStamp = 7;
+ std::vector<ChunkBuilder*> candidates{&refresh, &missing};
+ client::render::ChunkCompilePipeline::prioritizeCaptureCandidates(candidates, 7, 0, 4, 0, 1);
+ EXPECT_EQ(candidates[0], &missing);
+}
 }

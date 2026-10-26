@@ -7,9 +7,6 @@
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/World.hpp"
 namespace net::minecraft::client::option {
-namespace {
-constexpr int kDistantNativeRadius = 16;
-}
 RenderSettings renderSettings(const GameOptions& options) {
  RenderSettings r{};
  r.fovOffset = options.fieldOfView * 40.0f;
@@ -31,9 +28,11 @@ RenderSettings renderSettings(const GameOptions& options) {
  r.smoothFps = options.smoothFps;
  r.chunkUpdatesSlider = std::isfinite(options.chunkUpdates) ? std::clamp(options.chunkUpdates, 0.0f, 1.0f) : 0.5f;
  r.chunkUpdatesDynamic = options.chunkUpdatesDynamic;
- r.terrainLod = options.terrainLod;
- r.distantTerrain = options.terrainLod && r.renderDistance.chunks() > kDistantNativeRadius;
- r.nativeChunkRadius = r.distantTerrain ? kDistantNativeRadius : r.renderDistance.chunks();
+ const int nativeRadius = std::clamp(options.lodNativeRadius, 8, 32);
+ r.distantTerrain = options.distantTerrain && r.renderDistance.chunks() > nativeRadius;
+ r.nativeChunkRadius = r.distantTerrain ? nativeRadius : r.renderDistance.chunks();
+ r.lodQuality = std::clamp(options.lodQuality, 0, 2);
+ r.lodMemoryMiB = std::clamp(options.lodMemoryMiB, 64, 512);
  r.renderSky = options.sky;
  r.renderStars = options.stars;
  r.vignette = options.vignette;
@@ -56,12 +55,12 @@ RenderSettings renderSettings(const GameOptions& options) {
  r.animatedSmoke = options.animatedSmoke;
  return r;
 }
+bool supportsDistantTerrain(const render::PackDefinition& pack) {
+ return !pack.voxelizeLightBlocks && pack.effectiveVoxelDistance() <= 0.0f &&
+        (pack.programs.empty() || pack.programs.contains("dh_terrain"));
+}
 void applyShaderPack(RenderSettings& settings, const render::PackDefinition& pack) {
- settings.terrainLod = settings.terrainLod && !pack.voxelizeLightBlocks && pack.effectiveVoxelDistance() <= 0.0f;
- // see third_party/iris/common/src/main/java/net/irisshaders/iris/compat/dh/DHCompatInternal.java:59
- const bool dhCompatible =
-     pack.programs.empty() || pack.programs.contains("dh_terrain") || pack.programs.contains("dh_water");
- settings.distantTerrain = settings.distantTerrain && settings.terrainLod && dhCompatible;
+ settings.distantTerrain = settings.distantTerrain && supportsDistantTerrain(pack);
  settings.nativeChunkRadius =
      settings.distantTerrain ? std::min(settings.nativeChunkRadius, settings.renderDistance.chunks())
                              : settings.renderDistance.chunks();

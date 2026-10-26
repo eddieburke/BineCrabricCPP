@@ -642,7 +642,9 @@ void Pipeline::bindDistantProgram(gl::ShaderProgram& program, bool water) {
  PackInstance* pack = renderPack();
  if(pack == nullptr) return;
  program.bind();
- const std::string key = water && pack->definition.programs.contains("dh_water") ? "dh_water" : "dh_terrain";
+ const auto waterProgram = pack->compiledPrograms.find("dh_water");
+ const std::string key = water && waterProgram != pack->compiledPrograms.end() &&
+                         waterProgram->second.program == &program ? "dh_water" : "dh_terrain";
  if(pack->colorTargets.valid()) {
   program.applyDrawBuffers(std::max(1, pack->colorTargets.colorCount()));
  }

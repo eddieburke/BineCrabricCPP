@@ -167,6 +167,7 @@ bool isProgramEnabled(const PackDefinition& definition,
                       const std::unordered_map<std::string, std::string>& settings,
                       const std::string& programName) {
  const std::string key = programLookupKey(programName);
+ if(key.starts_with("dh_") && !definition.distantHorizons) return false;
  const auto found = definition.programEnabled.find(key);
  if(found == definition.programEnabled.end()) {
   const std::string prefixed = dimensionProgramKey(definition, programName, key);
@@ -186,6 +187,7 @@ bool isProgramEnabledCached(const PackDefinition& definition,
                             const std::string& programName,
                             ProgramEnabledCache& cache) {
  const std::string key = programLookupKey(programName);
+ if(key.starts_with("dh_") && !definition.distantHorizons) return false;
  if(const auto hit = cache.find(key); hit != cache.end()) return hit->second;
  const bool enabled = isProgramEnabled(definition, settings, programName);
  cache.emplace(key, enabled);

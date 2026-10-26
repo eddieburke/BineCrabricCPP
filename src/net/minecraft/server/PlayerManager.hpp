@@ -123,6 +123,7 @@ class PlayerManager {
  std::vector<::net::minecraft::entity::player::ServerPlayerEntity*> players;
 
  private:
+ void savePlayerData(::net::minecraft::entity::player::ServerPlayerEntity& player);
  [[nodiscard]] ChunkMap& getChunkMap(int dimensionId);
  void loadBannedPlayers();
  void saveBannedPlayers();

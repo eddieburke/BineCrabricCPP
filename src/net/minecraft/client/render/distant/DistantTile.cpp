@@ -1,6 +1,8 @@
 #include "net/minecraft/client/render/distant/DistantTile.hpp"
 #include <algorithm>
 #include <cstring>
+#include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/client/color/world/FoliageColors.hpp"
 #include "net/minecraft/client/color/world/GrassColors.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
@@ -106,6 +108,17 @@ void sampleColumn(const Chunk& chunk, int lx, int lz, int startY, ColumnSample& 
   if(solid && run.block == 0) {
    run.block = static_cast<std::uint8_t>(id);
    run.meta = static_cast<std::uint8_t>(chunk.getBlockMeta(lx, y, lz));
+  }
+  if(solid) {
+   const auto meta = static_cast<std::uint8_t>(chunk.getBlockMeta(lx, y, lz));
+   if(run.layerCount == 0 ||
+      ((run.layers[run.layerCount - 1].block != id || run.layers[run.layerCount - 1].meta != meta) &&
+       run.layerCount < kMaxMaterialLayers)) {
+    run.layers[run.layerCount++] = ColumnMaterialLayer{static_cast<std::uint8_t>(y),
+                                                     static_cast<std::uint8_t>(id), meta};
+   } else {
+    run.layers[run.layerCount - 1].bottom = static_cast<std::uint8_t>(y);
+   }
   }
  }
  if(inRun && sample.runCount < kMaxRuns) {
@@ -259,6 +272,18 @@ struct PaletteBuilder {
 };
 } // namespace
 
+int tileStride(double distanceBlocks, double nativeBlocks, int quality, int memoryStride) noexcept {
+ const double qualityScale = quality == 0 ? 2.0 : quality == 2 ? 0.5 : 1.0;
+ const double band = std::max(64.0, nativeBlocks) * qualityScale;
+ int stride = 1;
+ while(stride < 8 && distanceBlocks >= band * (stride * 2)) stride *= 2;
+ const double pressureBand = std::max(static_cast<double>(kTileBlocks * 2), nativeBlocks * 0.5) * qualityScale;
+ int pressureStride = 1;
+ while(pressureStride < std::min(memoryStride, kMaxStride) &&
+       distanceBlocks >= nativeBlocks + pressureBand * pressureStride) pressureStride *= 2;
+ return std::max(stride, pressureStride);
+}
+
 BlockPalette defaultPalette() {
  BlockPalette palette;
  const PaletteBuilder b{palette};
@@ -272,8 +297,8 @@ BlockPalette defaultPalette() {
  b.same(4, 0x7a7a7a, DhMaterial::Stone);
  b.same(5, 0x9c7f4e, DhMaterial::Wood);
  b.same(7, 0x535353, DhMaterial::Stone);
- b.set(8, 0x3f76e4, 0x3f76e4, DhMaterial::Water, true, 160);
- b.set(9, 0x3f76e4, 0x3f76e4, DhMaterial::Water, true, 160);
+ b.set(8, 0x2032ff, 0x2032ff, DhMaterial::Water, true, 146);
+ b.set(9, 0x2032ff, 0x2032ff, DhMaterial::Water, true, 146);
  b.same(10, 0xd96514, DhMaterial::Lava);
  b.same(11, 0xd96514, DhMaterial::Lava);
  b.same(12, 0xdbd3a0, DhMaterial::Sand);
@@ -331,12 +356,49 @@ BlockPalette defaultPalette() {
  return palette;
 }
 
+void updatePaletteFromAtlas(BlockPalette& palette, const client::texture::RasterImage& atlas) {
+ if(atlas.width < 16 || atlas.height < 16 ||
+    atlas.argb.size() < static_cast<std::size_t>(atlas.width) * static_cast<std::size_t>(atlas.height)) return;
+ std::array<std::array<std::uint8_t, 3>, 256> colors{};
+ std::array<bool, 256> present{};
+ for(int tile = 0; tile < 256; ++tile) {
+  std::uint64_t channels[3]{};
+  std::uint64_t weight = 0;
+  for(int y = (tile / 16) * atlas.height / 16; y < (tile / 16 + 1) * atlas.height / 16; ++y) {
+   for(int x = (tile % 16) * atlas.width / 16; x < (tile % 16 + 1) * atlas.width / 16; ++x) {
+    const std::uint32_t pixel = atlas.argb[static_cast<std::size_t>(y) * atlas.width + x];
+    const std::uint32_t alpha = pixel >> 24;
+    channels[0] += ((pixel >> 16) & 255u) * alpha;
+    channels[1] += ((pixel >> 8) & 255u) * alpha;
+    channels[2] += (pixel & 255u) * alpha;
+    weight += alpha;
+   }
+  }
+  if(weight > 0) {
+   present[tile] = true;
+   for(int channel = 0; channel < 3; ++channel)
+    colors[tile][channel] = static_cast<std::uint8_t>((channels[channel] + weight / 2) / weight);
+  }
+ }
+ for(int id = 1; id < 256; ++id) {
+  const block::Block* registeredBlock = block::Block::BLOCKS[static_cast<std::size_t>(id)];
+  if(registeredBlock == nullptr) continue;
+  PaletteEntry& entry = palette.entries[static_cast<std::size_t>(id)];
+  const int top = id == 2 ? registeredBlock->getTextureId(nullptr, 0, 0, 0, 1) : registeredBlock->getTexture(1, 0);
+  const int side = registeredBlock->getTexture(2, 0);
+  if(top >= 0 && top < 256 && present[top]) std::copy(colors[top].begin(), colors[top].end(), entry.top);
+  if(side >= 0 && side < 256 && present[side]) std::copy(colors[side].begin(), colors[side].end(), entry.side);
+ }
+}
+
 bool extractTile(const ChunkLookup& chunks, int tileX, int tileZ, int stride, TileCells& out,
-                 const BiomeSource* biomes) {
+                 const BiomeSource* biomes, bool allowPartial) {
+ if(stride < 1 || stride > kMaxStride || (stride & (stride - 1)) != 0) return false;
  out.tileX = tileX;
  out.tileZ = tileZ;
  out.stride = stride;
  out.side = kTileBlocks / stride;
+ out.chunkMask = 0;
  const int side = out.side;
  out.cells.assign(static_cast<std::size_t>((side + 2) * (side + 2)), ColumnCell{});
  const int baseChunkX = tileX * kTileChunks - 1;
@@ -352,11 +414,11 @@ bool extractTile(const ChunkLookup& chunks, int tileX, int tileZ, int stride, Ti
  }
  for(int cz = 1; cz <= kTileChunks; ++cz) {
   for(int cx = 1; cx <= kTileChunks; ++cx) {
-   if(grid[cz * kBorderChunks + cx] == nullptr) {
-    return false;
-   }
+   if(grid[cz * kBorderChunks + cx] != nullptr)
+    out.chunkMask |= static_cast<std::uint16_t>(1u << ((cz - 1) * kTileChunks + cx - 1));
   }
  }
+ if(out.chunkMask == 0 || (!allowPartial && out.chunkMask != 0xFFFFu)) return false;
  const int originX = tileX * kTileBlocks;
  const int originZ = tileZ * kTileBlocks;
  const int columns = stride * stride;
@@ -408,6 +470,8 @@ bool extractTile(const ChunkLookup& chunks, int tileX, int tileZ, int stride, Ti
    }
    ColumnCell& cell = out.at(cellX, cellZ);
    cell.present = true;
+   for(int y = 0; y < Chunk::height; ++y)
+    cell.light[static_cast<std::size_t>(y)] = packedLight(*chunk, localX0 + stride / 2, y, localZ0 + stride / 2);
    const ColumnSample* chosen = nullptr;
    if(haveCanopy && (canopyCount * 2 >= columns || !haveGround)) {
     chosen = &bestCanopy;
@@ -485,6 +549,39 @@ void meshTile(const TileCells& cells, const BlockPalette& palette, TileMesh& out
              Face{entry.top, tintFor(entry, c, r, true, scratch), entry.material, r.topLight});
     }
     const std::uint8_t* sideTint = tintFor(entry, c, r, false, scratch);
+    const auto emitSide = [&](const SideDir& dir, int low, int high) {
+     const auto& neighbor = cells.at(cx + dir.dx, cz + dir.dz);
+     const auto emit = [&](int bottom, int top, const PaletteEntry& material, const std::uint8_t* tint) {
+      while(bottom < top) {
+       const std::uint8_t light = neighbor.present ? neighbor.light[static_cast<std::size_t>(bottom)] : r.topLight;
+       int end = bottom + 1;
+       while(end < top && (!neighbor.present || neighbor.light[static_cast<std::size_t>(end)] == light)) ++end;
+       pushSide(out.opaque, dir, x0, x0 + stride, z0, z0 + stride, bottom, end,
+                Face{material.side, tint, material.material, light});
+       bottom = end;
+      }
+     };
+     if(r.layerCount == 0) {
+      emit(low, high, entry, sideTint);
+      return;
+     }
+     int layerTop = r.top;
+     for(int layerIndex = 0; layerIndex < r.layerCount; ++layerIndex) {
+      const ColumnMaterialLayer& layer = r.layers[static_cast<std::size_t>(layerIndex)];
+      const int layerBottom = layerIndex + 1 == r.layerCount ? r.bottom : layer.bottom;
+      const int clippedLow = std::max(low, layerBottom);
+      const int clippedHigh = std::min(high, layerTop);
+      if(clippedHigh > clippedLow) {
+       const PaletteEntry& sideEntry = palette.entries[layer.block];
+       ColumnRun sideRun;
+       sideRun.meta = layer.meta;
+       std::uint8_t layerScratch[3];
+       emit(clippedLow, clippedHigh, sideEntry, tintFor(sideEntry, c, sideRun, false, layerScratch));
+      }
+      layerTop = layerBottom;
+      if(layerTop <= low) break;
+     }
+    };
     if(r.bottom > 0) {
      pushBottom(out.opaque, x0, x0 + stride, z0, z0 + stride, r.bottom,
                 Face{entry.side, sideTint, entry.material, r.bottomLight});
@@ -492,8 +589,7 @@ void meshTile(const TileCells& cells, const BlockPalette& palette, TileMesh& out
     for(const SideDir& dir : kSideDirs) {
      const ColumnCell& n = cells.at(cx + dir.dx, cz + dir.dz);
      if(!n.present) {
-      pushSide(out.opaque, dir, x0, x0 + stride, z0, z0 + stride, r.bottom, r.top,
-               Face{entry.side, sideTint, entry.material, r.topLight});
+      emitSide(dir, r.bottom, r.top);
       continue;
      }
      int cursor = r.top;
@@ -506,14 +602,12 @@ void meshTile(const TileCells& cells, const BlockPalette& palette, TileMesh& out
        continue;
       }
       if(nr.top < cursor) {
-       pushSide(out.opaque, dir, x0, x0 + stride, z0, z0 + stride, std::max<int>(nr.top, r.bottom), cursor,
-                Face{entry.side, sideTint, entry.material, nr.topLight});
+       emitSide(dir, std::max<int>(nr.top, r.bottom), cursor);
       }
       cursor = std::min<int>(cursor, nr.bottom);
      }
      if(cursor > r.bottom) {
-      pushSide(out.opaque, dir, x0, x0 + stride, z0, z0 + stride, r.bottom, cursor,
-               Face{entry.side, sideTint, entry.material, r.topLight});
+      emitSide(dir, r.bottom, cursor);
      }
     }
    }

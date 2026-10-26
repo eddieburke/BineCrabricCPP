@@ -69,6 +69,7 @@ WorldRenderer::WorldRenderer(net::minecraft::client::Minecraft* minecraftIn,
  scene_.client = client;
  scene_.options = &activeOptions();
  scene_.settings = &frameSettings();
+ scene_.distant = &distant_;
  scene_.reloadRequested = [this]() { reload(); };
  // The two systems' construction is mutually circular; each was built against
  // the scene alone and the peer references are wired here.
@@ -407,6 +408,9 @@ std::string WorldRenderer::getEntityDebugInfo() const {
 }
 void WorldRenderer::markDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
  chunkSections_.markDirty(minX, minY, minZ, maxX, maxY, maxZ);
+ for(int z = MathHelper::floorDiv(minZ, 16); z <= MathHelper::floorDiv(maxZ, 16); ++z)
+  for(int x = MathHelper::floorDiv(minX, 16); x <= MathHelper::floorDiv(maxX, 16); ++x)
+   distant_.markChunkDirty(x, z);
 }
 void WorldRenderer::blockUpdate(int x, int y, int z) {
  chunkSections_.blockUpdate(x, y, z);
@@ -414,6 +418,9 @@ void WorldRenderer::blockUpdate(int x, int y, int z) {
 }
 void WorldRenderer::setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
  chunkSections_.setBlocksDirty(minX, minY, minZ, maxX, maxY, maxZ);
+ for(int z = MathHelper::floorDiv(minZ, 16); z <= MathHelper::floorDiv(maxZ, 16); ++z)
+  for(int x = MathHelper::floorDiv(minX, 16); x <= MathHelper::floorDiv(maxX, 16); ++x)
+   distant_.markChunkDirty(x, z);
 }
 void WorldRenderer::chunkAvailable(int chunkX, int chunkZ) {
  chunkSections_.chunkAvailable(chunkX, chunkZ);
@@ -421,9 +428,11 @@ void WorldRenderer::chunkAvailable(int chunkX, int chunkZ) {
 }
 void WorldRenderer::chunkUnloaded(int chunkX, int chunkZ) {
  chunkSections_.chunkUnloaded(chunkX, chunkZ);
+ distant_.markChunkDirty(chunkX, chunkZ, true);
 }
 void WorldRenderer::markChunkColumnLit(int chunkX, int chunkZ) {
  chunkSections_.markChunkColumnLit(chunkX, chunkZ);
+ distant_.markChunkDirty(chunkX, chunkZ);
 }
 void WorldRenderer::markAllChunksLit() {
  chunkSections_.markAllChunksLit();

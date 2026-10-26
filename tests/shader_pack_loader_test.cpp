@@ -467,7 +467,7 @@ TEST(PackLoaderTest, LoadsDimensionOnlyPackWithRootInclude) {
                   error))
      << error;
 }
-TEST(PackLoaderTest, IgnoresMetadataFromUnsupportedIntegrationSources) {
+TEST(PackLoaderTest, RetainsSupportedDhMetadataAndIgnoresUnsupportedIntegrations) {
  PackDefinition pack;
  std::unordered_map<std::string, PackSourceOption> options;
  std::string error;
@@ -484,15 +484,15 @@ TEST(PackLoaderTest, IgnoresMetadataFromUnsupportedIntegrationSources) {
                   options,
                   error))
      << error;
- EXPECT_EQ(pack.noiseTextureResolution, 256);
+ EXPECT_EQ(pack.noiseTextureResolution, 8192);
  EXPECT_EQ(pack.shadowMapResolution, 0);
- EXPECT_EQ(pack.gbufferColorBuffers, 1);
- EXPECT_FALSE(pack.programs.contains("dh_terrain"));
+ EXPECT_EQ(pack.gbufferColorBuffers, 16);
+ EXPECT_TRUE(pack.programs.contains("dh_terrain"));
  EXPECT_FALSE(pack.programs.contains("clrwl_gbuffers"));
  EXPECT_FALSE(pack.programs.contains("voxy_opaque"));
  EXPECT_FALSE(pack.targets.contains("colortex13"));
  EXPECT_FALSE(pack.targets.contains("colortex14"));
- EXPECT_FALSE(pack.targets.contains("colortex15"));
+ EXPECT_TRUE(pack.targets.contains("colortex15"));
 }
 TEST(PackLoaderTest, PropertiesUseIrisEnvironmentAndNormalizeLegacyFeatureSpelling) {
  PackDefinition pack;
@@ -531,8 +531,7 @@ TEST(PackLoaderTest, DimensionPropertiesMultiIdMapsEachKey) {
  EXPECT_EQ(pack.dimensionDefinitions.at("minecraft:overworld").get(),
            pack.dimensionDefinitions.at("minecraft:the_end").get());
 }
-TEST(PackLoaderTest, DimensionFolderPackKeepsRootFormats) {
- // rethinking-voxels-shaped: colortexNFormat only in shaders/lib/, programs only under world0/.
+TEST(PackLoaderTest, DimensionProgramsLoadFormatsFromIncludedLibraries) {
  PackDefinition pack;
  std::unordered_map<std::string, PackSourceOption> options;
  std::string error;
@@ -540,15 +539,14 @@ TEST(PackLoaderTest, DimensionFolderPackKeepsRootFormats) {
                     "const int colortex0Format = R11F_G11F_B10F;\n"
                     "const int colortex9Format = R32UI;\n"},
                    {"shaders/world0/composite.vsh", "void main(){}"},
-                   {"shaders/world0/composite.fsh", "void main(){}"}},
+                   {"shaders/world0/composite.fsh", "#include \"/lib/pipelineSettings.glsl\"\nvoid main(){}"}},
                   pack,
                   options,
                   error))
      << error;
  ASSERT_TRUE(pack.dimensionDefinitions.contains("minecraft:overworld"));
- // dimension scan never sees lib/pipelineSettings.glsl; colortex0 here is the implicit default.
  ASSERT_TRUE(pack.dimensionDefinitions.at("minecraft:overworld")->targets.contains("colortex0"));
- EXPECT_EQ(pack.dimensionDefinitions.at("minecraft:overworld")->targets.at("colortex0").format, "RGBA8");
+ EXPECT_EQ(pack.dimensionDefinitions.at("minecraft:overworld")->targets.at("colortex0").format, "R11F_G11F_B10F");
  ASSERT_TRUE(pack.targets.contains("colortex0"));
  ASSERT_TRUE(pack.targets.contains("colortex9"));
  EXPECT_EQ(pack.targets.at("colortex0").format, "R11F_G11F_B10F");

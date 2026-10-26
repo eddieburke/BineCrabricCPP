@@ -11,11 +11,15 @@ namespace net::minecraft {
 class BiomeSource;
 class Chunk;
 }
+namespace net::minecraft::client::texture {
+struct RasterImage;
+}
 namespace net::minecraft::client::render::distant {
 // see LOD_DESIGN.md §3, §5, §6
 inline constexpr int kTileBlocks = 64;
 inline constexpr int kTileChunks = kTileBlocks / 16;
 inline constexpr int kMaxStride = 16;
+inline constexpr int kNativeOverlapBlocks = 32;
 // see third_party/iris/common/src/main/java/net/irisshaders/iris/pipeline/transform/transformer/DHTerrainTransformer.java
 struct DhVertex {
  std::uint16_t x = 0;
@@ -49,6 +53,12 @@ enum DhMaterial : std::uint8_t {
 };
 enum DhNormal : std::uint8_t { NegY = 0, PosY = 1, NegZ = 2, PosZ = 3, NegX = 4, PosX = 5 };
 inline constexpr int kMaxRuns = 4;
+inline constexpr int kMaxMaterialLayers = 8;
+struct ColumnMaterialLayer {
+ std::uint8_t bottom = 0;
+ std::uint8_t block = 0;
+ std::uint8_t meta = 0;
+};
 // see LOD_DESIGN.md §3.2: runs are split only by sky-lit air or water, so sealed caves fill in.
 struct ColumnRun {
  std::uint8_t top = 0;
@@ -57,6 +67,8 @@ struct ColumnRun {
  std::uint8_t meta = 0;
  std::uint8_t topLight = 0;
  std::uint8_t bottomLight = 0;
+ std::array<ColumnMaterialLayer, kMaxMaterialLayers> layers{};
+ std::uint8_t layerCount = 0;
 };
 struct ColumnCell {
  std::array<ColumnRun, kMaxRuns> runs{};
@@ -65,6 +77,7 @@ struct ColumnCell {
  std::uint8_t waterLight = 0;
  std::uint8_t grass[3]{255, 255, 255};
  std::uint8_t foliage[3]{255, 255, 255};
+ std::array<std::uint8_t, 128> light{};
  bool present = false;
 };
 struct TileCells {
@@ -72,6 +85,7 @@ struct TileCells {
  int tileZ = 0;
  int stride = 1;
  int side = kTileBlocks;
+ std::uint16_t chunkMask = 0;
  std::vector<ColumnCell> cells;
  [[nodiscard]] ColumnCell& at(int cx, int cz) noexcept {
   return cells[static_cast<std::size_t>((cz + 1) * (side + 2) + (cx + 1))];
@@ -92,13 +106,16 @@ enum PaletteTint : std::uint8_t { NoTint = 0, GrassTint = 1, FoliageTint = 2 };
 struct BlockPalette {
  std::array<PaletteEntry, 256> entries{};
 };
+[[nodiscard]] int tileStride(double distanceBlocks, double nativeBlocks, int quality, int memoryStride) noexcept;
 [[nodiscard]] BlockPalette defaultPalette();
+void updatePaletteFromAtlas(BlockPalette& palette, const client::texture::RasterImage& atlas);
 [[nodiscard]] bool extractTile(const ChunkLookup& chunks,
                                int tileX,
                                int tileZ,
                                int stride,
                                TileCells& out,
-                               const BiomeSource* biomes = nullptr);
+                               const BiomeSource* biomes = nullptr,
+                               bool allowPartial = false);
 struct TileMesh {
  std::vector<DhVertex> opaque;
  std::vector<DhVertex> water;

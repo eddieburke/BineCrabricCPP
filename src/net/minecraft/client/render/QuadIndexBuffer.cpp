@@ -46,4 +46,9 @@ bool ensure(std::size_t vertexCount) {
 unsigned handle() noexcept {
  return sHandle;
 }
+void destroy() {
+ if(sHandle != 0 && gl::GLCore::deleteBuffers != nullptr) gl::GLCore::deleteBuffers(1, &sHandle);
+ sHandle = 0;
+ sVertexCapacity = 0;
+}
 } // namespace net::minecraft::client::render::quad_index

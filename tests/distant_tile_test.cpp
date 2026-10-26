@@ -7,6 +7,7 @@
 #include <GLFW/glfw3.h>
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/render/distant/DistantTile.hpp"
+#include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/light/LightType.hpp"
 
@@ -78,6 +79,7 @@ TileCells flatCells(int stride, int top, int block) {
   cell.runs[0].bottom = 0;
   cell.runs[0].block = static_cast<std::uint8_t>(block);
   cell.runs[0].topLight = 0xA5;
+  cell.light.fill(0xA5);
  }
  return cells;
 }
@@ -103,6 +105,7 @@ TEST(DistantTile, FlatPlaneWithWaterPatch) {
  EXPECT_EQ(wet.runs[0].block, kDirt);
  EXPECT_EQ(wet.waterTop, 64);
  EXPECT_EQ(cells.at(32 + 3, 32 + 3).runs[0].topLight, 0x7F);
+ EXPECT_EQ(cells.at(32 + 3, 32 + 3).light[64], 0x7F);
  EXPECT_EQ(cells.at(-1, -1).runs[0].top, 64);
  EXPECT_TRUE(cells.at(64, 64).present);
 }
@@ -180,7 +183,7 @@ TEST(DistantTile, PaletteMaterials) {
  EXPECT_EQ(palette.entries[2].material, DhMaterial::Grass);
  EXPECT_EQ(palette.entries[9].material, DhMaterial::Water);
  EXPECT_TRUE(palette.entries[9].translucent);
- EXPECT_EQ(palette.entries[9].top[3], 160);
+ EXPECT_EQ(palette.entries[9].top[3], 146);
  EXPECT_EQ(palette.entries[12].material, DhMaterial::Sand);
  EXPECT_EQ(palette.entries[87].material, DhMaterial::NetherStone);
  EXPECT_EQ(palette.entries[89].material, DhMaterial::Illuminated);
@@ -250,6 +253,35 @@ TEST(DistantMesher, MissingNeighbourGetsSkirt) {
  EXPECT_EQ(skirts, 1u);
  EXPECT_EQ(mesh.minY, 0);
 }
+TEST(DistantMesher, CliffLightFollowsAdjacentHeightInsteadOfNeighborTop) {
+ TileCells cells = flatCells(1, 64, kStone);
+ cells.at(10, 10).runs[0].top = 70;
+ auto& neighbor = cells.at(9, 10);
+ neighbor.runs[0].topLight = 0;
+ neighbor.light.fill(0x0F);
+ neighbor.light[64] = 0;
+ neighbor.light[65] = 0;
+ TileMesh mesh;
+ meshTile(cells, defaultPalette(), mesh);
+ int litArea = 0;
+ int shadedArea = 0;
+ for(std::size_t i = 0; i < mesh.opaque.size(); i += 4) {
+  const auto* quad = &mesh.opaque[i];
+  if(quad[0].normal != DhNormal::NegX || quad[0].x != 10 ||
+     std::min({quad[0].z, quad[1].z, quad[2].z, quad[3].z}) != 10) continue;
+  int bottom = 128;
+  int top = 0;
+  for(int v = 0; v < 4; ++v) {
+   bottom = std::min<int>(bottom, quad[v].y);
+   top = std::max<int>(top, quad[v].y);
+  }
+  for(int v = 0; v < 4; ++v) EXPECT_EQ(quad[v].meta & 0xFF, bottom < 66 ? 0 : 0x0F);
+  if(bottom < 66) shadedArea += top - bottom;
+  else litArea += top - bottom;
+ }
+ EXPECT_EQ(shadedArea, 2);
+ EXPECT_EQ(litArea, 4);
+}
 
 TEST(DistantMesher, VertexLayoutAndWater) {
  TileCells cells = flatCells(1, 64, kStone);
@@ -296,7 +328,7 @@ TEST(DistantMesher, VertexLayoutAndWater) {
  for(const DhVertex& v : mesh.water) {
   EXPECT_EQ(v.normal, DhNormal::PosY);
   EXPECT_EQ(v.material, DhMaterial::Water);
-  EXPECT_EQ(v.color[3], 160);
+  EXPECT_EQ(v.color[3], 146);
   EXPECT_EQ(v.y, 66);
  }
 }
@@ -337,6 +369,7 @@ class DistantSlabTest : public ::testing::Test {
   }
   static void TearDownTestSuite() {
    if(window_ != nullptr) {
+    client::render::core::releaseGlResources();
     glfwMakeContextCurrent(nullptr);
     glfwDestroyWindow(window_);
     window_ = nullptr;

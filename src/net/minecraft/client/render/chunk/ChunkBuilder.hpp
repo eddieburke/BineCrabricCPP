@@ -110,9 +110,6 @@ class ChunkBuilder : public std::enable_shared_from_this<ChunkBuilder> {
  bool lightingReady = true;
  bool built = false;
  int version = 0;
- int requestedLod = 0;
- int builtLod = 0;
- std::size_t lodSavedVertices = 0;
  bool meshJobInFlight = false;
  struct OcclusionState {
   std::uint64_t visBits = ~0ULL;

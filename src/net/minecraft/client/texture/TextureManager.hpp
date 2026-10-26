@@ -74,6 +74,7 @@ class TextureManager {
   }
   return nullptr;
  }
+ [[nodiscard]] std::optional<std::array<std::uint8_t, 4>> terrainTileColor(int sprite) const;
  static bool MIPMAP;
  static bool MIPMAP_LINEAR;
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/gl/shader/StandardMacros.java:50

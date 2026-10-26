@@ -18,6 +18,9 @@ class GameOptions;
 struct RenderSettings;
 }
 namespace net::minecraft::client::render {
+namespace distant {
+class DistantRenderer;
+}
 // The scene the terrain systems render, decoupled from WorldRenderer: the
 // world, the client, the frame camera, the per-frame resolved settings/options,
 // the global block-entity list and the single callback a component may invoke
@@ -30,6 +33,7 @@ struct TerrainScene {
   const net::minecraft::Entity* camera = nullptr;
   const option::RenderSettings* settings = nullptr;
   option::GameOptions* options = nullptr;
+  const distant::DistantRenderer* distant = nullptr;
   // Block entities that render from the world's global list rather than a
   // section. Used to live on WorldRenderer; moved here so the section system
   // and compile pipeline can reach it without the facade. ChunkBuilder keeps a

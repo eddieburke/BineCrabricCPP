@@ -34,8 +34,6 @@ struct ChunkMeshJob {
  ~ChunkMeshJob();
  std::weak_ptr<ChunkBuilder> builder;
  int version = 0;
- int lodLevel = 0;
- std::size_t lodSavedVertices = 0;
  int x = 0;
  int y = 0;
  int z = 0;

@@ -12,7 +12,6 @@
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/block/entity/BlockEntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/chunk/ChunkMeshJob.hpp"
-#include "net/minecraft/client/render/chunk/TerrainLod.hpp"
 #include "net/minecraft/client/render/chunk/RegionSnapshot.hpp"
 #include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 #include "net/minecraft/mod/ModClient.hpp"
@@ -214,7 +213,6 @@ std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(ChunkBuilder& owner,
 ChunkMeshJob::ChunkMeshJob(ChunkBuilder& owner, client::option::RenderSettings options)
     : builder(owner.weak_from_this()),
       version(owner.version),
-      lodLevel(owner.requestedLod),
       x(owner.x),
       y(owner.y),
       z(owner.z),
@@ -334,8 +332,6 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
  for(int layer = 0; layer < terrain_layer::Count; ++layer) {
   bool beganCompile = false;
   bool drewGeometry = false;
-  static thread_local std::vector<std::uint8_t> lodEligible;
-  lodEligible.clear();
   ModMeshCollector modMeshes;
   modMeshes.chunkOffX = -static_cast<double>(job.x);
   modMeshes.chunkOffY = -static_cast<double>(job.y);
@@ -364,23 +360,10 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
         static_cast<double>(-net::minecraft::util::math::MathHelper::floorDiv(job.z, kRegionBlocksZ) *
                             kRegionBlocksZ));
    }
-   const bool simplify = job.lodLevel > 0 && layer != terrain_layer::Translucent &&
-                         block->id < 96 && block->id != 18 && block->isOpaque() &&
-                         block->getRenderType() == block::BlockRenderType::FULL_CUBE &&
-                         !net::minecraft::mod::hasCustomWorldDraw(block->id);
-   const std::size_t firstQuad = tessellator.capturedVertexCount() / 4;
-   blockRenderManager.ctx.opts.ambientOcclusionActive = simplify ? false : job.opts.ambientOcclusionActive;
    drewGeometry |= blockRenderManager.render(*block, blockX, blockY, blockZ);
-   if(job.lodLevel > 0) {
-    const std::size_t lastQuad = tessellator.capturedVertexCount() / 4;
-    lodEligible.resize(lastQuad, 0);
-    std::fill(lodEligible.begin() + static_cast<std::ptrdiff_t>(firstQuad), lodEligible.end(), simplify ? 1 : 0);
-   }
   }
   if(beganCompile) {
    result.layers[static_cast<std::size_t>(layer)] = tessellator.takeMesh();
-   job.lodSavedVertices += simplifyTerrainMesh(result.layers[static_cast<std::size_t>(layer)],
-                                               job.lodLevel, lodEligible);
   }
   blockRenderManager.ctx.modMeshes = nullptr;
   for(ModMeshCollector::Entry& modEntry : modMeshes.entries) {
@@ -458,8 +441,6 @@ bool ChunkBuilder::uploadMesh(ChunkMeshJob& job) {
   }
  }
  built = true;
- builtLod = job.lodLevel;
- lodSavedVertices = job.lodSavedVertices;
  return true;
 }
 void ChunkBuilder::freeGpuBuffers() noexcept {

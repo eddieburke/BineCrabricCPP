@@ -651,6 +651,24 @@ void TextureManager::addDynamicTexture(net::minecraft::client::render::texture::
  dynamicTextures_.push_back(texture);
  texture->tick();
 }
+std::optional<std::array<std::uint8_t, 4>> TextureManager::terrainTileColor(int sprite) const {
+ for(const auto* texture : dynamicTextures_) {
+  if(texture == nullptr || texture->atlas != 0 || texture->sprite != sprite) continue;
+  std::uint64_t channels[3]{};
+  std::uint64_t alpha = 0;
+  for(std::size_t p = 0; p < texture->pixels.size(); p += 4) {
+   const auto weight = texture->pixels[p + 3];
+   for(int c = 0; c < 3; ++c) channels[c] += texture->pixels[p + c] * weight;
+   alpha += weight;
+  }
+  if(alpha == 0) return std::nullopt;
+  return std::array<std::uint8_t, 4>{static_cast<std::uint8_t>(channels[0] / alpha),
+                                     static_cast<std::uint8_t>(channels[1] / alpha),
+                                     static_cast<std::uint8_t>(channels[2] / alpha),
+                                     static_cast<std::uint8_t>(alpha / 256)};
+ }
+ return std::nullopt;
+}
 void TextureManager::tick() {
  std::vector<std::uint8_t> imageBuffer(1024);
  for(auto* texture : dynamicTextures_) {

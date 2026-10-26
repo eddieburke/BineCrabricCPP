@@ -215,7 +215,6 @@ class World : public IEntityWorld {
   // drain+invalidate work by wall clock (per frame); -1 drains unbounded.
   bool doLightingUpdates(std::size_t maxDirtyRegions = 128, std::int64_t timeBudgetNs = -1);
  void pumpChunkPublish();
- // Block until the lighting thread has fully converged (world load).
  void finishLightingUpdates();
   [[nodiscard]] bool hasPendingLightingUpdates() const noexcept {
    return lighting_.busy();
@@ -225,6 +224,9 @@ class World : public IEntityWorld {
  }
  void setLightingCamera(double x, double y, double z) noexcept {
   lighting_.setCameraPosition(x, y, z);
+ }
+ void awaitChunkLighting(int chunkX, int chunkZ) {
+  lighting_.awaitColumn(chunkX, chunkZ);
  }
  void unregisterChunkForLighting(Chunk* chunk) {
   lighting_.unregisterChunk(chunk);

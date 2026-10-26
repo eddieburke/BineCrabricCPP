@@ -300,6 +300,13 @@ void GLCore::bindFramebufferTracked(unsigned int target, unsigned int framebuffe
 int GLCore::drawFramebufferBinding() {
  return g_drawFramebufferBinding;
 }
+void GLCore::forgetFramebuffer(unsigned int framebuffer) {
+ if(g_drawFramebufferBinding == static_cast<int>(framebuffer)) g_drawFramebufferBinding = 0;
+ if(g_appliedDrawBufferFbo == static_cast<int>(framebuffer)) {
+  g_appliedDrawBufferFbo = -1;
+  g_appliedDrawBufferCount = -1;
+ }
+}
 void GLCore::setDrawBuffersTracked(int count, const unsigned int* buffers) {
  if(drawBuffers == nullptr || count <= 0 || buffers == nullptr) {
   return;

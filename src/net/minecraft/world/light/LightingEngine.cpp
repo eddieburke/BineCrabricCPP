@@ -72,30 +72,41 @@ void LightingEngine::push(LightType type, int minX, int minY, int minZ, int maxX
  flushStaging();
 }
 void LightingEngine::flushStaging() {
- std::deque<Box> batch;
- {
-  const std::lock_guard lock(stagingMutex_);
-  if(staging_.empty()) {
-   return;
+ const std::scoped_lock lock(stagingMutex_, queueMutex_);
+ flushStagingLocked();
+}
+void LightingEngine::trackBoxLocked(const Box& box, bool add) {
+ for(int x = box.minX >> 4; x <= (box.maxX >> 4); ++x) {
+  for(int z = box.minZ >> 4; z <= (box.maxZ >> 4); ++z) {
+   const auto key = chunkKey(x, z);
+   if(add) {
+    ++columnWork_[key];
+   } else {
+    const auto found = columnWork_.find(key);
+    if(found != columnWork_.end() && --found->second == 0) columnWork_.erase(found);
+   }
   }
-  batch.swap(staging_);
-  stagedCount_.store(0, std::memory_order_relaxed);
  }
- const std::lock_guard lock(queueMutex_);
+}
+void LightingEngine::flushStagingLocked() {
+ if(staging_.empty()) return;
  if(stopping_.load(std::memory_order_relaxed)) {
   return;
  }
  constexpr std::size_t kMaxQueue = 200000;
- for(const Box& box : batch) {
+ for(const Box& box : staging_) {
   if(queue_.size() >= kMaxQueue) {
    const auto it = std::find_if(queue_.rbegin(), queue_.rend(), [&box](const Box& queued) {
     return queued.type == box.type;
    });
    if(it != queue_.rend()) {
+    trackBoxLocked(*it, false);
     it->cover(box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ);
+    trackBoxLocked(*it, true);
     continue;
    }
   }
+  trackBoxLocked(box, true);
   const std::int64_t volume = static_cast<std::int64_t>(box.maxX - box.minX + 1) *
                               static_cast<std::int64_t>(box.maxY - box.minY + 1) *
                               static_cast<std::int64_t>(box.maxZ - box.minZ + 1);
@@ -105,6 +116,8 @@ void LightingEngine::flushStaging() {
    queue_.push_back(box);
   }
  }
+ staging_.clear();
+ stagedCount_.store(0, std::memory_order_relaxed);
  pendingCount_.store(queue_.size() + activeBoxes_.size(), std::memory_order_relaxed);
  scheduleWorkersLocked();
 }
@@ -141,6 +154,10 @@ void LightingEngine::unregisterChunk(Chunk* chunk) {
  }
  const int minX = chunk->x * 16;
  const int minZ = chunk->z * 16;
+ {
+  const std::lock_guard lock(queueMutex_);
+  awaitingColumns_.erase(chunkKey(chunk->x, chunk->z));
+ }
  const std::lock_guard lock(borderMutex_);
  for(auto it = pendingBorders_.begin(); it != pendingBorders_.end();) {
   std::erase_if(it->second, [&](const Box& box) {
@@ -151,7 +168,7 @@ void LightingEngine::unregisterChunk(Chunk* chunk) {
 }
 std::vector<LightingEngine::DirtyRegion> LightingEngine::drainDirtyRegions(std::size_t maxRegions) {
  flushStaging();
- flushPending(!busy());
+ flushPending();
  std::vector<DirtyRegion> regions;
  regions.reserve(std::min(maxRegions, outbox_.size()));
  DirtyRegion region{};
@@ -159,6 +176,28 @@ std::vector<LightingEngine::DirtyRegion> LightingEngine::drainDirtyRegions(std::
   regions.push_back(region);
  }
  return regions;
+}
+void LightingEngine::awaitColumn(int chunkX, int chunkZ) {
+ const std::lock_guard lock(queueMutex_);
+ awaitingColumns_.insert_or_assign(chunkKey(chunkX, chunkZ), ReadyColumn{chunkX, chunkZ});
+}
+std::vector<LightingEngine::ReadyColumn> LightingEngine::drainReadyColumns(std::size_t maxColumns) {
+ const std::scoped_lock lock(stagingMutex_, queueMutex_);
+ flushStagingLocked();
+ std::vector<ReadyColumn> ready;
+ if(maxColumns == 0) return ready;
+ for(const auto& [key, column] : awaitingColumns_) {
+  if(!columnWork_.contains(key)) ready.push_back(column);
+ }
+ const auto count = std::min(maxColumns, ready.size());
+ std::partial_sort(ready.begin(), ready.begin() + static_cast<std::ptrdiff_t>(count), ready.end(),
+                   [this](const ReadyColumn& a, const ReadyColumn& b) {
+  return distanceSqToCamera({a.x * 16, 0, a.z * 16, a.x * 16 + 15, 127, a.z * 16 + 15}) <
+         distanceSqToCamera({b.x * 16, 0, b.z * 16, b.x * 16 + 15, 127, b.z * 16 + 15});
+ });
+ ready.resize(count);
+ for(const auto& column : ready) awaitingColumns_.erase(chunkKey(column.x, column.z));
+ return ready;
 }
 bool LightingEngine::hasDirtyRegions() const {
  if(outbox_.size() != 0) {
@@ -190,6 +229,8 @@ void LightingEngine::stop() {
  idleCv_.wait(lock, [this] { return scheduledWorkers_ == 0; });
  queue_.clear();
  activeBoxes_.clear();
+ columnWork_.clear();
+ awaitingColumns_.clear();
  pendingCount_.store(0, std::memory_order_relaxed);
 }
 void LightingEngine::scheduleWorkersLocked() {
@@ -232,6 +273,7 @@ bool LightingEngine::tryClaimBox(Box& out) {
  return false;
 }
 void LightingEngine::releaseClaimedBoxLocked(const Box& box) {
+ trackBoxLocked(box, false);
  activeBoxes_.erase(std::remove_if(activeBoxes_.begin(),
                                    activeBoxes_.end(),
                                    [&](const Box& active) {
@@ -635,7 +677,8 @@ void LightingEngine::mergeIntoPending(DirtyRegion region) {
   const bool touches = !(existing.maxX + 1 < region.minX || existing.minX > region.maxX + 1 ||
                          existing.maxY + 1 < region.minY || existing.minY > region.maxY + 1 ||
                          existing.maxZ + 1 < region.minZ || existing.minZ > region.maxZ + 1);
-  if(!touches) {
+  if(!touches || std::max(region.maxX, existing.maxX) - std::min(region.minX, existing.minX) >= 64 ||
+     std::max(region.maxZ, existing.maxZ) - std::min(region.minZ, existing.minZ) >= 64) {
    ++i;
    continue;
   }
@@ -651,6 +694,7 @@ void LightingEngine::mergeIntoPending(DirtyRegion region) {
   pending_.push_back(region);
   return;
  }
+ if(outbox_.tryPush(region)) return;
  auto farthest = std::max_element(pending_.begin(), pending_.end(), [this](const DirtyRegion& a, const DirtyRegion& b) {
   return distanceSqToCamera(a) < distanceSqToCamera(b);
  });
@@ -661,7 +705,7 @@ void LightingEngine::mergeIntoPending(DirtyRegion region) {
  farthest->maxY = std::max(farthest->maxY, region.maxY);
  farthest->maxZ = std::max(farthest->maxZ, region.maxZ);
 }
-void LightingEngine::flushPending(bool includeFar) {
+void LightingEngine::flushPending() {
  const std::lock_guard lock(pendingMutex_);
  if(pending_.empty()) {
   return;
@@ -672,7 +716,7 @@ void LightingEngine::flushPending(bool includeFar) {
  std::vector<DirtyRegion> held;
  held.reserve(pending_.size());
  for(const DirtyRegion& region : pending_) {
-  if((includeFar || isNearCamera(region)) && outbox_.tryPush(region)) {
+  if(outbox_.tryPush(region)) {
    continue;
   }
   held.push_back(region);

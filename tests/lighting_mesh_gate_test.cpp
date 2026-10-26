@@ -2,6 +2,7 @@
 #include "net/minecraft/client/render/world/ChunkCompilePipeline.hpp"
 #include "net/minecraft/client/render/world/TerrainScene.hpp"
 #include "net/minecraft/world/ClientWorld.hpp"
+#include "net/minecraft/world/events/GameEventListener.hpp"
 #define private public
 #include "net/minecraft/client/render/world/ChunkSectionSystem.hpp"
 #undef private
@@ -77,5 +78,59 @@ TEST(LightingMeshGate, BorderRefreshWaitsForArrivingColumnLighting) {
  fixture.sections.drainBorderRefresh();
  EXPECT_TRUE(neighbor->dirty);
  EXPECT_FALSE(fixture.sections.pendingBorderRefresh_.contains(client::render::world::ColumnPos{1, 0}));
+}
+TEST(LightingMeshGate, WorldPublishesCompletionEvenWhenNoLightChanged) {
+ LightingMeshFixture fixture;
+ fixture.load(0, 0);
+ fixture.sections.chunkAvailable(0, 0);
+ fixture.sections.drainPendingColumns();
+ struct Listener final : GameEventListener {
+  client::render::ChunkSectionSystem& sections;
+  int completions = 0;
+  explicit Listener(client::render::ChunkSectionSystem& value) : sections(value) {}
+  void markChunkColumnLit(int x, int z) override {
+   ++completions;
+   sections.markChunkColumnLit(x, z);
+  }
+ } listener(fixture.sections);
+ fixture.world.addEventListener(&listener);
+ EXPECT_FALSE(fixture.sections.columnLightingReady(0, 0));
+ fixture.world.doLightingUpdates(1);
+ EXPECT_EQ(listener.completions, 1);
+ EXPECT_TRUE(fixture.sections.columnLightingReady(0, 0));
+ EXPECT_TRUE(fixture.sections.sectionAt(0, 0, 0)->readyForMeshCapture());
+ fixture.world.removeEventListener(&listener);
+}
+TEST(LightingMeshGate, GlobalCompletionDoesNotBypassBoundedPerColumnNotifications) {
+ LightingMeshFixture fixture;
+ for(int x = 0; x < 3; ++x) {
+  fixture.load(x, 0);
+  fixture.sections.chunkAvailable(x, 0);
+ }
+ struct Listener final : GameEventListener {
+  client::render::ChunkSectionSystem& sections;
+  int columns = 0;
+  int global = 0;
+  explicit Listener(client::render::ChunkSectionSystem& value) : sections(value) {}
+  void markChunkColumnLit(int x, int z) override {
+   ++columns;
+   sections.markChunkColumnLit(x, z);
+  }
+  void markAllChunksLit() override {
+   ++global;
+   sections.markAllChunksLit();
+  }
+ } listener(fixture.sections);
+ fixture.world.addEventListener(&listener);
+ EXPECT_TRUE(fixture.world.doLightingUpdates(1));
+ EXPECT_EQ(listener.columns, 1);
+ EXPECT_EQ(listener.global, 0);
+ EXPECT_TRUE(fixture.world.doLightingUpdates(1));
+ EXPECT_EQ(listener.columns, 2);
+ EXPECT_EQ(listener.global, 0);
+ EXPECT_FALSE(fixture.world.doLightingUpdates(1));
+ EXPECT_EQ(listener.columns, 3);
+ EXPECT_EQ(listener.global, 1);
+ fixture.world.removeEventListener(&listener);
 }
 }

@@ -17,9 +17,16 @@ class World;
 namespace net::minecraft::client::option {
 struct RenderSettings;
 }
+namespace net::minecraft::client::texture {
+class TextureManager;
+}
+namespace net::minecraft::util::concurrent {
+class WorkerPool;
+}
 namespace net::minecraft::client::render {
 class Frustum;
 class Pipeline;
+class ChunkSectionSystem;
 struct PackInstance;
 namespace distant {
 // see LOD_DESIGN.md §4, §6, §7
@@ -30,11 +37,15 @@ class DistantRenderer {
  DistantRenderer(const DistantRenderer&) = delete;
  DistantRenderer& operator=(const DistantRenderer&) = delete;
  void reset();
- void markChunkDirty(int chunkX, int chunkZ);
- void update(World& world, const option::RenderSettings& settings, double eyeX, double eyeY, double eyeZ);
+ void markChunkDirty(int chunkX, int chunkZ, bool discardPending = false);
+ void update(World& world, client::texture::TextureManager& textures, const ChunkSectionSystem& sections,
+             const option::RenderSettings& settings,
+             double eyeX, double eyeY, double eyeZ);
  void renderOpaque(Pipeline& pipeline, const option::RenderSettings& settings, const Frustum* culler);
  void renderWater(Pipeline& pipeline, const option::RenderSettings& settings, const Frustum* culler);
  [[nodiscard]] std::string debugInfo() const;
+ [[nodiscard]] bool coversColumn(int chunkX, int chunkZ) const noexcept;
+ std::uint64_t coverageRevision = 0;
 
  private:
  struct TileKey {
@@ -54,8 +65,11 @@ class DistantRenderer {
   int stride = 0;
   int wantedStride = 1;
   std::uint64_t generation = 0;
+  std::uint64_t minimumGeneration = 0;
   std::uint64_t builtGeneration = 0;
   bool inFlight = false;
+  std::uint64_t jobId = 0;
+  std::uint16_t chunkMask = 0;
   int retryFrame = 0;
   std::optional<DistantSlab::Allocation> opaque;
   std::optional<DistantSlab::Allocation> water;
@@ -67,13 +81,16 @@ class DistantRenderer {
   TileKey key;
   int stride = 1;
   std::uint64_t generation = 0;
+  std::uint64_t jobId = 0;
   TileMesh mesh;
+  std::uint16_t chunkMask = 0;
  };
  static constexpr int kPinSide = kTileChunks + 2;
  struct PinnedChunks {
   int baseX = 0;
   int baseZ = 0;
   std::array<Chunk*, kPinSide * kPinSide> chunks{};
+  ~PinnedChunks() { release(); }
   void release() noexcept;
  };
  struct Shared {
@@ -81,18 +98,28 @@ class DistantRenderer {
   std::vector<Completed> completed;
  };
  void releaseTile(Tile& tile);
- void drainCompleted();
+ void drainCompleted(std::size_t uploadBudget);
  void draw(Pipeline& pipeline, const option::RenderSettings& settings, const Frustum* culler, bool water);
  void ensureDepthTextures(int width, int height);
+ void updateNativeRadius(const ChunkSectionSystem& sections, int requestedRadius);
+ void collectBuildCandidates();
+ [[nodiscard]] static int meshPriority(int distance, bool replacement);
  DistantSlab slab_;
  bool slabReady_ = false;
  BlockPalette palette_;
+ std::optional<std::uint64_t> resourceGeneration_;
  std::unordered_map<TileKey, Tile, TileKeyHash> tiles_;
  std::shared_ptr<Shared> shared_ = std::make_shared<Shared>();
  std::vector<std::pair<int, TileKey>> wanted_;
+ std::vector<std::pair<int, TileKey>> buildCandidates_;
+ net::minecraft::util::concurrent::WorkerPool* pool_ = nullptr;
+ std::weak_ptr<void> poolLifetime_;
  std::shared_ptr<BiomeSource> biomes_;
  std::uint32_t frame_ = 0;
  int inFlight_ = 0;
+ int memoryStride_ = 1;
+ int nativeRadius_ = -1;
+ std::uint64_t nextJobId_ = 0;
  double eyeX_ = 0.0;
  double eyeY_ = 0.0;
  double eyeZ_ = 0.0;
@@ -100,7 +127,6 @@ class DistantRenderer {
  gl::GlTexture depth_[2];
  int depthWidth_ = 0;
  int depthHeight_ = 0;
- bool depthCopied_ = false;
 };
 } // namespace distant
 } // namespace net::minecraft::client::render

@@ -33,6 +33,8 @@ void GameOptions::load() {
   return;
  }
  std::string line;
+ std::optional<bool> legacyLod;
+ bool hasDistantTerrain = false;
  while(std::getline(in, line)) {
   try {
    const auto colon = line.find(':');
@@ -41,6 +43,11 @@ void GameOptions::load() {
    }
    const std::string key = line.substr(0, colon);
    const std::string val = line.substr(colon + 1);
+   if(key == "terrainLod") {
+    legacyLod = val == "true";
+    continue;
+   }
+   if(key == "distantTerrain") hasDistantTerrain = true;
    if(key == "skin") {
     skin = val;
     continue;
@@ -76,6 +83,7 @@ void GameOptions::load() {
   } catch(...) {
   }
  }
+ if(legacyLod.has_value() && !hasDistantTerrain) distantTerrain = *legacyLod;
  applyDerivedSettings();
 }
 void GameOptions::save() {
@@ -119,6 +127,9 @@ void GameOptions::applyToWorld(World* world) const {
  world->setChunkResidentRadius(renderSettings(*this).residentChunkRadius);
 }
 void GameOptions::applyDerivedSettings() {
+ lodNativeRadius = std::clamp(lodNativeRadius, 8, 32);
+ lodQuality = std::clamp(lodQuality, 0, 2);
+ lodMemoryMiB = std::clamp(lodMemoryMiB, 64, 512);
  const RenderSettings resolved = renderSettings(*this);
  texture::TextureManager::MIPMAP = mipmapLevel > 0;
  texture::TextureManager::MIPMAP_LINEAR = resolved.mipmapLinearFilter;

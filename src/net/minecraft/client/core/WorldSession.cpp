@@ -242,6 +242,12 @@ bool WorldSession::parkLocalWorldForRemoteHandoff(Minecraft& client) {
   client.stats->save();
  }
  saveLocalWorld(client, true);
+ if(client.player != nullptr) {
+  NbtCompound playerNbt;
+  client.player->writeNbt(playerNbt);
+  client.world->getProperties().setPlayerNbt(std::move(playerNbt));
+  client.world->serverRemove(client.player);
+ }
  if(client.worldSoundListener != nullptr) {
   client.worldSoundListener->detach(client.world);
  }

@@ -228,6 +228,7 @@ struct GLCore {
  // through here so drawFramebufferBinding() can answer without a glGetIntegerv
  // round-trip; binding through the raw pointer leaves the shadow stale.
  static void bindFramebufferTracked(unsigned int target, unsigned int framebuffer);
+ static void forgetFramebuffer(unsigned int framebuffer);
  [[nodiscard]] static int drawFramebufferBinding();
  // glDrawBuffers is per-FBO state, so the memo is keyed on the draw binding as well as
  // the list. Returning to an FBO re-issues the call rather than trusting a remembered

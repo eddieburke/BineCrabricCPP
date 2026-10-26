@@ -1,4 +1,5 @@
 #include "net/minecraft/server/MinecraftServer.hpp"
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <cstdlib>
@@ -510,6 +511,10 @@ void MinecraftServer::tick() {
  Box::resetCacheCount();
  Vec3d::resetCacheCount();
  ++ticks;
+ const int saveInterval = properties != nullptr ? std::max(40, properties->getProperty("auto-save-ticks", 4000)) : 4000;
+ if(ticks % saveInterval == 0) {
+  playerManager.savePlayers();
+ }
  for(int i = 0; i < 2; ++i) {
   if(i != 0 && !allowNether) {
    continue;

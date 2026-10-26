@@ -1,17 +1,19 @@
 #include "net/minecraft/client/render/distant/DistantRenderer.hpp"
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <utility>
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/gl/ShaderProgram.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
+#include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/client/render/QuadIndexBuffer.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/culling/Frustum.hpp"
 #include "net/minecraft/client/render/pipeline/Pipeline.hpp"
+#include "net/minecraft/client/render/world/ChunkSectionSystem.hpp"
+#include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/util/math/Matrix4f.hpp"
@@ -21,18 +23,7 @@
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 namespace net::minecraft::client::render::distant {
 namespace {
-constexpr std::size_t kSlabBytes = 256u * 1024u * 1024u;
-constexpr std::size_t kUploadBytesPerFrame = 8u * 1024u * 1024u;
-constexpr int kSubmitsPerFrame = 16;
-constexpr int kMeshPriority = 1 << 24;
 constexpr int kRetryFrames = 30;
-int strideFor(double distance, double nativeBlocks) {
- const double band = std::max(64.0, nativeBlocks);
- if(distance < band * 2.0) return 1;
- if(distance < band * 4.0) return 2;
- if(distance < band * 8.0) return 4;
- return 8;
-}
 void normalMatrix(const util::math::Matrix4f& modelView, float out[9]) {
  util::math::Matrix4f inverse = modelView;
  inverse.invert();
@@ -64,16 +55,42 @@ void DistantRenderer::releaseTile(Tile& tile) {
  tile.water.reset();
 }
 void DistantRenderer::reset() {
+ if(!poolLifetime_.expired()) pool_->cancelPending(this);
+ ++coverageRevision;
  for(auto& [key, tile] : tiles_) {
   releaseTile(tile);
  }
  tiles_.clear();
+ wanted_.clear();
+ buildCandidates_.clear();
  shared_ = std::make_shared<Shared>();
  biomes_.reset();
  inFlight_ = 0;
+ memoryStride_ = 1;
+ nativeRadius_ = -1;
  drawnLastFrame_ = 0;
 }
-void DistantRenderer::markChunkDirty(int chunkX, int chunkZ) {
+void DistantRenderer::updateNativeRadius(const ChunkSectionSystem& sections, int requestedRadius) {
+ if(nativeRadius_ < 0 || requestedRadius <= nativeRadius_ || sections.nativeRadiusReady(requestedRadius))
+  nativeRadius_ = requestedRadius;
+}
+int DistantRenderer::meshPriority(int distance, bool replacement) {
+ return 8 + std::max(0, distance) / 16 + (replacement ? 64 : 0);
+}
+void DistantRenderer::collectBuildCandidates() {
+ buildCandidates_.clear();
+ for(const auto& [distance, key] : wanted_) {
+  const Tile& tile = tiles_.at(key);
+  if(tile.inFlight || tile.retryFrame > static_cast<int>(frame_) ||
+     (tile.builtGeneration == tile.generation && tile.stride == tile.wantedStride)) continue;
+  const bool reclaimingMemory = tile.stride != 0 && tile.wantedStride > tile.stride;
+  const int priority = reclaimingMemory ? 0 : meshPriority(distance, tile.chunkMask == 0xFFFFu);
+  buildCandidates_.emplace_back(priority, key);
+ }
+ std::stable_sort(buildCandidates_.begin(), buildCandidates_.end(),
+                  [](const auto& a, const auto& b) { return a.first < b.first; });
+}
+void DistantRenderer::markChunkDirty(int chunkX, int chunkZ, bool discardPending) {
  const int tileX = MathHelper::floorDiv(chunkX, kTileChunks);
  const int tileZ = MathHelper::floorDiv(chunkZ, kTileChunks);
  const int localX = chunkX - tileX * kTileChunks;
@@ -83,18 +100,20 @@ void DistantRenderer::markChunkDirty(int chunkX, int chunkZ) {
    const auto it = tiles_.find(TileKey{tileX + dx, tileZ + dz});
    if(it != tiles_.end()) {
     ++it->second.generation;
+    if(discardPending) it->second.minimumGeneration = it->second.generation;
     it->second.retryFrame = 0;
    }
   }
  }
 }
-void DistantRenderer::drainCompleted() {
+void DistantRenderer::drainCompleted(std::size_t uploadBudget) {
  std::vector<Completed> completed;
  {
   const std::lock_guard lock(shared_->mutex);
   completed.swap(shared_->completed);
  }
  std::size_t uploaded = 0;
+ bool memoryPressure = false;
  std::vector<Completed> deferred;
  for(Completed& result : completed) {
   const auto it = tiles_.find(result.key);
@@ -103,27 +122,67 @@ void DistantRenderer::drainCompleted() {
    continue;
   }
   Tile& tile = it->second;
+  if(result.jobId != tile.jobId) {
+   --inFlight_;
+   continue;
+  }
+  if(result.chunkMask == 0) {
+   --inFlight_;
+   tile.inFlight = false;
+   tile.retryFrame = static_cast<int>(frame_) + kRetryFrames;
+   continue;
+  }
+  const bool coverageProgress = result.chunkMask != tile.chunkMask &&
+                               (result.chunkMask & tile.chunkMask) == tile.chunkMask &&
+                               result.generation < tile.generation;
+  if(result.generation < tile.minimumGeneration ||
+     (result.generation != tile.generation && !coverageProgress) || result.stride != tile.wantedStride) {
+   --inFlight_;
+   tile.inFlight = false;
+   continue;
+  }
   const std::size_t bytes = (result.mesh.opaque.size() + result.mesh.water.size()) * sizeof(DhVertex);
-  if(uploaded > 0 && uploaded + bytes > kUploadBytesPerFrame) {
+  if(uploaded > 0 && uploaded + bytes > uploadBudget) {
    deferred.push_back(std::move(result));
    continue;
   }
   --inFlight_;
   tile.inFlight = false;
-  if(result.generation != tile.generation || result.stride != tile.wantedStride) {
-   continue;
-  }
   std::optional<DistantSlab::Allocation> opaque;
   std::optional<DistantSlab::Allocation> water;
-  if(!result.mesh.opaque.empty()) opaque = slab_.allocate(result.mesh.opaque.size());
-  if(!result.mesh.water.empty()) water = slab_.allocate(result.mesh.water.size());
+  bool reuseOpaque = false;
+  bool reuseWater = false;
+  const auto reserve = [this](const std::optional<DistantSlab::Allocation>& old, std::size_t vertices, bool& reuse)
+      -> std::optional<DistantSlab::Allocation> {
+   if(vertices == 0) return std::nullopt;
+   const auto pages = static_cast<std::uint32_t>((vertices + DistantSlab::kPageVertices - 1) / DistantSlab::kPageVertices);
+   if(old.has_value() && pages <= old->pageCount) {
+    reuse = true;
+    return DistantSlab::Allocation{old->firstPage, pages, static_cast<std::uint32_t>(vertices)};
+   }
+   return slab_.allocate(vertices);
+  };
+  opaque = reserve(tile.opaque, result.mesh.opaque.size(), reuseOpaque);
+  water = reserve(tile.water, result.mesh.water.size(), reuseWater);
   if((!result.mesh.opaque.empty() && !opaque.has_value()) || (!result.mesh.water.empty() && !water.has_value())) {
-   if(opaque.has_value()) slab_.release(*opaque);
-   if(water.has_value()) slab_.release(*water);
+   if(opaque.has_value() && !reuseOpaque) slab_.release(*opaque);
+   if(water.has_value() && !reuseWater) slab_.release(*water);
+   memoryPressure = true;
    tile.retryFrame = static_cast<int>(frame_) + kRetryFrames;
    continue;
   }
-  releaseTile(tile);
+  const auto retire = [this](const std::optional<DistantSlab::Allocation>& old,
+                             const std::optional<DistantSlab::Allocation>& replacement, bool reuse) {
+   if(!old.has_value()) return;
+   if(!reuse) {
+    slab_.release(*old);
+   } else if(old->pageCount > replacement->pageCount) {
+    slab_.release(DistantSlab::Allocation{old->firstPage + replacement->pageCount,
+                                          old->pageCount - replacement->pageCount, 0});
+   }
+  };
+  retire(tile.opaque, opaque, reuseOpaque);
+  retire(tile.water, water, reuseWater);
   if(opaque.has_value()) slab_.upload(*opaque, result.mesh.opaque);
   if(water.has_value()) slab_.upload(*water, result.mesh.water);
   tile.opaque = opaque;
@@ -131,15 +190,20 @@ void DistantRenderer::drainCompleted() {
   tile.minY = result.mesh.minY;
   tile.maxY = result.mesh.maxY;
   tile.stride = result.stride;
+  if(tile.chunkMask != result.chunkMask) ++coverageRevision;
+  tile.chunkMask = result.chunkMask;
   tile.builtGeneration = result.generation;
   uploaded += bytes;
  }
+ if(memoryPressure) memoryStride_ = std::min(kMaxStride, memoryStride_ * 2);
  if(!deferred.empty()) {
   const std::lock_guard lock(shared_->mutex);
   for(Completed& result : deferred) shared_->completed.push_back(std::move(result));
  }
 }
-void DistantRenderer::update(World& world, const option::RenderSettings& settings, double eyeX, double eyeY,
+void DistantRenderer::update(World& world, client::texture::TextureManager& textures,
+                             const ChunkSectionSystem& sections,
+                             const option::RenderSettings& settings, double eyeX, double eyeY,
                              double eyeZ) {
  ++frame_;
  eyeX_ = eyeX;
@@ -147,18 +211,50 @@ void DistantRenderer::update(World& world, const option::RenderSettings& setting
  eyeZ_ = eyeZ;
  if(!settings.distantTerrain) {
   if(!tiles_.empty()) reset();
+  if(slabReady_) {
+   slab_.destroy();
+   slabReady_ = false;
+  }
+  for(auto& texture : depth_) texture.reset();
   return;
  }
+ const std::size_t slabBytes = static_cast<std::size_t>(settings.lodMemoryMiB) * 1024u * 1024u;
+ if(slabReady_ && slab_.capacityBytes() != slabBytes) {
+  const int previousRadius = nativeRadius_;
+  reset();
+  nativeRadius_ = previousRadius;
+  slab_.destroy();
+  slabReady_ = false;
+ }
  if(!slabReady_) {
-  slabReady_ = slab_.create(kSlabBytes);
+  slabReady_ = slab_.create(slabBytes);
   if(!slabReady_) return;
  }
- drainCompleted();
+ if(resourceGeneration_ != textures.resourceGeneration()) {
+  const int atlasId = textures.getTextureId("/terrain.png");
+  if(const client::texture::RasterImage* atlas = textures.getRasterImage(atlasId)) {
+   palette_ = defaultPalette();
+   updatePaletteFromAtlas(palette_, *atlas);
+   for(const int id : {8, 9, 10, 11}) {
+    const auto* block = net::minecraft::block::Block::BLOCKS[static_cast<std::size_t>(id)];
+    if(block == nullptr) continue;
+    auto& entry = palette_.entries[static_cast<std::size_t>(id)];
+    if(const auto color = textures.terrainTileColor(block->getTexture(1, 0)))
+     std::copy(color->begin(), color->end(), entry.top);
+    if(const auto color = textures.terrainTileColor(block->getTexture(2, 0)))
+     std::copy(color->begin(), color->end(), entry.side);
+   }
+   resourceGeneration_ = textures.resourceGeneration();
+   for(auto& [key, tile] : tiles_) tile.minimumGeneration = ++tile.generation;
+  }
+ }
+ drainCompleted(8u * 1024u * 1024u);
+ updateNativeRadius(sections, settings.nativeChunkRadius);
  ChunkSource* source = world.getChunkSource();
  if(source == nullptr) return;
  const double viewBlocks = settings.renderDistance.blocks;
  const double nativeBlocks = static_cast<double>(settings.nativeChunkRadius * 16);
- const double innerBlocks = std::max(0.0, nativeBlocks - 16.0);
+ const double innerBlocks = std::max(0, nativeRadius_ * 16 - kNativeOverlapBlocks);
  const int reach = static_cast<int>(std::ceil(viewBlocks / kTileBlocks)) + 1;
  const int centerX = MathHelper::floorDiv(MathHelper::floor(eyeX), kTileBlocks);
  const int centerZ = MathHelper::floorDiv(MathHelper::floor(eyeZ), kTileBlocks);
@@ -179,7 +275,10 @@ void DistantRenderer::update(World& world, const option::RenderSettings& setting
    const double distance = std::sqrt(centerDx * centerDx + centerDz * centerDz);
    Tile& tile = tiles_[TileKey{tx, tz}];
    tile.seenFrame = frame_;
-   const int stride = strideFor(distance, nativeBlocks);
+   const bool replacingWithNative = nativeRadius_ < settings.nativeChunkRadius &&
+                                    nearest < nativeBlocks - kNativeOverlapBlocks;
+   const int stride = replacingWithNative && tile.stride != 0 ? tile.stride :
+       tileStride(nearest, nativeBlocks, settings.lodQuality, memoryStride_);
    if(tile.wantedStride != stride) {
     tile.wantedStride = stride;
     ++tile.generation;
@@ -189,6 +288,7 @@ void DistantRenderer::update(World& world, const option::RenderSettings& setting
  }
  for(auto it = tiles_.begin(); it != tiles_.end();) {
   if(it->second.seenFrame != frame_) {
+   if(it->second.chunkMask != 0) ++coverageRevision;
    releaseTile(it->second);
    it = tiles_.erase(it);
   } else {
@@ -197,55 +297,54 @@ void DistantRenderer::update(World& world, const option::RenderSettings& setting
  }
  std::sort(wanted_.begin(), wanted_.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
  auto& pool = util::concurrent::ThreadCoordinator::instance().pool(util::concurrent::Domain::Compute);
- const int maxInFlight = static_cast<int>(std::max(2u, pool.threadCount() * 2u));
+ pool_ = &pool;
+ poolLifetime_ = pool.lifetimeToken();
+ const int maxInFlight = static_cast<int>(
+     std::clamp(util::concurrent::ThreadCoordinator::instance().computeShare(3), 1u, 4u));
  if(biomes_ == nullptr && world.getBiomeSource() != nullptr) {
   biomes_ = std::shared_ptr<BiomeSource>(world.getBiomeSource()->clone());
  }
- int submitted = 0;
- for(const auto& [distance, key] : wanted_) {
-  if(inFlight_ >= maxInFlight || submitted >= kSubmitsPerFrame) break;
-  Tile& tile = tiles_[key];
-  if(tile.inFlight || (tile.builtGeneration == tile.generation && tile.stride == tile.wantedStride)) {
-   continue;
-  }
-  if(tile.retryFrame > static_cast<int>(frame_)) continue;
+ collectBuildCandidates();
+ for(const auto& [priority, key] : buildCandidates_) {
+  if(inFlight_ >= maxInFlight) break;
+  Tile& tile = tiles_.at(key);
   auto pins = std::make_shared<PinnedChunks>();
   pins->baseX = key.x * kTileChunks - 1;
   pins->baseZ = key.z * kTileChunks - 1;
-  bool complete = true;
-  for(int cz = 0; cz < kPinSide && complete; ++cz) {
+  bool any = false;
+  for(int cz = 0; cz < kPinSide; ++cz) {
    for(int cx = 0; cx < kPinSide; ++cx) {
     const int chunkX = pins->baseX + cx;
     const int chunkZ = pins->baseZ + cz;
-    Chunk* chunk = source->isChunkDataReady(chunkX, chunkZ) ? source->getChunkIfLoaded(chunkX, chunkZ) : nullptr;
+    Chunk* chunk = source->isChunkDataReady(chunkX, chunkZ) && sections.columnLightingReady(chunkX, chunkZ)
+                       ? source->getChunkIfLoaded(chunkX, chunkZ) : nullptr;
     if(chunk != nullptr && !chunk->tryAcquireRenderPin()) chunk = nullptr;
     pins->chunks[static_cast<std::size_t>(cz * kPinSide + cx)] = chunk;
     const bool own = cx >= 1 && cx <= kTileChunks && cz >= 1 && cz <= kTileChunks;
-    if(own && chunk == nullptr) {
-     complete = false;
-     break;
-    }
+    if(own && chunk != nullptr) any = true;
    }
   }
-  if(!complete) {
+  if(!any) {
    pins->release();
    tile.retryFrame = static_cast<int>(frame_) + kRetryFrames;
    continue;
   }
   tile.inFlight = true;
+  tile.jobId = ++nextJobId_;
+  const std::uint64_t jobId = tile.jobId;
   ++inFlight_;
-  ++submitted;
   const std::shared_ptr<Shared> shared = shared_;
   const std::shared_ptr<const BiomeSource> biomes = biomes_;
-  const BlockPalette* palette = &palette_;
+  const BlockPalette palette = palette_;
   const std::uint64_t generation = tile.generation;
   const int stride = tile.wantedStride;
   pool.submit(
-      [shared, pins, biomes, palette, key, generation, stride] {
+      [shared, pins, biomes, palette, key, generation, stride, jobId] {
        Completed result;
        result.key = key;
        result.stride = stride;
        result.generation = generation;
+       result.jobId = jobId;
        TileCells cells;
        const ChunkLookup lookup = [&pins](int chunkX, int chunkZ) -> const Chunk* {
         const int cx = chunkX - pins->baseX;
@@ -253,23 +352,27 @@ void DistantRenderer::update(World& world, const option::RenderSettings& setting
         if(cx < 0 || cz < 0 || cx >= kPinSide || cz >= kPinSide) return nullptr;
         return pins->chunks[static_cast<std::size_t>(cz * kPinSide + cx)];
        };
-       if(extractTile(lookup, key.x, key.z, stride, cells, biomes.get())) {
-        meshTile(cells, *palette, result.mesh);
-       } else {
-        result.generation = generation + 1;
+       try {
+        if(extractTile(lookup, key.x, key.z, stride, cells, biomes.get(), true)) {
+         meshTile(cells, palette, result.mesh);
+         result.chunkMask = cells.chunkMask;
+        }
+       } catch(...) {
+        result.mesh = {};
        }
        pins->release();
        const std::lock_guard lock(shared->mutex);
        shared->completed.push_back(std::move(result));
       },
-      kMeshPriority + distance,
+      priority,
       this,
-      [shared, pins, key, generation, stride] {
+      [shared, pins, key, generation, stride, jobId] {
        pins->release();
        Completed result;
        result.key = key;
        result.stride = stride;
-       result.generation = generation + 1;
+       result.generation = generation;
+       result.jobId = jobId;
        const std::lock_guard lock(shared->mutex);
        shared->completed.push_back(std::move(result));
       });
@@ -301,12 +404,8 @@ void DistantRenderer::draw(Pipeline& pipeline, const option::RenderSettings& set
   ensureDepthTextures(scene->colorTargets.width(), scene->colorTargets.height());
   scene->dhDepthTexture = depth_[0].handle();
   scene->dhDepthTextureNoTranslucent = depth_[1].handle();
-  if(water) {
-   scene->colorTargets.bindGbuffersWithDepth(depth_[0].handle());
-   core::bindTexture(static_cast<int>(depth_[1].handle()));
-   ::glCopyTexSubImage2D(gl::cap::Texture2D, 0, 0, 0, 0, 0, depthWidth_, depthHeight_);
-  } else {
-   scene->colorTargets.bindGbuffersWithDepth(depth_[0].handle());
+  scene->colorTargets.bindGbuffersWithDepth(depth_[0].handle());
+  if(!water) {
    const core::DepthScope clearDepth(true, true);
    ::glClear(0x00000100);
   }
@@ -336,14 +435,18 @@ void DistantRenderer::draw(Pipeline& pipeline, const option::RenderSettings& set
  program->set1i("customFog", fog.custom ? 1 : 0);
  program->set1i("fogShape", fog.enabled ? fog.shape : -1);
  program->set1f("mircoOffset", 0.01f);
- program->set1f("clipDistance", static_cast<float>(settings.nativeChunkRadius * 16 + 8));
+ program->set1f("clipDistance", static_cast<float>(std::max(0, nativeRadius_ * 16 - kNativeOverlapBlocks)));
  const int modelOffset = program->location("modelOffset");
  const core::DepthScope depth(true, true);
  const core::CullScope cull(!water);
  const core::BlendScope blend(water);
  gl::GLCore::bindVertexArray(slab_.vao());
  int drawn = 0;
- for(const auto& [key, tile] : tiles_) {
+ for(std::size_t index = 0; index < wanted_.size(); ++index) {
+  const TileKey& key = wanted_[water ? wanted_.size() - index - 1 : index].second;
+  const auto found = tiles_.find(key);
+  if(found == tiles_.end()) continue;
+  const Tile& tile = found->second;
   const std::optional<DistantSlab::Allocation>& allocation = water ? tile.water : tile.opaque;
   if(!allocation.has_value() || allocation->vertexCount == 0) continue;
   const double minX = static_cast<double>(key.x * kTileBlocks);
@@ -363,6 +466,11 @@ void DistantRenderer::draw(Pipeline& pipeline, const option::RenderSettings& set
  }
  core::unbindVertexArray();
  if(scene != nullptr) {
+  if(!water) {
+   core::activeTexture(gl::tex::Texture0);
+   core::bindTexture(static_cast<int>(depth_[1].handle()));
+   ::glCopyTexSubImage2D(gl::cap::Texture2D, 0, 0, 0, 0, 0, depthWidth_, depthHeight_);
+  }
   scene->colorTargets.bindGbuffersWithDepth(0);
  }
  if(!water) drawnLastFrame_ = drawn;
@@ -371,12 +479,21 @@ void DistantRenderer::renderOpaque(Pipeline& pipeline, const option::RenderSetti
  draw(pipeline, settings, culler, false);
 }
 void DistantRenderer::renderWater(Pipeline& pipeline, const option::RenderSettings& settings, const Frustum* culler) {
- draw(pipeline, settings, culler, true);
+ if(settings.renderWater) draw(pipeline, settings, culler, true);
 }
 std::string DistantRenderer::debugInfo() const {
  constexpr std::size_t kMiB = 1024u * 1024u;
  return "Distant: tiles " + std::to_string(tiles_.size()) + ", drawn " + std::to_string(drawnLastFrame_) +
         ", flight " + std::to_string(inFlight_) + ", slab " + std::to_string(slab_.usedBytes() / kMiB) + "/" +
         std::to_string(slab_.capacityBytes() / kMiB) + " MiB";
+}
+bool DistantRenderer::coversColumn(int chunkX, int chunkZ) const noexcept {
+ const int tileX = MathHelper::floorDiv(chunkX, kTileChunks);
+ const int tileZ = MathHelper::floorDiv(chunkZ, kTileChunks);
+ const auto it = tiles_.find(TileKey{tileX, tileZ});
+ if(it == tiles_.end() || it->second.stride == 0) return false;
+ const int localX = chunkX - tileX * kTileChunks;
+ const int localZ = chunkZ - tileZ * kTileChunks;
+ return (it->second.chunkMask & (1u << (localZ * kTileChunks + localX))) != 0;
 }
 } // namespace net::minecraft::client::render::distant

@@ -6,5 +6,6 @@ namespace net::minecraft::client::render::quad_index {
 // vertices of quad data; handle() is 0 until the first successful ensure().
 // Main/render thread only.
 bool ensure(std::size_t vertexCount);
+void destroy();
 [[nodiscard]] unsigned handle() noexcept;
 } // namespace net::minecraft::client::render::quad_index

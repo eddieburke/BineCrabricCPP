@@ -76,8 +76,35 @@ int PlayerManager::getBlockViewDistance() const {
  return chunkMaps_[0] != nullptr ? chunkMaps_[0]->getBlockViewDistance() : 144;
 }
 void PlayerManager::loadPlayerData(::net::minecraft::entity::player::ServerPlayerEntity* player) {
+ if(player != nullptr && server_ != nullptr && server_->launchConfig_.has_value() &&
+    player->name == server_->launchConfig_->ownerName) {
+  if(ServerWorld* world = server_->getWorld(0); world != nullptr) {
+   if(const NbtCompound* nbt = world->getProperties().getPlayerNbt(); nbt != nullptr) {
+    player->readNbt(*nbt);
+    return;
+   }
+  }
+ }
  if(saveHandler_ != nullptr && player != nullptr) {
   saveHandler_->loadPlayerData(*player);
+ }
+}
+void PlayerManager::savePlayerData(::net::minecraft::entity::player::ServerPlayerEntity& player) {
+ if(saveHandler_ != nullptr) {
+  saveHandler_->savePlayerData(player);
+ }
+ if(server_ != nullptr && server_->launchConfig_.has_value() &&
+    player.name == server_->launchConfig_->ownerName) {
+  if(ServerWorld* world = server_->getWorld(0); world != nullptr) {
+   NbtCompound nbt;
+   player.writeNbt(nbt);
+   for(ServerWorld* dimensionWorld : server_->worlds) {
+    if(dimensionWorld != nullptr) {
+     dimensionWorld->getProperties().setPlayerNbt(nbt);
+     dimensionWorld->save(true);
+    }
+   }
+  }
  }
 }
 void PlayerManager::addPlayer(::net::minecraft::entity::player::ServerPlayerEntity* player) {
@@ -107,9 +134,7 @@ void PlayerManager::disconnect(::net::minecraft::entity::player::ServerPlayerEnt
  if(player == nullptr || server_ == nullptr) {
   return;
  }
- if(saveHandler_ != nullptr) {
-  saveHandler_->savePlayerData(*player);
- }
+ savePlayerData(*player);
  if(ServerWorld* world = server_->getWorld(player->dimensionId); world != nullptr) {
   world->remove(player);
  }
@@ -454,7 +479,7 @@ void PlayerManager::savePlayers() {
  }
  for(::net::minecraft::entity::player::ServerPlayerEntity* player : players) {
   if(player != nullptr) {
-   saveHandler_->savePlayerData(*player);
+   savePlayerData(*player);
   }
  }
 }

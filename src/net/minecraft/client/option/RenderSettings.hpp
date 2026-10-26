@@ -36,10 +36,11 @@ struct RenderSettings {
  bool smoothFps = false;
  float chunkUpdatesSlider = 0.5f;
  bool chunkUpdatesDynamic = false;
- bool terrainLod = true;
  // see LOD_DESIGN.md §2: real sections stop at the native radius, far tiles cover the rest.
  bool distantTerrain = false;
  int nativeChunkRadius = 16;
+ int lodQuality = 1;
+ int lodMemoryMiB = 256;
  bool renderSky = true;
  bool renderStars = true;
  bool renderClouds = true;
@@ -73,6 +74,7 @@ struct RenderSettings {
  bool animatedSmoke = true;
 };
 [[nodiscard]] RenderSettings renderSettings(const GameOptions& options);
+[[nodiscard]] bool supportsDistantTerrain(const render::PackDefinition& pack);
 void applyShaderPack(RenderSettings& settings, const render::PackDefinition& pack);
 // `pack` is always a real definition - vanillaPackDefinition() when none is loaded - so
 // the directives are applied unconditionally instead of being skipped for vanilla.

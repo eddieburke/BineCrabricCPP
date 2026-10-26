@@ -9,6 +9,10 @@
 #include "net/minecraft/server/host/ServerLaunchConfig.hpp"
 #include "net/minecraft/server/network/ServerSocket.hpp"
 #include "tests/support/empty_server_mod_host.hpp"
+#include "net/minecraft/entity/player/ServerPlayerEntity.hpp"
+#include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/world/ServerWorld.hpp"
+#include "net/minecraft/world/storage/AlphaWorldStorage.hpp"
 namespace {
 std::filesystem::path makeTempWorldRoot(const std::string& name) {
  static std::atomic<int> counter{0};
@@ -156,5 +160,47 @@ TEST(IntegratedServerHost, AcceptsIpv4MappedLoopbackOwner) {
  EXPECT_TRUE(server.registerManagedHostLogin("LaunchIdentity", "::ffff:127.0.0.1:45001"));
  EXPECT_TRUE(server.playerManager.isOperator("LaunchIdentity"));
  server.stopAndJoin();
+}
+TEST(IntegratedServerHost, OwnerInventorySurvivesHostingAndReturningToSinglePlayer) {
+ const auto root = makeTempWorldRoot("host_inventory_roundtrip");
+ initializeEmptyServerModHost(root / "runtime");
+ server::host::ServerLaunchConfig config;
+ config.ownerName = "WorldHost";
+ server::MinecraftServer server(config);
+ AlphaWorldStorage storage(root, "World", true);
+ ServerWorld overworld(&server, &storage, "World", 0, 42);
+ ServerWorld nether(&server, &storage, "World", -1, 42);
+ server.worlds[0] = &overworld;
+ server.worlds[1] = &nether;
+ server.playerManager.configureFromProperties();
+ server.playerManager.saveAllPlayers(server.worlds);
+ entity::player::ServerPlayerEntity owner(&server, &overworld, "WorldHost", nullptr);
+ owner.inventory.main[0] = ItemStack(264, 7);
+ NbtCompound localPlayer;
+ owner.writeNbt(localPlayer);
+ overworld.getProperties().setPlayerNbt(localPlayer);
+ owner.inventory.main[0] = ItemStack(3, 1);
+ storage.savePlayerData(owner);
+ server.playerManager.loadPlayerData(&owner);
+ EXPECT_EQ(owner.inventory.main[0].itemId, 264);
+ EXPECT_EQ(owner.inventory.main[0].count, 7);
+ server.playerManager.players.push_back(&owner);
+ owner.inventory.main[0] = ItemStack(264, 12);
+ server.playerManager.savePlayers();
+ nether.save(true);
+ auto saved = storage.loadProperties();
+ ASSERT_TRUE(saved.has_value());
+ ASSERT_NE(saved->getPlayerNbt(), nullptr);
+ entity::player::ServerPlayerEntity reloaded(&server, &overworld, "WorldHost", nullptr);
+ reloaded.readNbt(*saved->getPlayerNbt());
+ EXPECT_EQ(reloaded.inventory.main[0].count, 12);
+ owner.inventory.main[0] = {};
+ server.playerManager.disconnect(&owner);
+ nether.save(true);
+ saved = storage.loadProperties();
+ ASSERT_TRUE(saved.has_value());
+ ASSERT_NE(saved->getPlayerNbt(), nullptr);
+ reloaded.readNbt(*saved->getPlayerNbt());
+ EXPECT_TRUE(reloaded.inventory.main[0].empty());
 }
 } // namespace net::minecraft::test

@@ -10,6 +10,7 @@
 #include "net/minecraft/client/gui/screen/option/DetailSettingsScreen.hpp"
 #include "net/minecraft/client/gui/screen/option/OptionsScreen.hpp"
 #include "net/minecraft/client/gui/screen/option/PerformanceSettingsScreen.hpp"
+#include "net/minecraft/client/gui/screen/option/LodSettingsScreen.hpp"
 #include "net/minecraft/client/gui/screen/option/QualitySettingsScreen.hpp"
 #include "net/minecraft/client/gui/screen/option/WorldSettingsScreen.hpp"
 namespace net::minecraft::client::option {
@@ -59,6 +60,7 @@ void OptionRegistry::registerAll() {
  registerGroup(gui::screen::option::options_screen::kSpecs);
  registerGroup(gui::screen::option::quality_screen::kSpecs);
  registerGroup(gui::screen::option::performance_screen::kSpecs);
+ registerGroup(gui::screen::option::lod_screen::kSpecs);
  registerGroup(gui::screen::option::detail_screen::kSpecs);
  registerGroup(gui::screen::option::animation_screen::kSpecs);
  registerGroup(gui::screen::option::world_screen::kSpecs);

@@ -24,6 +24,9 @@ class LightingEngine {
  struct DirtyRegion {
   int minX, minY, minZ, maxX, maxY, maxZ;
  };
+ struct ReadyColumn {
+  int x, z;
+ };
  explicit LightingEngine(world::light::UnifiedLightRegistry& registry);
  ~LightingEngine() {
   stop();
@@ -45,6 +48,12 @@ class LightingEngine {
  void registerChunk(Chunk* chunk);
  void unregisterChunk(Chunk* chunk);
  [[nodiscard]] std::vector<DirtyRegion> drainDirtyRegions(std::size_t maxRegions);
+ void awaitColumn(int chunkX, int chunkZ);
+ [[nodiscard]] std::vector<ReadyColumn> drainReadyColumns(std::size_t maxColumns);
+ [[nodiscard]] bool hasAwaitingColumns() const {
+  const std::lock_guard lock(queueMutex_);
+  return !awaitingColumns_.empty();
+ }
  [[nodiscard]] bool hasDirtyRegions() const;
  [[nodiscard]] bool busy() const noexcept {
   return pendingCount_.load(std::memory_order_relaxed) + stagedCount_.load(std::memory_order_relaxed) != 0;
@@ -86,12 +95,14 @@ class LightingEngine {
   std::vector<std::pair<std::uint64_t, Box>> deferredBorders;
  };
  void scheduleWorkersLocked();
+ void flushStagingLocked();
+ void trackBoxLocked(const Box& box, bool add);
  void runScheduledWork();
  [[nodiscard]] bool tryClaimBox(Box& out);
  void releaseClaimedBoxLocked(const Box& box);
  void publishDirtyRegion(DirtyRegion region);
  void mergeIntoPending(DirtyRegion region);
-  void flushPending(bool includeFar);
+ void flushPending();
  [[nodiscard]] double distanceSqToCamera(const DirtyRegion& region) const noexcept;
  [[nodiscard]] bool isNearCamera(const DirtyRegion& region) const noexcept;
  void runUpdate(const Box& box, WorkerState& state);
@@ -123,6 +134,8 @@ class LightingEngine {
  std::condition_variable idleCv_;
  std::deque<Box> queue_;
  std::vector<Box> activeBoxes_;
+ std::unordered_map<std::uint64_t, std::size_t> columnWork_;
+ std::unordered_map<std::uint64_t, ReadyColumn> awaitingColumns_;
  std::size_t scheduledWorkers_ = 0;
  std::atomic<bool> stopping_{false};
  std::atomic<std::size_t> pendingCount_{0};

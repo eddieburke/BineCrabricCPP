@@ -75,6 +75,7 @@ class MinecraftServer : public command::CommandOutput {
  EntityTracker& getEntityTracker(int dimensionId);
 
  private:
+ friend class PlayerManager;
  bool init();
  void loadWorld(const std::filesystem::path& storageRoot, const std::string& worldDir, std::uint64_t seed);
  void shutdown();

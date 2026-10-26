@@ -41,13 +41,17 @@ void ChunkCompilePipeline::prioritizeCaptureCandidates(std::vector<chunk::ChunkB
  std::partial_sort(candidates.begin(),
                    candidates.begin() + static_cast<std::ptrdiff_t>(visibleWanted),
                    firstInvisible,
-                   [&distance](const auto* a, const auto* b) { return distance(a) < distance(b); });
+                   [&distance](const auto* a, const auto* b) {
+                    return a->built != b->built ? !a->built : distance(a) < distance(b);
+                   });
  const std::size_t invisibleCount = static_cast<std::size_t>(candidates.end() - firstInvisible);
  const std::size_t invisibleWanted = std::min(wanted, invisibleCount);
  std::partial_sort(firstInvisible,
                    firstInvisible + static_cast<std::ptrdiff_t>(invisibleWanted),
                    candidates.end(),
-                   [&distance](const auto* a, const auto* b) { return distance(a) < distance(b); });
+                   [&distance](const auto* a, const auto* b) {
+                    return a->built != b->built ? !a->built : distance(a) < distance(b);
+                   });
 }
 void ChunkCompilePipeline::enqueueDirtyChunk(chunk::ChunkBuilder* chunk) {
  if(chunk == nullptr || chunk->meshJobInFlight) {
@@ -265,7 +269,7 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
      continue;
     }
     ++it;
-    if(section->meshJobInFlight || (force && !section->visibleIn(frustumStamp))) {
+    if(!section->readyForMeshCapture() || (force && !section->visibleIn(frustumStamp))) {
      continue;
     }
     captureCandidates_.push_back(section);

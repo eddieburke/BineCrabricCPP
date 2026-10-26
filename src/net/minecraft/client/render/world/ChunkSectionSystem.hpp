@@ -23,6 +23,7 @@ class Frustum;
 class ChunkCompilePipeline;
 inline constexpr int kChunkSectionCountY = 8;
 namespace world {
+[[nodiscard]] bool columnInRange(int x, int z, int cameraX, int cameraZ, int radius) noexcept;
 struct SectionPos {
  int x = 0;
  int y = 0;
@@ -119,6 +120,8 @@ class ChunkSectionSystem {
  void chunkUnloaded(int chunkX, int chunkZ);
  void markChunkColumnLit(int chunkX, int chunkZ);
  void markAllChunksLit();
+ [[nodiscard]] bool columnLightingReady(int chunkX, int chunkZ) const;
+ [[nodiscard]] bool nativeRadiusReady(int radius) const;
  void notifyAmbientDarknessChanged();
  void drainAmbientInvalidations(int maxSections);
  void updateBlockEntity(int x, int y, int z, net::minecraft::block::entity::BlockEntity* blockEntity);
@@ -142,7 +145,6 @@ class ChunkSectionSystem {
  void drainPendingColumns();
  void createColumn(int sectionX, int sectionZ);
  [[nodiscard]] bool columnInMeshRange(int sectionX, int sectionZ) const;
- [[nodiscard]] int columnLod(int sectionX, int sectionZ, int previous = -1) const;
  void removeColumn(int sectionX, int sectionZ);
  void enqueueColumn(int sectionX, int sectionZ);
  void updateDebugCounts();
@@ -168,9 +170,10 @@ class ChunkSectionSystem {
   std::unordered_set<world::ColumnPos, world::ColumnPosHash> pendingAmbientSet_{};
  int lastViewDistance = -1;
  int meshRadius_ = -1;
+ int transitionRadius_ = -1;
+ std::uint64_t lodCoverageRevision_ = 0;
  int meshCameraX_ = std::numeric_limits<int>::min();
  int meshCameraZ_ = std::numeric_limits<int>::min();
- bool lodEnabled_ = true;
  int chunkCount = 0;
  int invisibleChunkCount = 0;
  int compiledChunkCount = 0;
@@ -180,8 +183,6 @@ class ChunkSectionSystem {
  int dirtyChunkCount = 0;
  int inFlightChunkCount = 0;
  int lightingPendingChunkCount = 0;
- std::array<int, 4> lodCounts_{};
- std::size_t lodSavedVertices_ = 0;
  int debugCountCooldown_ = 0;
  // One stamp for the whole cull: the occlusion walk and the frustum answer are
  // recorded on the same pass over the same sections, so two counters could only

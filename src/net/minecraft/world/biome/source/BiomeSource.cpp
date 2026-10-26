@@ -49,9 +49,9 @@ std::vector<Biome*>& BiomeSource::getBiomesInArea(std::vector<Biome*>& biomes, i
  if(biomes.size() < size) {
   biomes.resize(size);
  }
- temperatureSampler_.sample(temperatureMap_, x, z, width, width, 0.025, 0.025, 0.25);
- downfallSampler_.sample(downfallMap_, x, z, width, width, 0.05, 0.05, 0.3333333333333333);
- weirdnessSampler_.sample(weirdnessMap_, x, z, width, width, 0.25, 0.25, 0.5882352941176471);
+ temperatureSampler_.sample(temperatureMap_, x, z, width, depth, 0.025, 0.025, 0.25);
+ downfallSampler_.sample(downfallMap_, x, z, width, depth, 0.05, 0.05, 0.3333333333333333);
+ weirdnessSampler_.sample(weirdnessMap_, x, z, width, depth, 0.25, 0.25, 0.5882352941176471);
  int index = 0;
  for(int ix = 0; ix < width; ++ix) {
   for(int iz = 0; iz < depth; ++iz) {

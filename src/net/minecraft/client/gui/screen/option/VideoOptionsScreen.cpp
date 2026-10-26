@@ -6,6 +6,7 @@
 #include "net/minecraft/client/gui/screen/option/DetailSettingsScreen.hpp"
 #include "net/minecraft/client/gui/screen/option/ModSettingsScreen.hpp"
 #include "net/minecraft/client/gui/screen/option/PerformanceSettingsScreen.hpp"
+#include "net/minecraft/client/gui/screen/option/LodSettingsScreen.hpp"
 #include "net/minecraft/client/gui/screen/option/QualitySettingsScreen.hpp"
 #include "net/minecraft/client/gui/screen/option/WorldSettingsScreen.hpp"
 #include "net/minecraft/client/gui/screen/pack/ShaderpackScreen.hpp"
@@ -55,9 +56,13 @@ void VideoOptionsScreen::init() {
       navigateTo(
           [returnHere, opts = options_]() { return std::make_unique<WorldSettingsScreen>(returnHere, opts); });
      });
- addCenteredActionButton(startY + layout::kRowSpacing * 3, "Shaderpacks...", [this, returnHere] {
+ addActionButton(x1, startY + layout::kRowSpacing * 3, 150, layout::kDefaultButtonHeight, "Shaderpacks...", [this, returnHere] {
   options_->save();
   navigateTo(std::make_unique<pack::ShaderpackScreen>(returnHere));
+ });
+ addActionButton(x2, startY + layout::kRowSpacing * 3, 150, layout::kDefaultButtonHeight, "Terrain LOD...", [this, returnHere] {
+  options_->save();
+  navigateTo([returnHere, opts = options_]() { return makeLodSettingsScreen(returnHere, opts); });
  });
  addCenteredActionButton(
      startY + layout::kRowSpacing * 4, resource::language::I18n::getTranslation("gui.done"), [this] {

@@ -7,6 +7,8 @@
 #include "net/minecraft/world/ClientWorld.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/storage/AlphaWorldStorage.hpp"
+#include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
+#include "net/minecraft/item/ItemStack.hpp"
 namespace {
 class TestMinecraft final : public net::minecraft::client::Minecraft {
  public:
@@ -35,5 +37,27 @@ TEST(ServerProcessCoordinator, LocalWorldCanTransferAndRemoteWorldCannot) {
  EXPECT_TRUE(client.serverProcessCoordinator().canStartServer());
  net::minecraft::ClientWorld remoteWorld(nullptr, 12345, 0);
  EXPECT_FALSE(net::minecraft::client::host::ServerProcessCoordinator::canHostWorld(&remoteWorld));
+}
+TEST(ServerProcessCoordinator, FailedHandoffRetainsPlayerPayloadAndRemovesOldEntity) {
+ const auto root = makeTempWorldRoot("failed_host_inventory");
+ TestMinecraft client(854, 480, false);
+ auto& session = client.worldSession();
+ session.ownedWorldStorageMut() = std::make_unique<AlphaWorldStorage>(root, "World", true);
+ session.ownedWorldMut() = std::make_unique<World>(session.ownedWorldStorage(), "World", 42, true);
+ client.world = session.ownedWorld();
+ session.ownedPlayerMut() = std::make_unique<entity::player::ClientPlayerEntity>(
+     &client, client.world, net::minecraft::client::util::Session("WorldHost", ""), client.options, 0);
+ client.player = session.ownedPlayer();
+ client.player->inventory.main[0] = ItemStack(264, 7);
+ client.world->players.push_back(client.player);
+ World* parked = client.world;
+ ASSERT_TRUE(session.parkLocalWorldForRemoteHandoff(client));
+ EXPECT_TRUE(parked->players.empty());
+ ASSERT_NE(parked->getProperties().getPlayerNbt(), nullptr);
+ entity::player::PlayerEntity restored(parked);
+ restored.readNbt(*parked->getProperties().getPlayerNbt());
+ EXPECT_EQ(restored.inventory.main[0].itemId, 264);
+ EXPECT_EQ(restored.inventory.main[0].count, 7);
+ session.commitRemoteHandoff();
 }
 } // namespace net::minecraft::test

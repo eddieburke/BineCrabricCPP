@@ -1126,6 +1126,14 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  if(!frameCamera_.shadowPass && !renderCameraEntity) {
   shaderPipeline_->setDistantHorizons(frameSettings_.distantTerrain);
   shaderPipeline_->prepareFrame(client->world);
+  if(frameSettings_.distantTerrain && shaderPipeline_->distantProgram(false) == nullptr) {
+   frameSettings_.distantTerrain = false;
+   frameSettings_.nativeChunkRadius = frameSettings_.renderDistance.chunks();
+   frameCamera_.renderDistanceBlocks = frameSettings_.renderDistance.blocks;
+   frameCamera_.dhNearPlane = 0.0f;
+   frameCamera_.dhFarPlane = 0.0f;
+   core::setCameraFrame(frameCamera_);
+  }
  shaderPipeline_->setFrameUniforms(buildFrameUniforms(tickDelta));
 }
 if(!frameCamera_.shadowPass && !renderCameraEntity) {
@@ -1259,7 +1267,8 @@ if(!frameCamera_.shadowPass && !renderCameraEntity) {
  const bool drawDistant = !renderCameraEntity && !skipGbuffers;
  if(drawDistant) {
   const Vec3d eye = WorldRenderer::sectionOrigin();
-  worldRenderer->distantTerrain().update(*client->world, frameSettings_, eye.x, eye.y, eye.z);
+  worldRenderer->distantTerrain().update(*client->world, client->textureManager, worldRenderer->sections(),
+                                        frameSettings_, eye.x, eye.y, eye.z);
   worldRenderer->distantTerrain().renderOpaque(*shaderPipeline_, frameSettings_, activeCuller);
  }
  renderWorldStage(atmosphereCtx, tickDelta, mod::WorldRenderStage::OpaqueTerrain, !skipGbuffers, false, [&] {

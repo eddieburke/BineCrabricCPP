@@ -753,7 +753,6 @@ bool World::doLightingUpdates(std::size_t maxDirtyRegions, std::int64_t timeBudg
  lighting_.flushStaging();
  const auto start = timeBudgetNs >= 0 ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
  std::size_t drained = 0;
- std::size_t readyColumns = 0;
  while(drained < maxDirtyRegions) {
   const std::size_t batch = std::min<std::size_t>(maxDirtyRegions - drained, 16);
   std::vector<LightingEngine::DirtyRegion> regions = lighting_.drainDirtyRegions(batch);
@@ -762,16 +761,6 @@ bool World::doLightingUpdates(std::size_t maxDirtyRegions, std::int64_t timeBudg
   }
   for(const LightingEngine::DirtyRegion& region : regions) {
    events_.setBlocksDirty(region.minX, region.minY, region.minZ, region.maxX, region.maxY, region.maxZ);
-   const int minChunkX = MathHelper::floorDiv(region.minX, 16);
-   const int maxChunkX = MathHelper::floorDiv(region.maxX, 16);
-   const int minChunkZ = MathHelper::floorDiv(region.minZ, 16);
-   const int maxChunkZ = MathHelper::floorDiv(region.maxZ, 16);
-   for(int chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) {
-    for(int chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) {
-     markChunkColumnLit(chunkX, chunkZ);
-     ++readyColumns;
-    }
-   }
   }
   drained += regions.size();
   if(timeBudgetNs >= 0 &&
@@ -780,14 +769,15 @@ bool World::doLightingUpdates(std::size_t maxDirtyRegions, std::int64_t timeBudg
    break;
   }
  }
+ for(const auto column : lighting_.drainReadyColumns(maxDirtyRegions)) markChunkColumnLit(column.x, column.z);
+ const bool pending = lighting_.busy() || lighting_.hasDirtyRegions() || lighting_.hasAwaitingColumns();
  // Non-optional completion: a column whose lighting never produced a drained
  // region (no boxes queued, or boxes that change nothing) must not stall its
  // first mesh forever — once the engine is fully idle every held column is lit.
- if(!lighting_.busy() && !lighting_.hasDirtyRegions()) {
+ if(!pending) {
   markAllChunksLit();
  }
- (void)readyColumns;
- return lighting_.busy() || lighting_.hasDirtyRegions();
+ return pending;
 }
 void World::finishLightingUpdates() {
  // Lighting is fully asynchronous: never block world load on it. Forward any regions the worker has already

@@ -225,6 +225,7 @@ gl::ShaderProgram* PackCompiler::compile(PackInstance& pack, const std::string& 
  if(!pack.summary.valid || pack.programs == nullptr) {
   return nullptr;
  }
+ if(!isProgramEnabledCached(pack.definition, pack.settings, programName, pack.programEnabledCache)) return nullptr;
  for(const std::string& feature : pack.definition.requiredFeatures) {
   if(!featureSupported(feature)) {
    logOnce(pack, "required feature '" + feature + "' is unavailable",
