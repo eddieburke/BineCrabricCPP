@@ -577,7 +577,7 @@ void WorldRenderer::renderMiningProgress(net::minecraft::PlayerEntity* player,
   texMgr->bindTexture(texMgr->getTextureId("/terrain.png"));
  }
  core::enableBlend();
- core::blendAlpha();
+ core::blendFunc(0x0306, 0x0300);
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  core::depthMask(false);
  core::depthTest();
