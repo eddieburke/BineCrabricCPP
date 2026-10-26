@@ -6,6 +6,7 @@
 #include <deque>
 #include <mutex>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 #include "net/minecraft/util/concurrent/Channel.hpp"
 #include "net/minecraft/world/light/LightType.hpp"
@@ -82,6 +83,7 @@ class LightingEngine {
   // run drains so a 32768-cell box does not allocate 160 KB per box.
   std::vector<std::uint32_t> ring;
   std::vector<std::uint8_t> queued;
+  std::vector<std::pair<std::uint64_t, Box>> deferredBorders;
  };
  void scheduleWorkersLocked();
  void runScheduledWork();
@@ -99,6 +101,9 @@ class LightingEngine {
  [[nodiscard]] int brightness(LightType type, int x, int y, int z, WorkerState& state);
  [[nodiscard]] bool topY(int x, int y, int z, WorkerState& state);
  void queuePropagationBox(LightType type, int minX, int minY, int minZ, int maxX, int maxY, int maxZ);
+ void deferBorderCell(LightType type, int x, int minY, int maxY, int z, Chunk* negX, Chunk* posX, Chunk* negZ,
+                      WorkerState& state);
+ void parkDeferredBorders(WorkerState& state);
  [[nodiscard]] static constexpr std::uint64_t chunkKey(int chunkX, int chunkZ) noexcept {
   return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(chunkX)) << 32) |
          static_cast<std::uint64_t>(static_cast<std::uint32_t>(chunkZ));
@@ -131,6 +136,8 @@ class LightingEngine {
  std::vector<DirtyRegion> pending_;
   std::mutex registryMutex_;
  std::unordered_map<std::uint64_t, Chunk*> registry_;
+ std::mutex borderMutex_;
+ std::unordered_map<std::uint64_t, std::vector<Box>> pendingBorders_;
  util::concurrent::Channel<DirtyRegion> outbox_{4096};
  world::light::UnifiedLightRegistry& lightRegistry_;
  util::concurrent::WorkerPool& computePool_;

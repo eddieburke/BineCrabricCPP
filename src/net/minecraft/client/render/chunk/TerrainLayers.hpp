@@ -11,8 +11,7 @@ namespace terrain_layer {
 inline constexpr int Solid = 0;
 inline constexpr int Cutout = 1;
 inline constexpr int Translucent = 2;
-inline constexpr int CutoutInterior = 3;
-inline constexpr int Count = 4;
+inline constexpr int Count = 3;
 } // namespace terrain_layer
 [[nodiscard]] inline int resolveTerrainMeshLayer(const net::minecraft::block::Block& block, int blockId,
                                                  const std::unordered_map<int, int>& packOverrides) {

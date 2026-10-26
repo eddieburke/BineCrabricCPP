@@ -70,6 +70,9 @@ void fillCameraPlanes(PackUniformValues& values, const FrameRenderCamera& camera
  values.nearPlane = camera.nearPlane;
  values.farPlane = camera.farPlane;
  values.renderDistanceBlocks = camera.renderDistanceBlocks;
+ values.dhRenderDistance = static_cast<int>(camera.dhRenderDistanceBlocks);
+ values.dhNearPlane = camera.dhNearPlane;
+ values.dhFarPlane = camera.dhFarPlane;
 }
 void fillFog(PackUniformValues& values) {
  const auto& fog = render::core::fog();
@@ -77,8 +80,8 @@ void fillFog(PackUniformValues& values) {
  values.fogColor[1] = fog.color[1];
  values.fogColor[2] = fog.color[2];
  values.fogDensity = fog.density;
- values.fogStart = fog.start;
- values.fogEnd = fog.end;
+ values.fogStart = fog.environmentalStart;
+ values.fogEnd = fog.environmentalEnd;
  values.fogMode = fog.enabled ? render::core::fogModeToGlConstant(fog.mode) : 0;
  values.fogShape = fog.enabled ? fog.shape : -1;
  if(fog.enabled) {
@@ -92,8 +95,8 @@ void fillFog(PackUniformValues& values) {
   values.irisFogColor[2] = 1.0f;
   values.irisFogColor[3] = 1.0f;
  }
- values.irisFogStart = fog.start;
- values.irisFogEnd = fog.end;
+ values.irisFogStart = fog.environmentalStart;
+ values.irisFogEnd = fog.environmentalEnd;
  values.irisFogDensity = std::max(0.0f, fog.density);
  values.irisCurrentAlphaTest = render::core::alphaTestRef();
 }
@@ -150,6 +153,17 @@ void fillCameraState(PackUniformValues& values,
                      values.previousCameraPositionFract);
  render::buildCameraProjection(values.gbufferProjection, camera);
  render::buildCameraProjectionInverse(values.gbufferProjectionInverse, camera);
+ if(camera.dhFarPlane > 0.0f) {
+  FrameRenderCamera dhCamera = camera;
+  dhCamera.nearPlane = camera.dhNearPlane;
+  dhCamera.farPlane = camera.dhFarPlane;
+  render::buildCameraProjection(values.dhProjection, dhCamera);
+  render::buildCameraProjectionInverse(values.dhProjectionInverse, dhCamera);
+ } else {
+  std::copy(std::begin(values.gbufferProjection), std::end(values.gbufferProjection), values.dhProjection);
+  std::copy(std::begin(values.gbufferProjectionInverse), std::end(values.gbufferProjectionInverse), values.dhProjectionInverse);
+ }
+ std::copy(std::begin(g_frameState.previous.dhProjection), std::end(g_frameState.previous.dhProjection), values.dhPreviousProjection);
  buildCameraModelView(values.gbufferModelView, camera);
  buildCameraModelViewInverse(values.gbufferModelViewInverse, camera);
  std::copy(std::begin(g_frameState.previous.gbufferProjection), std::end(g_frameState.previous.gbufferProjection),
@@ -438,7 +452,9 @@ void fillClientAndPlayerState(PackUniformValues& values,
           ? 1
           : 0;
   if(const ItemStack* held = player->inventory.getSelectedItem()) {
-   values.heldItemId = held->itemId;
+   std::string heldName = PackCatalog::lower(held->getTranslationKey());
+   if(heldName.rfind("item.", 0) == 0 || heldName.rfind("tile.", 0) == 0) heldName.erase(0, 5);
+   values.heldItemId = resolveShaderObjectId("item", heldName, -1);
    if(held->itemId >= 0 && held->itemId < net::minecraft::block::Block::BLOCK_COUNT &&
       net::minecraft::block::Block::BLOCKS[static_cast<std::size_t>(held->itemId)] != nullptr)
     values.heldBlockLightValue =

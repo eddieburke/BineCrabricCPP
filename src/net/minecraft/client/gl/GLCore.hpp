@@ -72,6 +72,7 @@ using PFN_VertexAttribIPointer = void(APIENTRY*)(unsigned, int, unsigned, int, c
 using PFN_EnableVertexAttribArray = void(APIENTRY*)(unsigned);
 using PFN_DisableVertexAttribArray = void(APIENTRY*)(unsigned);
 using PFN_VertexAttrib4f = void(APIENTRY*)(unsigned, float, float, float, float);
+using PFN_VertexAttribI4i = void(APIENTRY*)(unsigned, int, int, int, int);
 using PFN_GenerateMipmap = void(APIENTRY*)(unsigned);
 using PFN_GetStringi = const unsigned char*(APIENTRY*)(unsigned, unsigned);
 using PFN_BlitFramebuffer = void(APIENTRY*)(int, int, int, int, int, int, int, int, unsigned, unsigned);
@@ -178,6 +179,7 @@ struct GLCore {
  static PFN_EnableVertexAttribArray enableVertexAttribArray;
  static PFN_DisableVertexAttribArray disableVertexAttribArray;
  static PFN_VertexAttrib4f vertexAttrib4f;
+ static PFN_VertexAttribI4i vertexAttribI4i;
  static PFN_GenerateMipmap generateMipmap;
  static PFN_GetStringi getStringi;
  static PFN_BlitFramebuffer blitFramebuffer;

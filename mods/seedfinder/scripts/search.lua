@@ -1,16 +1,63 @@
 local search = {}
-local rules = require("scripts.rules")
+
+search.BIOMES = {
+  "plains", "forest", "desert", "taiga", "swampland", "rainforest",
+  "savanna", "shrubland", "seasonal_forest", "ice_desert", "tundra",
+}
+
+search.LISTS = { "origin", "require", "forbid", "prefer", "spawn" }
+
+search.LIST_LABELS = {
+  origin = "Origin",
+  require = "Need",
+  forbid = "Ban",
+  prefer = "Prefer",
+  spawn = "Spawn",
+}
+
+search.LIST_HELP = {
+  origin = "Biome at 0,0 must be one of the selected",
+  require = "Every selected biome must appear in the area",
+  forbid = "None of the selected may appear in the area",
+  prefer = "Higher score for more coverage of these",
+  spawn = "Biome of the real world spawn (Exact spawn)",
+}
+
+search.GROUND = { "any", "land", "ocean" }
+
+function fmt_seed(n)
+  n = n or 0
+  if math.type(n) == "integer" then
+    return tostring(n)
+  end
+  return string.format("%.0f", n)
+end
+
+function pretty(name)
+  return (tostring(name):gsub("_", " "))
+end
+
+function fmt_count(n)
+  n = math.floor(n or 0)
+  local s = tostring(n)
+  local out = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+  if out:sub(1, 1) == "," then
+    out = out:sub(2)
+  end
+  return out
+end
 
 function search.field_num(name, default)
   local text = minecraft.screen.field_text(name)
   if text == nil or text == "" then
     return default
   end
-  local v = tonumber(text)
-  if v == nil then
-    return default
-  end
-  return v
+  return tonumber(text) or default
+end
+
+function search.field_int(name, default, lo, hi)
+  local v = math.floor(search.field_num(name, default))
+  return minecraft.util.clamp(v, lo, hi)
 end
 
 function search.save_fields()
@@ -19,52 +66,110 @@ function search.save_fields()
   end
 end
 
-function search.spawn_label()
-  if S.spawn_index <= 0 then
-    return "Any"
-  end
-  return pretty(S.spawn_biomes[S.spawn_index] or "Any")
-end
-
-function search.apply_import_json(json)
-  local cfg, err = minecraft.util.json_decode(json)
-  if cfg == nil then
-    minecraft.log("error", "seedfinder: " .. tostring(err))
-    return
-  end
-  minecraft.screen.set_field_text("seed_start", fmt_seed(rules.cfg_number(cfg, "seed_start", "seed_range_start") or 0))
-  minecraft.screen.set_field_text("seed_end", fmt_seed(rules.cfg_number(cfg, "seed_end", "seed_range_end") or 100000))
-  local radius = rules.cfg_number(cfg, "scan_radius_chunks")
-  if radius ~= nil then
-    minecraft.screen.set_field_text("radius", tostring(radius))
-  end
-  local top_k = rules.cfg_number(cfg, "top_k")
-  if top_k ~= nil then
-    minecraft.screen.set_field_text("top_k", tostring(top_k))
-  end
-  local min_score = rules.cfg_number(cfg, "min_score")
-  if min_score ~= nil then
-    minecraft.screen.set_field_text("min_score", tostring(min_score))
-  end
-  local unique = rules.cfg_number(cfg, "unique_biome_min")
-  if unique ~= nil then
-    minecraft.screen.set_field_text("unique_min", tostring(unique))
-  end
-  local spawn = cfg.spawn_biome
-  if spawn ~= nil and spawn ~= "" then
-    for i, name in ipairs(S.spawn_biomes) do
-      if name == spawn then
-        S.spawn_index = i
-      end
+function search.list_names(which)
+  local out = {}
+  for _, name in ipairs(search.BIOMES) do
+    if S.lists[which][name] then
+      out[#out + 1] = name
     end
   end
-  if cfg.advanced_rule_data_nbt ~= nil and cfg.advanced_rule_data_nbt ~= "" then
-    S.rules = rules.clone_rules(rules.decode_rules_blob(cfg.advanced_rule_data_nbt))
-  elseif cfg.rules ~= nil or cfg.objectives ~= nil then
-    S.rules = rules.clone_rules(rules.decode_rules_table({
-      rules = cfg.rules or {},
-      objectives = cfg.objectives or {},
-    }))
+  return out
+end
+
+function search.clear_lists()
+  for _, which in ipairs(search.LISTS) do
+    S.lists[which] = {}
+  end
+end
+
+function search.build_criteria()
+  local seed_start = minecraft.util.resolve_seed(minecraft.screen.field_text("seed_start") or "0")
+  local seed_end = minecraft.util.resolve_seed(minecraft.screen.field_text("seed_end") or "100000")
+  local c = {
+    mode = S.random and "random" or "range",
+    seed_start = seed_start,
+    seed_end = seed_end,
+    samples = search.field_int("samples", 1000000, 1, 2000000000),
+    max_results = search.field_int("keep", 24, 1, 200),
+    stop_after = search.field_int("stop_after", 0, 0, 1000000),
+    origin_biomes = search.list_names("origin"),
+  }
+  if S.area_on then
+    c.area = {
+      radius = search.field_int("radius", 128, 16, 4096),
+      step = search.field_int("step", 16, 4, 256),
+      require = search.list_names("require"),
+      forbid = search.list_names("forbid"),
+      prefer = search.list_names("prefer"),
+      min_unique = search.field_int("min_unique", 0, 0, 13),
+    }
+  end
+  if S.spawn_on then
+    c.spawn = {
+      biomes = search.list_names("spawn"),
+      max_distance = search.field_int("spawn_max", -1, -1, 100000),
+    }
+  end
+  if S.ground ~= "any" then
+    c.terrain = { { x = 0, z = 0, land = (S.ground == "land") } }
+  end
+  return c
+end
+
+function search.free_map()
+  if S.map_tex ~= nil and S.map_tex.id ~= nil then
+    minecraft.render.release_texture(S.map_tex.id)
+  end
+  S.map_tex = nil
+end
+
+function search.build_map(seed)
+  search.free_map()
+  if seed == nil then
+    return
+  end
+  local grid = minecraft.seeds.map(seed, 0, 0, { radius = S.map_radius, side = 192 })
+  if grid == nil then
+    return
+  end
+  local tex = minecraft.render.create_texture({
+    width = grid.side,
+    height = grid.side,
+    pixels = grid.channels.grass,
+  })
+  if tex ~= nil and tex.id ~= nil then
+    S.map_tex = { id = tex.id, side = grid.side, origin_x = grid.origin_x, origin_z = grid.origin_z,
+      span = grid.side * grid.step }
+  end
+end
+
+function search.stop_detail()
+  if S.detail_job ~= nil then
+    minecraft.seeds.release(S.detail_job)
+    S.detail_job = nil
+  end
+end
+
+function search.select_index(i)
+  local h = S.hits[i]
+  if h == nil then
+    return
+  end
+  S.selected_seed = fmt_seed(h.seed)
+  S.detail = h.spawn_x ~= nil and h or nil
+  S.detail_pending = false
+  search.stop_detail()
+  search.build_map(h.seed)
+  if S.detail == nil then
+    local job = minecraft.seeds.search({
+      seed_start = h.seed,
+      seed_end = h.seed,
+      spawn = {},
+    }, 1)
+    if job ~= nil then
+      S.detail_job = job
+      S.detail_pending = true
+    end
   end
 end
 
@@ -80,84 +185,17 @@ function search.selected_index()
   return nil
 end
 
-function search.free_map()
-  if S.map_tex ~= nil and S.map_tex.id ~= nil then
-    minecraft.render.release_texture(S.map_tex.id)
-  end
-  S.map_tex = nil
-  S.map = nil
-end
-
-function search.build_map(hit)
-  search.free_map()
-  if hit == nil then
-    return
-  end
-  local radius = math.floor(minecraft.util.clamp(search.field_num("radius", 4), 1, 64))
-  local cx = hit.spawn_x or 0
-  local cz = hit.spawn_z or 0
-  S.preview_seed = hit.seed
-  local grid = minecraft.world.sample(hit.seed, cx, cz, {
-    radius_chunks = radius,
-    max_side = 256,
-    mod_generation = true,
-  })
-  S.map_tex = map_texture_from_grid(grid)
-  local have_tex = S.map_tex ~= nil and S.map_tex.id ~= nil and S.map_tex.id > 0
-  if not have_tex then
-    S.map = minecraft.world.sample(hit.seed, cx, cz, {
-      radius_chunks = radius,
-      max_side = 48,
-      mod_generation = true,
-    })
-  end
-end
-
-function search.select_index(i)
-  local h = S.hits[i]
-  if h == nil then
-    return
-  end
-  S.selected_seed = fmt_seed(h.seed)
-  search.build_map(h)
-end
-
-function search.merge_hits(list)
-  if list == nil then
-    return
-  end
-  local top_k = math.floor(minecraft.util.clamp(
-    (S.search_cfg and S.search_cfg.top_k) or search.field_num("top_k", 12), 1, 100))
-  for _, h in ipairs(list) do
-    local key = fmt_seed(h.seed)
-    if not S.seen[key] then
-      S.seen[key] = true
-      S.hits[#S.hits + 1] = h
-    end
-  end
-  table.sort(S.hits, function(a, b)
-    return a.score > b.score
-  end)
-  while #S.hits > top_k do
-    table.remove(S.hits)
-  end
-  if S.selected_seed == nil and #S.hits > 0 then
-    search.select_index(1)
-  end
+function search.selected_hit()
+  local i = search.selected_index()
+  return i ~= nil and S.hits[i] or nil
 end
 
 function search.move_selection(delta)
   if #S.hits == 0 then
     return
   end
-  local i = search.selected_index() or 0
-  i = i + delta
-  if i < 1 then
-    i = 1
-  end
-  if i > #S.hits then
-    i = #S.hits
-  end
+  local i = (search.selected_index() or 0) + delta
+  i = minecraft.util.clamp(i, 1, #S.hits)
   search.select_index(i)
   if S.layout ~= nil then
     if i - 1 < S.scroll then
@@ -169,103 +207,96 @@ function search.move_selection(delta)
   end
 end
 
-function search.preview_seed()
-  search.save_fields()
-  local seed_text = minecraft.screen.field_text("seed_start") or "0"
-  local seed = minecraft.util.resolve_seed(seed_text)
-  search.build_map({ seed = seed, spawn_x = 0, spawn_z = 0 })
-end
-
-function search.search_tick()
-  if not S.searching or S.search_cfg == nil then
-    return
+function search.stop_job()
+  if S.job ~= nil then
+    minecraft.seeds.cancel(S.job)
+    minecraft.seeds.release(S.job)
+    S.job = nil
   end
-  local cfg = S.search_cfg
-  local budget = cfg.terrain and 1 or math.max(2, math.floor(64 / math.max(1, cfg.radius)))
-  for _ = 1, budget do
-    if S.search_cur > S.search_end then
-      S.searching = false
-      S.search_cfg = nil
-      return
-    end
-    local seed = S.search_cur
-    local final_seed = seed >= S.search_end
-    if not final_seed then
-      S.search_cur = seed + 1
-    end
-    S.checked = S.checked + 1
-    local hit = rules.score_seed(seed, cfg)
-    if hit ~= nil then
-      search.merge_hits({ hit })
-    end
-    if final_seed then
-      S.searching = false
-      S.search_cfg = nil
-      return
-    end
-  end
+  S.running = false
 end
 
 function search.toggle_search()
-  if S.searching then
-    S.searching = false
-    S.search_cfg = nil
+  if S.running then
+    search.stop_job()
     return
   end
   search.save_fields()
-  S.hits = {}
-  S.seen = {}
-  S.selected_seed = nil
-  S.checked = 0
-  S.scroll = 0
+  search.stop_detail()
   search.free_map()
-  S.search_cur = minecraft.util.resolve_seed(minecraft.screen.field_text("seed_start") or "0")
-  S.search_end = minecraft.util.resolve_seed(minecraft.screen.field_text("seed_end") or "10000")
-  if S.search_cur > S.search_end then
-    S.search_cur, S.search_end = S.search_end, S.search_cur
+  S.hits = {}
+  S.selected_seed = nil
+  S.detail = nil
+  S.scroll = 0
+  S.progress = nil
+  S.error = nil
+  local job, err = minecraft.seeds.search(search.build_criteria())
+  if job == nil then
+    S.error = tostring(err)
+    return
   end
-  local needs_terrain = false
-  for _, rule in ipairs(S.rules) do
-    if rule.kind == "block" or rule.kind == "block_on_block" then
-      needs_terrain = true
-      break
-    end
-  end
-  S.search_cfg = {
-    radius = math.floor(minecraft.util.clamp(search.field_num("radius", 4), 1, 64)),
-    min_score = search.field_num("min_score", 0),
-    unique_min = math.floor(minecraft.util.clamp(search.field_num("unique_min", -1), -1, 64)),
-    top_k = math.floor(minecraft.util.clamp(search.field_num("top_k", 12), 1, 100)),
-    spawn_index = S.spawn_index,
-    terrain = needs_terrain,
-  }
-  S.searching = true
+  S.job = job
+  S.running = true
 end
 
-function search.do_import()
-  local path = minecraft.files.pick({extension = "json"})
-  if path == nil then
-    return
+function search.tick()
+  if S.job ~= nil then
+    local p = minecraft.seeds.poll(S.job)
+    if p == nil then
+      S.job = nil
+      S.running = false
+    else
+      S.progress = p
+      S.hits = p.results
+      if S.selected_seed == nil and #S.hits > 0 then
+        search.select_index(1)
+      end
+      if p.state ~= "running" then
+        minecraft.seeds.release(S.job)
+        S.job = nil
+        S.running = false
+      end
+    end
   end
-  local text, err = minecraft.files.read(path)
-  if text == nil then
-    minecraft.log("error", "seedfinder: " .. tostring(err))
-    return
+  if S.detail_job ~= nil then
+    local p = minecraft.seeds.poll(S.detail_job)
+    if p == nil or p.state ~= "running" then
+      if p ~= nil and p.results[1] ~= nil then
+        S.detail = p.results[1]
+      end
+      S.detail_pending = false
+      minecraft.seeds.release(S.detail_job)
+      S.detail_job = nil
+    end
   end
-  search.apply_import_json(text)
-  minecraft.log("info", "seedfinder: imported " .. tostring(path))
+end
+
+function search.preview_first()
+  search.save_fields()
+  search.stop_detail()
+  local seed = minecraft.util.resolve_seed(minecraft.screen.field_text("seed_start") or "0")
+  S.hits = {}
+  S.hits[1] = { seed = seed, score = 0, unique = 0, origin_biome = minecraft.seeds.biome_at(seed, 0, 0) }
+  S.selected_seed = nil
+  search.select_index(1)
+end
+
+function search.copy_selected()
+  local h = search.selected_hit()
+  if h ~= nil then
+    minecraft.seeds.copy(fmt_seed(h.seed))
+    S.toast = "Copied " .. fmt_seed(h.seed)
+    S.toast_until = (S.tick_count or 0) + 60
+  end
 end
 
 function search.use_selected()
-  local i = search.selected_index()
-  if i == nil then
-    return
-  end
-  local h = S.hits[i]
+  local h = search.selected_hit()
   if h == nil then
     return
   end
-  S.searching = false
+  search.stop_job()
+  search.stop_detail()
   search.free_map()
   minecraft.screen.open_host(minecraft.screen.ids.create_world, {
     world_name = S.world_name,
@@ -274,7 +305,9 @@ function search.use_selected()
 end
 
 function search.go_back()
-  S.searching = false
+  search.save_fields()
+  search.stop_job()
+  search.stop_detail()
   search.free_map()
   minecraft.screen.open_host(minecraft.screen.ids.create_world, {
     world_name = S.world_name,
@@ -283,16 +316,16 @@ function search.go_back()
 end
 
 function search.open_finder()
-  S.mode = "finder"
   S.hits = {}
-  S.seen = {}
   S.selected_seed = nil
-  S.checked = 0
-  S.searching = false
+  S.detail = nil
+  S.progress = nil
+  S.error = nil
   S.scroll = 0
-  S.preview_seed = nil
+  search.stop_job()
+  search.stop_detail()
   search.free_map()
-  minecraft.screen.open(SCREEN_ID)
+  minecraft.screen.open(S.screen_id)
 end
 
 return search

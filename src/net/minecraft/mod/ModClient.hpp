@@ -10,6 +10,7 @@ using BlockInvDraw = void (*)(client::render::block::BlockRenderManager&,
                               int metadata,
                               float brightness);
 void registerDraw(int blockId, BlockWorldDraw world, BlockInvDraw inventory = nullptr);
+[[nodiscard]] bool hasCustomWorldDraw(int blockId);
 [[nodiscard]] bool drawBlockWorld(
     client::render::block::BlockRenderManager& manager, block::Block& block, int x, int y, int z);
 [[nodiscard]] bool drawBlockInventory(client::render::block::BlockRenderManager& manager,

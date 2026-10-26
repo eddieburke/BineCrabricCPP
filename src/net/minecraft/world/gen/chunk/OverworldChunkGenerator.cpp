@@ -3,6 +3,7 @@
 #include "net/minecraft/block/FallingBlock.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
+#include "net/minecraft/world/dimension/Dimension.hpp"
 #include "net/minecraft/world/gen/GenerationApi.hpp"
 #include "net/minecraft/world/gen/feature/OverworldFeatureDecorator.hpp"
 namespace net::minecraft {
@@ -17,6 +18,17 @@ const BiomeSource* OverworldChunkGenerator::activeBiomeSource() const {
   return world_->getBiomeSource();
  }
  return &biomeSource_;
+}
+void OverworldChunkGenerator::setWorld(World* world) {
+ world_ = world;
+ resolveTerrainStyle();
+}
+void OverworldChunkGenerator::resolveTerrainStyle() {
+ if(world_ == nullptr) {
+  return;
+ }
+ const int dimensionId = world_->dimension != nullptr ? world_->dimension->id : 0;
+ style_ = world::gen::terrainStyleFromOptions(world_->getProperties().getModOptions(), dimensionId);
 }
 Chunk OverworldChunkGenerator::loadChunk(ChunkSource* source, int chunkX, int chunkZ) {
  random_.setSeed(static_cast<std::uint64_t>(static_cast<std::int64_t>(chunkX)) * 341873128712ULL +
@@ -34,7 +46,8 @@ Chunk OverworldChunkGenerator::loadChunk(ChunkSource* source, int chunkX, int ch
      chunkX,
      chunkZ,
      world_ != nullptr ? world_->isLuaModGenerationEnabled() : modGenerationEnabled_,
-     true};
+     true,
+     world_ != nullptr && world_->dimension != nullptr ? world_->dimension->id : 0};
  world::gen::runVanillaStage(world::gen::ChunkStage::Terrain, context, [&] {
   buildTerrain(chunkX, chunkZ, chunk, biomeSource->temperatureMap());
  });
@@ -71,7 +84,8 @@ void OverworldChunkGenerator::decorate(ChunkSource* source, int chunkX, int chun
                                             chunkX,
                                             chunkZ,
                                             world_->isLuaModGenerationEnabled(),
-                                            true};
+                                            true,
+                                            world_->dimension != nullptr ? world_->dimension->id : 0};
  world::gen::runVanillaStage(world::gen::ChunkStage::Features, context, [&] {
   world::gen::feature::decorateOverworldChunk(
       world_, random_, *biomeSource, forestNoise_, chunkX, chunkZ, decorateTemperatures_);
@@ -104,12 +118,8 @@ std::vector<double>& OverworldChunkGenerator::generateHeightMap(
   for(int iz = 0; iz < sizeZ; ++iz) {
    const int biomeZ = iz * biomeStep + biomeStep / 2;
    const double temperature = temperatureMap[static_cast<std::size_t>(biomeX * 16 + biomeZ)];
-   const double downfallTemperature =
-       downfallMap[static_cast<std::size_t>(biomeX * 16 + biomeZ)] * temperature;
-   double terrainFactor = 1.0 - downfallTemperature;
-   terrainFactor *= terrainFactor;
-   terrainFactor *= terrainFactor;
-   terrainFactor = 1.0 - terrainFactor;
+   const double terrainFactor = world::gen::terrainClimateFactor(
+       style_, temperature, downfallMap[static_cast<std::size_t>(biomeX * 16 + biomeZ)]);
    double scaleNoise = (scaleNoiseBuffer_[static_cast<std::size_t>(horizontalIndex)] + 256.0) / 512.0;
    scaleNoise = std::min(scaleNoise * terrainFactor, 1.0);
    double depthNoise = depthNoiseBuffer_[static_cast<std::size_t>(horizontalIndex)] / 8000.0;

@@ -79,6 +79,7 @@ GLFN(PFN_VertexAttribIPointer, vertexAttribIPointer);
 GLFN(PFN_EnableVertexAttribArray, enableVertexAttribArray);
 GLFN(PFN_DisableVertexAttribArray, disableVertexAttribArray);
 GLFN(PFN_VertexAttrib4f, vertexAttrib4f);
+GLFN(PFN_VertexAttribI4i, vertexAttribI4i);
 GLFN(PFN_GenerateMipmap, generateMipmap);
 GLFN(PFN_GetStringi, getStringi);
 GLFN(PFN_BlitFramebuffer, blitFramebuffer);
@@ -224,6 +225,7 @@ void GLCore::init() {
  LOAD_TRY(enableVertexAttribArray, "glEnableVertexAttribArray", "glEnableVertexAttribArrayARB");
  LOAD_TRY(disableVertexAttribArray, "glDisableVertexAttribArray", "glDisableVertexAttribArrayARB");
  LOAD_TRY(vertexAttrib4f, "glVertexAttrib4f", "glVertexAttrib4fARB");
+ LOAD_TRY(vertexAttribI4i, "glVertexAttribI4i", "glVertexAttribI4iEXT");
  LOAD_TRY(generateMipmap, "glGenerateMipmap", "glGenerateMipmapEXT");
  LOAD_TRY(getStringi, "glGetStringi");
  LOAD_TRY(blitFramebuffer, "glBlitFramebuffer", "glBlitFramebufferEXT");

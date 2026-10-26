@@ -73,7 +73,5 @@ class ChunkCompilePipeline {
  std::vector<std::shared_ptr<chunk::ChunkMeshJob>> nearMeshUploads_{};
  std::vector<std::shared_ptr<chunk::ChunkMeshJob>> backgroundMeshUploads_{};
  std::vector<std::shared_ptr<chunk::ChunkMeshJob>> completedMeshUploads_{};
- std::uint64_t staleMeshJobs_ = 0;
- std::uint64_t deferredMeshUploads_ = 0;
 };
 } // namespace net::minecraft::client::render

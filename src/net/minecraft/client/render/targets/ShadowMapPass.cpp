@@ -375,7 +375,7 @@ bool render(ShadowMapState& state,
  frustumParams.halfPlaneLength = shadowDistance;
  frustumParams.voxelDistance = voxelDistance;
  frustumParams.renderMultiplier = shadowDistanceRenderMul;
- frustumParams.renderDistanceBlocks = renderer.frameSettings().renderDistance.sectionCoverageBlocks();
+ frustumParams.renderDistanceBlocks = static_cast<float>(renderer.frameSettings().nativeChunkRadius * 16);
  state.terrainFrustum = createShadowFrustum(frustumParams, playerModelViewProjection, lightVector);
  state.terrainFrustum.prepare(centerX, centerY, centerZ);
  if(entityDistanceMultiplier == 1.0f || entityDistanceMultiplier < 0.0f) {

@@ -236,6 +236,13 @@ void ColorTargets::bindGbuffers() {
  gbufferFbo_.bind();
  core::viewport(0, 0, width_, height_);
 }
+void ColorTargets::bindGbuffersWithDepth(unsigned int depthTexture) {
+ bindGbuffers();
+ if(!valid_) {
+  return;
+ }
+ gbufferFbo_.addDepthAttachment(depthTexture != 0 ? depthTexture : depth_.handle());
+}
 void ColorTargets::endGbuffers() {
  if(!gbufferActive_) {
   return;

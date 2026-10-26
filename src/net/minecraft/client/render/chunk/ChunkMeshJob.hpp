@@ -18,7 +18,7 @@ class ChunkBuilder;
 struct ChunkMeshResult {
  std::array<TessellatorMesh, terrain_layer::Count> layers{};
  std::array<std::vector<ModChunkMesh>, terrain_layer::Count> modLayers{};
- std::array<bool, terrain_layer::Count> layerEmpty{true, true, true, true};
+ std::array<bool, terrain_layer::Count> layerEmpty{true, true, true};
  bool hasSkyLight = false;
  // 6x6 face-to-face connectivity through non-opaque blocks (bit a*6+b), fed
  // to the per-frame occlusion BFS. All-ones = fully see-through.
@@ -34,6 +34,8 @@ struct ChunkMeshJob {
  ~ChunkMeshJob();
  std::weak_ptr<ChunkBuilder> builder;
  int version = 0;
+ int lodLevel = 0;
+ std::size_t lodSavedVertices = 0;
  int x = 0;
  int y = 0;
  int z = 0;
@@ -63,9 +65,6 @@ struct ChunkMeshJob {
  // per-frame time budget so block edits next to the player land the
  // frame their mesh finishes.
  bool nearLane = false;
- std::uint64_t captureNs = 0;
- std::uint64_t buildNs = 0;
- bool profileRecorded = false;
  std::unordered_map<int, int> blockRenderLayers;
  [[nodiscard]] static std::shared_ptr<ChunkMeshJob> capture(ChunkBuilder& owner,
                                                             client::option::RenderSettings options);

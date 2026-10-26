@@ -5,6 +5,7 @@
 #include "net/minecraft/client/render/shaders/SourceProcessor.hpp"
 #include "net/minecraft/client/render/pipeline/Instance.hpp"
 #include "net/minecraft/client/render/shaders/ShaderDump.hpp"
+#include "net/minecraft/client/render/shaders/ShaderTransform.hpp"
 #include "net/minecraft/client/render/shaderpack/Catalog.hpp"
 #include "net/minecraft/client/render/shaderpack/Loader.hpp"
 #include "net/minecraft/client/render/shaderpack/VanillaPackEmbed.hpp"
@@ -115,8 +116,13 @@ bool prepareProgram(PackInstance& pack, const std::string& programName, const Pa
 std::string transformationSalt(const PackDefinition& definition,
                                const std::string& programName,
                                const ShaderTransformContext& context) {
- std::string salt = render::vertex_abi::abiSaltString() + "|shader-transform-6|" + programName;
+ std::string salt = render::vertex_abi::abiSaltString() + "|shader-transform-" +
+                    std::to_string(kShaderTransformerVersion) + "|" + programName;
+ for(const std::string_view feature : kIrisFeatureNames) {
+  if(featureSupported(feature)) salt += "|feature-" + std::string(feature);
+ }
  salt += context.entityOverlay ? "|overlay" : "|no-overlay";
+ salt += definition.distantHorizons ? "|distant-horizons" : "|no-distant-horizons";
  salt += context.entityId ? "|entity-id" : "|no-entity-id";
  salt += context.hasGeometry ? "|geometry" : "|no-geometry";
  salt += context.hasTessellation ? "|tessellation" : "|no-tessellation";
@@ -237,7 +243,14 @@ gl::ShaderProgram* PackCompiler::compile(PackInstance& pack, const std::string& 
   return nullptr;
  }
  PreparedProgram prepared;
- if(!prepareProgram(pack, programName, found->second, logOnce, prepared)) {
+ bool preparedOk = false;
+ try {
+  preparedOk = prepareProgram(pack, programName, found->second, logOnce, prepared);
+ } catch(const IncludeResolveError& includeError) {
+  logOnce(pack, "program '" + programName + "': " + includeError.what(),
+          ::net::minecraft::util::logging::LogLevel::Severe);
+ }
+ if(!preparedOk) {
   pack.compiledPrograms.emplace(programName, PackInstance::CompiledEntry{nullptr, true});
   return nullptr;
  }

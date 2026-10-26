@@ -44,7 +44,7 @@ class ChunkBuilder : public std::enable_shared_from_this<ChunkBuilder> {
   return dx * dx + dy * dy + dz * dz;
  }
  static void buildMesh(ChunkMeshJob& job);
- void uploadMesh(ChunkMeshJob& job);
+ bool uploadMesh(ChunkMeshJob& job);
  void freeGpuBuffers() noexcept;
  void setTerrainRegion(TerrainRegion& region) noexcept { terrainRegion_ = &region; }
  [[nodiscard]] TerrainRegion* terrainRegion() const noexcept { return terrainRegion_; }
@@ -100,7 +100,7 @@ class ChunkBuilder : public std::enable_shared_from_this<ChunkBuilder> {
  int y = 0;
  int z = 0;
  int visibleStamp = -1;
- std::array<bool, terrain_layer::Count> renderLayerEmpty{true, true, true, true};
+ std::array<bool, terrain_layer::Count> renderLayerEmpty{true, true, true};
  std::array<std::vector<ModChunkMesh>, terrain_layer::Count> modLayerMeshes_{};
  int centerX = 0;
  int centerY = 0;
@@ -110,6 +110,9 @@ class ChunkBuilder : public std::enable_shared_from_this<ChunkBuilder> {
  bool lightingReady = true;
  bool built = false;
  int version = 0;
+ int requestedLod = 0;
+ int builtLod = 0;
+ std::size_t lodSavedVertices = 0;
  bool meshJobInFlight = false;
  struct OcclusionState {
   std::uint64_t visBits = ~0ULL;

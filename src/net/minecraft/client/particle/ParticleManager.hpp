@@ -49,8 +49,11 @@ class ParticleManager {
    });
   }
  }
- void render(Entity* entity, float partialTicks) {
-  const render::RenderPassScope pass(render::RenderType::particlesTranslucent());
+ void render(Entity* entity, float partialTicks, ParticleSheet sheet) {
+  const render::RenderType& type = sheet == ParticleSheet::Opaque        ? render::RenderType::particlesOpaque()
+                                   : sheet == ParticleSheet::Translucent ? render::RenderType::particlesTranslucent()
+                                                                         : render::RenderType::particles();
+  const render::RenderPassScope pass(type);
   // Particles must share the exact render origin AND orientation used by
   // terrain and entities (the frame camera), not the passed-in entity's
   // rotation. The frame camera honors mod camera overrides (e.g. a
@@ -69,17 +72,21 @@ class ParticleManager {
   const float widthOffset = -yawSin * MathHelper::sin(billboardPitch * kPiF / 180.0f);
   const float heightOffset = yawCos * MathHelper::sin(billboardPitch * kPiF / 180.0f);
   const float verticalSize = MathHelper::cos(billboardPitch * kPiF / 180.0f);
+  render::Tessellator& tessellator = render::Tessellator::INSTANCE;
   for(int group = 0; group < 3; ++group) {
-   if(particles_[static_cast<std::size_t>(group)].empty()) {
-    continue;
-   }
    const char* texture = group == 0 ? "/particles.png" : (group == 1 ? "/terrain.png" : "/gui/items.png");
-   const int defaultTextureId = textureManager_->getTextureId(texture);
-   int boundTextureId = defaultTextureId;
-   textureManager_->bindTexture(boundTextureId);
-   render::Tessellator& tessellator = render::Tessellator::INSTANCE;
-   tessellator.startQuads();
+   int defaultTextureId = -1;
+   int boundTextureId = -1;
    for(const auto& particle : particles_[static_cast<std::size_t>(group)]) {
+    if(particle->renderSheet() != sheet) {
+     continue;
+    }
+    if(defaultTextureId < 0) {
+     defaultTextureId = textureManager_->getTextureId(texture);
+     boundTextureId = defaultTextureId;
+     textureManager_->bindTexture(boundTextureId);
+     tessellator.startQuads();
+    }
     if(group == 1) {
      const int particleTextureId = particle->boundTextureGl(*textureManager_);
      const int nextTextureId = particleTextureId >= 0 ? particleTextureId : defaultTextureId;
@@ -93,23 +100,16 @@ class ParticleManager {
     particle->applyLight(tessellator);
     particle->render(tessellator, partialTicks, yawCos, verticalSize, yawSin, widthOffset, heightOffset);
    }
-   tessellator.draw();
+   if(defaultTextureId >= 0) {
+    tessellator.draw();
+   }
   }
- }
- void renderLit(Entity* /*entity*/, float partialTicks) {
-  auto& bucket = particles_[3];
-  if(bucket.empty()) {
-   return;
-  }
-  const render::RenderPassScope pass(render::RenderType::particles());
-  // renderLit runs before render(), so establish the shared frame-camera
-  // origin here too rather than relying on last frame's stale offsets.
-  syncCameraOffset();
-  render::core::setDrawPose(net::minecraft::util::math::Matrix4f::identityMatrix());
-  render::Tessellator& tessellator = render::Tessellator::INSTANCE;
-  for(const auto& particle : bucket) {
+  for(const auto& particle : particles_[3]) {
+   if(particle->renderSheet() != sheet) {
+    continue;
+   }
    particle->applyLight(tessellator);
-   particle->render(tessellator, partialTicks, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+   particle->render(tessellator, partialTicks, yawCos, verticalSize, yawSin, widthOffset, heightOffset);
   }
  }
  void addBlockBreakParticles(int x, int y, int z, int blockId, int blockMeta) {

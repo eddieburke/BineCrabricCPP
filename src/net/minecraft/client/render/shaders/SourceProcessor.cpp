@@ -99,6 +99,51 @@ int requestedVersion(std::string_view source) {
  directive >> requested;
  return requested;
 }
+void repairKnownShaderArtifacts(std::string& source, ShaderStage stage) {
+ if(stage != ShaderStage::Compute && stage != ShaderStage::Fragment) return;
+ const bool stars = source.find("n_pe.xz * 1000.0") != std::string::npos;
+ const bool hand = source.find("get_hand_light") != std::string::npos &&
+                   source.find("ray_halfclip") != std::string::npos;
+ if(!stars && !hand) return;
+ const CodeMask mask = codeMask(source);
+ std::vector<TokenReplacement> replacements;
+ const auto matchAll = [&](const auto& patterns) {
+  return std::all_of(patterns.begin(), patterns.end(), [&](const auto& pattern) {
+   return referencesToken(source, mask, pattern.first);
+  });
+ };
+ if(stars && referencesToken(source, mask, "pe") && referencesToken(source, mask, "sky_fog_val")) {
+  constexpr std::array<std::pair<std::string_view, std::string_view>, 2> patterns = {{
+      {"uvec2 seed = uvec2(ivec2(n_pe.xz * 1000.0 + sin(frameTimeCounter * 1000.0) * 0.2))",
+       "uvec3 seed = uvec3(ivec3(floor(normalize(pe) * 1000.0 + sin(frameTimeCounter * 1000.0) * 0.2)))"},
+      {"float(pcg(seed.x + pcg(seed.y))) / float(0xFFFFFFFFu)",
+       "float(pcg(seed.x + pcg(seed.y + pcg(seed.z)))) / float(0xFFFFFFFFu)"},
+  }};
+  if(matchAll(patterns)) {
+   for(const auto& [from, to] : patterns) replacements.push_back({std::string(from), std::string(to)});
+  }
+ }
+ if(hand && referencesToken(source, mask, "get_hand_light") && referencesToken(source, mask, "depthtex2")) {
+  constexpr std::array<std::pair<std::string_view, std::string_view>, 7> patterns = {{
+      {"f16vec4 from = f16vec4(proj_mmul(gbufferProjection, origin_view))",
+       "vec4 from = proj_mmul(gbufferProjection, origin_view)"},
+      {"f16vec4 to = f16vec4(proj_mmul(gbufferProjection, view))",
+       "vec4 to = proj_mmul(gbufferProjection, view)"},
+      {"f16vec4 step = (to - from) / float16_t(steps + 1)",
+       "vec4 step = (to - from) / float(steps + 1)"},
+      {"f16vec4 ray_halfclip = from", "vec4 ray_halfclip = from"},
+      {"f16vec2 ray_screen_undiv_xy = fma(ray_halfclip.ww, f16vec2(0.5), ray_halfclip.xy)",
+       "vec2 ray_screen_undiv_xy = fma(ray_halfclip.ww, vec2(0.5), ray_halfclip.xy)"},
+      {"float16_t sampled = float16_t(textureProjLod(depthtex2, f16vec3(ray_screen_undiv_xy, ray_halfclip.w), 0.0).r)",
+       "float sampled = textureProjLod(depthtex2, vec3(ray_screen_undiv_xy, ray_halfclip.w), 0.0).r"},
+      {"(sampled - float16_t(0.5)) * ray_halfclip.w", "(sampled - 0.5) * ray_halfclip.w"},
+  }};
+  if(matchAll(patterns)) {
+   for(const auto& [from, to] : patterns) replacements.push_back({std::string(from), std::string(to)});
+  }
+ }
+ replaceAllTokens(source, replacements);
+}
 } // namespace
 void captureGlShaderSnapshot() {
  std::lock_guard lock(gSnapshotMutex);
@@ -201,6 +246,7 @@ std::vector<ShaderMacro> engineMacros(const PackDefinition& pack) {
  macros.push_back({"MC_SHADOW_QUALITY", "1.0"});
  if(pack.labPbr || pack.labPbr13) macros.push_back({"MC_TEXTURE_FORMAT_LAB_PBR", {}});
  if(pack.labPbr13) macros.push_back({"MC_TEXTURE_FORMAT_LAB_PBR_1_3", {}});
+ if(pack.distantHorizons) macros.push_back({"DISTANT_HORIZONS", {}});
  constexpr std::array<std::string_view, 3> precipitation = {"NONE", "RAIN", "SNOW"};
  constexpr std::array<std::string_view, 16> dhBlocks = {
      "UNKNOWN", "LEAVES", "STONE", "WOOD", "METAL", "DIRT", "LAVA", "DEEPSLATE", "SNOW", "SAND",
@@ -208,6 +254,8 @@ std::vector<ShaderMacro> engineMacros(const PackDefinition& pack) {
  appendIndexedMacros(macros, "PPT_", precipitation);
  appendIndexedMacros(macros, "CAT_", kBiomeCategoryNames);
  appendIndexedMacros(macros, "BIOME_", kBiomeNames);
+ for(std::size_t index = 0; index < kModernBiomeNames.size(); ++index)
+  macros.push_back({"BIOME_" + std::string(kModernBiomeNames[index]), std::to_string(kModernBiomeIdBase + index)});
  appendIndexedMacros(macros, "DH_BLOCK_", dhBlocks);
  constexpr std::array<std::string_view, 24> renderStages = {
      "NONE", "SKY", "SUNSET", "CUSTOM_SKY", "SUN", "MOON", "STARS", "VOID", "TERRAIN_SOLID",
@@ -272,6 +320,7 @@ std::string normalizePackSource(const PackDefinition& pack, const std::string& s
                   std::to_string(std::max(0, net::minecraft::client::texture::TextureManager::MIPMAP_LEVEL))});
  if(pack.labPbr || pack.labPbr13) ppAssign(macros, "MC_TEXTURE_FORMAT_LAB_PBR", PPMacro{});
  if(pack.labPbr13) ppAssign(macros, "MC_TEXTURE_FORMAT_LAB_PBR_1_3", PPMacro{});
+ if(pack.distantHorizons) ppAssign(macros, "DISTANT_HORIZONS", PPMacro{});
  for(const std::string& feature : pack.requiredFeatures)
   if(featureSupported(feature)) ppAssign(macros, "IRIS_FEATURE_" + feature, PPMacro{});
  for(const std::string& feature : pack.optionalFeatures)
@@ -416,6 +465,7 @@ std::string prepareSource(const std::string& programName,
                            const std::string& source,
                            ShaderTransformContext context) {
  std::string prepared = normalizePackSource(pack, source);
+ repairKnownShaderArtifacts(prepared, stage);
  prepared = canonicalizeCoreSource(programName, stage, pack, std::move(prepared), context);
  return mergeColorWheelMaterial(programName, stage, std::move(prepared));
 }

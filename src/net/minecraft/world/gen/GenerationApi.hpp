@@ -32,6 +32,7 @@ struct ChunkGenerationContext {
  int chunkZ = 0;
  bool modGeneration = false;
  bool overworld = false;
+ int dimensionId = 0;
 };
 struct ChunkGenerationEvent {
  ChunkStage stage;

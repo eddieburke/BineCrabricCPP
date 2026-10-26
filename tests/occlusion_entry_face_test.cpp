@@ -13,7 +13,7 @@ TEST(OcclusionEntryFace, LaterEntryCanExposeAUniqueExit) {
  const auto makeSection = [&blockEntities](int x, int z) {
   auto section = std::make_unique<ChunkBuilder>(nullptr, blockEntities, x * 16, 0, z * 16);
   section->built = true;
-  section->renderLayerEmpty = {false, true, true, true};
+  section->renderLayerEmpty = {false, true, true};
   return section;
  };
  auto start = makeSection(0, 0);
@@ -48,7 +48,7 @@ TEST(OcclusionEntryFace, OpenSectionsEnterTheQueueOnce) {
   for(int x = 0; x < side; ++x) {
    auto section = std::make_unique<ChunkBuilder>(nullptr, blockEntities, x * 16, 0, z * 16);
    section->built = true;
-   section->renderLayerEmpty = {false, true, true, true};
+   section->renderLayerEmpty = {false, true, true};
    sections.push_back(std::move(section));
   }
  }
@@ -112,7 +112,7 @@ TEST(OcclusionEntryFace, MixedConnectivityMatchesFaceByFaceTraversal) {
    random = random * 6364136223846793005ULL + 1;
    node->built = (random & 7) != 0;
    node->occlusion.visBits = (random & 3) == 0 ? ~0ULL : random >> 16;
-   node->renderLayerEmpty = {(random & 8) == 0, true, true, true};
+   node->renderLayerEmpty = {(random & 8) == 0, true, true};
   }
   const int stamp = trial * 2 + 1;
   auto* start = sections[static_cast<std::size_t>(side * side / 2)].get();

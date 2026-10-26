@@ -207,6 +207,9 @@ bool lookupConstant(const std::string& name, CustomUniformValue& out) {
    map.emplace(alias.name, static_cast<int>(alias.index));
    map.emplace("BIOME_" + std::string(alias.name), static_cast<int>(alias.index));
   }
+  for(std::size_t i = 0; i < kModernBiomeNames.size(); ++i) {
+   map.emplace("BIOME_" + std::string(kModernBiomeNames[i]), static_cast<int>(kModernBiomeIdBase + i));
+  }
   return map;
  }();
  static const std::unordered_map<std::string, int> kCats = [] {
@@ -229,6 +232,18 @@ bool lookupConstant(const std::string& name, CustomUniformValue& out) {
  return false;
 }
 bool matrixNamed(const std::string& name, const PackUniformValues& frame, const float*& out) {
+ if(name == "dhProjection") {
+  out = frame.dhProjection;
+  return true;
+ }
+ if(name == "dhProjectionInverse") {
+  out = frame.dhProjectionInverse;
+  return true;
+ }
+ if(name == "dhPreviousProjection") {
+  out = frame.dhPreviousProjection;
+  return true;
+ }
  if(name == "gbufferProjection") {
   out = frame.gbufferProjection;
   return true;
@@ -302,6 +317,9 @@ bool lookupBuiltin(const std::string& name, const PackUniformValues& frame, Cust
  if(name == "aspectRatio") return f1(frame.aspectRatio);
  if(name == "near") return f1(frame.nearPlane);
  if(name == "far") return f1(frame.renderDistanceBlocks);
+ if(name == "dhRenderDistance") return i1(frame.dhRenderDistance);
+ if(name == "dhNearPlane") return f1(frame.dhNearPlane);
+ if(name == "dhFarPlane") return f1(frame.dhFarPlane);
  if(name == "shadowMapResolution") return f1(frame.shadowMapResolution);
  if(name == "cameraPosition") return v3(frame.cameraPosition);
  if(name == "cameraPositionFract") return v3(frame.cameraPositionFract);
@@ -1259,11 +1277,20 @@ bool CustomUniformRuntime::compile(const std::vector<CustomUniformDecl>& decls, 
  compiled_.clear();
  values_.clear();
  error.clear();
+ const auto report = [&](const CustomUniformDecl& decl, const std::string& message) {
+  if(!error.empty()) error += "; ";
+  error += "custom " + std::string(decl.upload ? "uniform" : "variable") + "." + customUniformTypeName(decl.type) +
+           "." + decl.name + ": " + message;
+ };
+ std::unordered_map<std::string, std::size_t> indices;
+ // see third_party/iris/common/src/main/java/net/irisshaders/iris/uniforms/custom/CustomUniforms.java:309-326
  for(const CustomUniformDecl& decl : decls) {
+  if(indices.contains(decl.name)) {
+   report(decl, "duplicate custom variable ignored");
+   continue;
+  }
   if(decl.expression.empty()) {
-   if(!error.empty()) error += "; ";
-   error += "custom " + std::string(decl.upload ? "uniform" : "variable") + "." + customUniformTypeName(decl.type) +
-            "." + decl.name + ": empty expression";
+   report(decl, "empty expression");
    continue;
   }
   std::string localError;
@@ -1271,114 +1298,118 @@ bool CustomUniformRuntime::compile(const std::vector<CustomUniformDecl>& decls, 
    Parser parser(decl.expression);
    auto root = parser.parse(localError);
    if(root == nullptr) {
-    if(!error.empty()) error += "; ";
-    error += "custom " + std::string(decl.upload ? "uniform" : "variable") + "." + customUniformTypeName(decl.type) +
-             "." + decl.name + ": " + localError;
+    report(decl, localError);
     continue;
    }
    auto compiled = std::make_unique<Compiled>();
    compiled->decl = decl;
    compiled->root = std::move(root);
+   indices.emplace(decl.name, compiled_.size());
    compiled_.push_back(std::move(compiled));
   } catch(const std::string& msg) {
-   if(!error.empty()) error += "; ";
-   error += "custom " + std::string(decl.upload ? "uniform" : "variable") + "." + customUniformTypeName(decl.type) +
-            "." + decl.name + ": " + msg;
+   report(decl, msg);
   }
  }
- if(!error.empty()) {
-  clear();
-  return false;
+ for(auto& compiled : compiled_) {
+  auto& value = values_[compiled->decl.name];
+  value.type = compiled->decl.type;
+  compiled->value = &value;
  }
- std::unordered_map<std::string, std::size_t> indices;
+ const PackUniformValues frame{};
  std::vector<std::vector<std::size_t>> dependencies(compiled_.size());
- try {
-  for(std::size_t i = 0; i < compiled_.size(); ++i) {
-   auto& compiled = *compiled_[i];
-   if(!indices.emplace(compiled.decl.name, i).second) throw std::string("duplicate custom variable: ") + compiled.decl.name;
-   auto& value = values_[compiled.decl.name];
-   value.type = compiled.decl.type;
-   compiled.value = &value;
+ const auto bind = [&](auto&& self, ExprNode& node, std::size_t owner) -> void {
+  if(node.kind == NodeKind::Call) node.args.resize(node.kids.size());
+  if(node.kind == NodeKind::MatrixElem) {
+   const float* matrix = nullptr;
+   if(node.kids[0]->kind != NodeKind::Ident || !matrixNamed(node.kids[0]->name, frame, matrix)) {
+    throw std::string("unknown matrix: ") + node.kids[0]->name;
+   }
+   return;
   }
-  const PackUniformValues frame{};
-  const auto bind = [&](auto&& self, ExprNode& node, std::size_t owner) -> void {
-   if(node.kind == NodeKind::Call) node.args.resize(node.kids.size());
-   if(node.kind == NodeKind::MatrixElem) {
-    const float* matrix = nullptr;
-    if(node.kids[0]->kind != NodeKind::Ident || !matrixNamed(node.kids[0]->name, frame, matrix)) {
-     throw std::string("unknown matrix: ") + node.kids[0]->name;
-    }
-    return;
-   }
-   for(auto& kid : node.kids) self(self, *kid, owner);
-   if(node.kind == NodeKind::Ident) {
-    if(const auto found = indices.find(node.name); found != indices.end()) {
-     dependencies[owner].push_back(found->second);
-     node.customValue = compiled_[found->second]->value;
-     node.type = node.customValue->type;
-    } else {
-     CustomUniformValue builtin;
-     if(lookupBuiltin(node.name, frame, builtin)) {
-      node.type = builtin.type;
-     } else if(const auto option = options_.find(node.name); option != options_.end()) {
-      if(option->second == "true" || option->second == "false") {
-       node.type = CustomUniformType::Bool;
-      } else {
-       char* end = nullptr;
-       const double number = std::strtod(option->second.c_str(), &end);
-       if(end == option->second.c_str() || *end != '\0') throw std::string("non-numeric option: ") + node.name;
-       node.type = option->second.find_first_of(".eE") == std::string::npos &&
-                           number >= std::numeric_limits<int>::min() && number <= std::numeric_limits<int>::max()
-                       ? CustomUniformType::Int : CustomUniformType::Float;
-      }
+  for(auto& kid : node.kids) self(self, *kid, owner);
+  if(node.kind == NodeKind::Ident) {
+   if(const auto found = indices.find(node.name); found != indices.end()) {
+    dependencies[owner].push_back(found->second);
+    node.customValue = compiled_[found->second]->value;
+    node.type = node.customValue->type;
+   } else {
+    CustomUniformValue builtin;
+    if(lookupBuiltin(node.name, frame, builtin)) {
+     node.type = builtin.type;
+    } else if(const auto option = options_.find(node.name); option != options_.end()) {
+     if(option->second == "true" || option->second == "false") {
+      node.type = CustomUniformType::Bool;
      } else {
-      throw std::string("unknown custom variable: ") + node.name;
+      char* end = nullptr;
+      const double number = std::strtod(option->second.c_str(), &end);
+      if(end == option->second.c_str() || *end != '\0') throw std::string("non-numeric option: ") + node.name;
+      node.type = option->second.find_first_of(".eE") == std::string::npos &&
+                          number >= std::numeric_limits<int>::min() && number <= std::numeric_limits<int>::max()
+                      ? CustomUniformType::Int : CustomUniformType::Float;
      }
-    }
-   } else if(node.kind == NodeKind::Binary && node.type != CustomUniformType::Bool) {
-    node.type = node.kids[0]->type;
-    if(isVector(node.kids[1]->type)) node.type = node.kids[1]->type;
-    else if(!isVector(node.type) && (node.kids[1]->type == CustomUniformType::Float || node.op == TokenKind::Slash)) {
-     node.type = CustomUniformType::Float;
-    }
-   } else if(node.kind == NodeKind::Unary && node.op != TokenKind::Bang) {
-    node.type = node.kids[0]->type;
-   } else if(node.kind == NodeKind::Call && !node.kids.empty()) {
-    if(node.name == "if" && node.kids.size() > 1) node.type = node.kids[1]->type;
-    else if(node.name == "abs" || node.name == "min" || node.name == "max" || node.name == "clamp") {
-     node.type = node.kids[0]->type;
+    } else {
+     throw std::string("unknown custom variable: ") + node.name;
     }
    }
-  };
-  for(std::size_t i = 0; i < compiled_.size(); ++i) {
-   auto& compiled = *compiled_[i];
+  } else if(node.kind == NodeKind::Binary && node.type != CustomUniformType::Bool) {
+   node.type = node.kids[0]->type;
+   if(isVector(node.kids[1]->type)) node.type = node.kids[1]->type;
+   else if(!isVector(node.type) && (node.kids[1]->type == CustomUniformType::Float || node.op == TokenKind::Slash)) {
+    node.type = CustomUniformType::Float;
+   }
+  } else if(node.kind == NodeKind::Unary && node.op != TokenKind::Bang) {
+   node.type = node.kids[0]->type;
+  } else if(node.kind == NodeKind::Call && !node.kids.empty()) {
+   if(node.name == "if" && node.kids.size() > 1) node.type = node.kids[1]->type;
+   else if(node.name == "abs" || node.name == "min" || node.name == "max" || node.name == "clamp") {
+    node.type = node.kids[0]->type;
+   }
+  }
+ };
+ // see third_party/iris/common/src/main/java/net/irisshaders/iris/uniforms/custom/CustomUniforms.java:60-73
+ std::vector<unsigned char> broken(compiled_.size());
+ for(std::size_t i = 0; i < compiled_.size(); ++i) {
+  auto& compiled = *compiled_[i];
+  try {
    bind(bind, *compiled.root, i);
    if(!resolveExpression(*compiled.root, compiled.decl.type)) {
-    throw std::string("cannot resolve custom ") + compiled.decl.name + " as " + customUniformTypeName(compiled.decl.type);
+    throw std::string("cannot resolve as ") + customUniformTypeName(compiled.decl.type);
+   }
+  } catch(const std::string& message) {
+   report(compiled.decl, message);
+   broken[i] = 1;
+  }
+ }
+ std::vector<unsigned char> visited(compiled_.size());
+ std::vector<std::size_t> order;
+ order.reserve(compiled_.size());
+ const auto visit = [&](auto&& self, std::size_t index) -> bool {
+  if(visited[index] == 2) return broken[index] == 0;
+  if(visited[index] == 1) {
+   if(broken[index] == 0) report(compiled_[index]->decl, "circular custom variable reference");
+   broken[index] = 1;
+   return false;
+  }
+  visited[index] = 1;
+  for(const std::size_t dependency : dependencies[index]) {
+   if(!self(self, dependency) && broken[index] == 0) {
+    report(compiled_[index]->decl, "depends on broken custom variable " + compiled_[dependency]->decl.name);
+    broken[index] = 1;
    }
   }
-  std::vector<unsigned char> visited(compiled_.size());
-  std::vector<std::size_t> order;
-  order.reserve(compiled_.size());
-  const auto visit = [&](auto&& self, std::size_t index) -> void {
-   if(visited[index] == 2) return;
-   if(visited[index] == 1) throw std::string("circular custom variable reference: ") + compiled_[index]->decl.name;
-   visited[index] = 1;
-   for(const std::size_t dependency : dependencies[index]) self(self, dependency);
-   visited[index] = 2;
-   order.push_back(index);
-  };
-  for(std::size_t i = 0; i < compiled_.size(); ++i) visit(visit, i);
-  std::vector<std::unique_ptr<Compiled>> sorted;
-  sorted.reserve(compiled_.size());
-  for(const std::size_t index : order) sorted.push_back(std::move(compiled_[index]));
-  compiled_ = std::move(sorted);
- } catch(const std::string& message) {
-  error = message;
-  clear();
-  return false;
+  visited[index] = 2;
+  if(broken[index] == 0) order.push_back(index);
+  return broken[index] == 0;
+ };
+ for(std::size_t i = 0; i < compiled_.size(); ++i) visit(visit, i);
+ std::vector<std::unique_ptr<Compiled>> sorted;
+ sorted.reserve(order.size());
+ for(const std::size_t index : order) sorted.push_back(std::move(compiled_[index]));
+ for(std::size_t i = 0; i < compiled_.size(); ++i) {
+  if(broken[i] != 0) values_.erase(compiled_[i]->decl.name);
  }
- return true;
+ compiled_ = std::move(sorted);
+ return error.empty();
 }
 void CustomUniformRuntime::evaluate(const PackUniformValues& frame) {
  static thread_local std::mt19937 rng{std::random_device{}()};

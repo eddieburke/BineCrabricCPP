@@ -23,6 +23,21 @@ struct TessellatorVertex {
  std::int16_t overlay[2]{};
 };
 
+struct TerrainVertex {
+ float x = 0.0f;
+ float y = 0.0f;
+ float z = 0.0f;
+ float u = 0.0f;
+ float v = 0.0f;
+ std::uint32_t color = 0xFFFFFFFFU;
+ std::int32_t normal = 0;
+ std::int32_t midBlock = 0;
+ std::int32_t light = 0;
+ std::int16_t entity[2]{};
+ std::uint16_t midTexCoord[2]{};
+ std::int8_t tangent[4]{};
+};
+
 namespace vertex_abi {
 inline constexpr unsigned int Position = 0;
 inline constexpr unsigned int Texture = 1;
@@ -111,6 +126,21 @@ inline constexpr std::array<Format, 13> Formats{{
     {IrisLightUv, 2, 0x1403, false, true, LightOffset, Availability::Always},
 }};
 
+// see third_party/iris/common/src/main/java/net/irisshaders/iris/vertices/IrisVertexFormats.java:29-32
+inline constexpr std::array<Format, 11> TerrainFormats{{
+    {Position, 3, 0x1406, false, false, offsetof(TerrainVertex, x), Availability::Always},
+    {Texture, 2, 0x1406, false, false, offsetof(TerrainVertex, u), Availability::Always},
+    {Color, 4, 0x1401, true, false, offsetof(TerrainVertex, color), Availability::Always},
+    {Normal, 3, 0x1400, true, false, offsetof(TerrainVertex, normal), Availability::Always},
+    {MidBlock, 4, 0x1400, false, false, offsetof(TerrainVertex, midBlock), Availability::Always},
+    {Light, 2, 0x1403, false, false, offsetof(TerrainVertex, light), Availability::Always},
+    {Entity, 2, 0x1402, false, false, offsetof(TerrainVertex, entity), Availability::Always},
+    {MidTexCoord, 2, 0x1403, true, false, offsetof(TerrainVertex, midTexCoord), Availability::Always},
+    {IrisUv2, 2, 0x1403, false, true, offsetof(TerrainVertex, light), Availability::Always},
+    {Tangent, 4, 0x1400, true, false, offsetof(TerrainVertex, tangent), Availability::Always},
+    {IrisLightUv, 2, 0x1403, false, true, offsetof(TerrainVertex, light), Availability::Always},
+}};
+
 inline const std::string& abiSaltString() {
  static const std::string salt = [] {
   std::string s;
@@ -138,4 +168,5 @@ static_assert(vertex_abi::TangentOffset == 52);
 static_assert(vertex_abi::IrisEntityOffset == 60);
 static_assert(vertex_abi::OverlayOffset == 72);
 static_assert(vertex_abi::Stride == 76);
+static_assert(sizeof(TerrainVertex) == 48);
 }

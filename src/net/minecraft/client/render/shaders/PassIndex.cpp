@@ -42,7 +42,10 @@ constexpr std::array kPackProgramIds = {
     PackProgramId{"shadow_water", "shadow"},
     PackProgramId{"shadow_entities", "shadow"},
     PackProgramId{"shadow_block", "shadow"},
-    PackProgramId{"shadow_lightning", "shadow_entities"}};
+    PackProgramId{"shadow_lightning", "shadow_entities"},
+    PackProgramId{"dh_terrain", ""},
+    PackProgramId{"dh_water", "dh_terrain"},
+    PackProgramId{"dh_shadow", ""}};
 std::string programLookupKey(const std::string& programName) {
  const std::size_t hash = programName.find('#');
  return hash == std::string::npos ? programName : programName.substr(0, hash);

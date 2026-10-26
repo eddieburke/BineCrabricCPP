@@ -17,10 +17,7 @@ local function clamp_number(value, minimum, maximum)
 end
 
 local function make_validator(field)
-  local field_type = field.type
-  if field_type == nil then
-    return function(value) return value end
-  end
+  local field_type = field.type or "slider"
   if field_type == "slider" or field_type == "number" then
     local minimum, maximum = field.min or 0, field.max or 1
     if field.integer then
@@ -84,7 +81,7 @@ function settings.define(mod_id, definition)
       else
         local integer = field_type == "int" or field_type == "integer" or field.integer == true
         native_entry.min = field.min or 0
-        native_entry.max = field.max or 1
+        native_entry.max = field.max or ((field_type == "int" or field_type == "integer") and 2147483647 or 1)
         native_entry.step = field.step or (integer and 1 or 0)
         native_entry.decimals = integer and 0 or (field.decimals or 2)
         native_entry.integer = integer
@@ -124,8 +121,8 @@ function settings.define(mod_id, definition)
         minecraft.settings.set(entry.name, validated)
         return
       end
-      local_values[key] = validated
       assert(minecraft.storage.write(entry.path, tostring(validated)))
+      local_values[key] = validated
     end,
   })
 

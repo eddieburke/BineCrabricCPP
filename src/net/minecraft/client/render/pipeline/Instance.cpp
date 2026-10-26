@@ -45,6 +45,7 @@ void PackInstance::resetPrograms() {
  stagePlanValid.fill(false);
  compiledPrograms.clear();
  programDrawBuffers.clear();
+ preparedSourceCache.clear();
  logged.clear();
  setupWidth = 0;
  setupHeight = 0;
@@ -191,16 +192,30 @@ bool PackInstance::buildExecutionPlan(std::string& error) {
    if(!group.emitted) emit(group);
   }
  }
+ // Iris resolves fallbacks by presence alone and aborts the pack when a present program fails
+ // to compile (third_party/iris/common/src/main/java/net/irisshaders/iris/shaderpack/programs/ProgramFallbackResolver.java).
+ // Here a failed program is reported and the chain continues past it, so one broken gbuffers
+ // program degrades to its fallback instead of leaving the slot unbound.
+ std::vector<std::string> reportedFailures;
  for(std::size_t index = 0; index < static_cast<std::size_t>(WorldProgramId::Count); ++index) {
   const std::string requested(worldProgramKey(static_cast<WorldProgramId>(index)));
   for(std::size_t shadow = 0; shadow < 2; ++shadow) {
-   std::string candidate = shadow != 0 ? irisShadowProgramForGbuffers(requested) : requested;
-   if(candidate.empty()) continue;
-   candidate = resolveProgramKey(definition, settings, candidate, programEnabledCache);
-   if(candidate.empty()) continue;
-   const auto found = compiledPrograms.find(candidate);
-   if(found == compiledPrograms.end() || found->second.failed || found->second.program == nullptr) continue;
-   worldPrograms[index][shadow] = {found->second.program, std::move(candidate)};
+   const std::string start = shadow != 0 ? irisShadowProgramForGbuffers(requested) : requested;
+   for(std::string key = start; !key.empty(); key = programFallbackKey(key)) {
+    if(!definition.programs.contains(key) || !isProgramEnabledCached(definition, settings, key, programEnabledCache)) {
+     continue;
+    }
+    const auto found = compiledPrograms.find(key);
+    if(found != compiledPrograms.end() && !found->second.failed && found->second.program != nullptr) {
+     worldPrograms[index][shadow] = {found->second.program, key};
+     break;
+    }
+    if(std::find(reportedFailures.begin(), reportedFailures.end(), key) == reportedFailures.end()) {
+     reportedFailures.push_back(key);
+     if(!error.empty()) error += "; ";
+     error += "program '" + key + "' failed to compile; using its fallback";
+    }
+   }
   }
  }
  executionPlanReady = true;

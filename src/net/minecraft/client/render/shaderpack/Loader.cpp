@@ -1736,7 +1736,8 @@ void loadProgramSet(PackDefinition& out,
   }
  }
  if(const auto spidereyes = out.programs.find("gbuffers_spidereyes");
-    spidereyes != out.programs.end() && spidereyes->second.fragment == "shaders/gbuffers_spidereyes.fsh" &&
+    spidereyes != out.programs.end() &&
+    std::filesystem::path(spidereyes->second.fragment).filename() == "gbuffers_spidereyes.fsh" &&
     !hasBlendOverride("gbuffers_spidereyes")) {
   BufferBlend blend;
   blend.program = "gbuffers_spidereyes";
@@ -1876,7 +1877,12 @@ bool PackLoader::load(const std::vector<std::string>& resources,
           path.rfind("shaders/lib/", 0) == 0);
  });
  if(hasRootShaderSet) {
-  loadProgramSet(out, rootResources, cachedRead, options, values, "shaders/", expandedSources);
+  try {
+   loadProgramSet(out, rootResources, cachedRead, options, values, "shaders/", expandedSources);
+  } catch(const IncludeResolveError& includeError) {
+   error = includeError.what();
+   return false;
+  }
  }
  if(has(resources, "shaders/lang/en_us.lang") || has(resources, "shaders/lang/en_US.lang")) {
   const std::string langPath =
@@ -1946,7 +1952,7 @@ bool PackLoader::load(const std::vector<std::string>& resources,
    out.dimensionFolders["world-1"] = "minecraft:the_nether";
   if(std::any_of(resources.begin(), resources.end(),
                  [](const std::string& path) { return path.rfind("shaders/world0/", 0) == 0; }))
-   out.dimensionFolders["world0"] = "minecraft:overworld";
+   out.dimensionFolders["world0"] = "minecraft:overworld *";
   if(std::any_of(resources.begin(), resources.end(),
                  [](const std::string& path) { return path.rfind("shaders/world1/", 0) == 0; }))
    out.dimensionFolders["world1"] = "minecraft:the_end";
@@ -1974,7 +1980,12 @@ bool PackLoader::load(const std::vector<std::string>& resources,
     inferVersion(cachedRead(path), *definition);
    }
   }
-  loadProgramSet(*definition, dimensionResources, cachedRead, options, values, prefix, expandedSources);
+  try {
+   loadProgramSet(*definition, dimensionResources, cachedRead, options, values, prefix, expandedSources);
+  } catch(const IncludeResolveError& includeError) {
+   error = includeError.what();
+   return false;
+  }
   if(definition->programs.empty()) continue;
   definition->dimensionFolders.clear();
   definition->dimensionDefinitions.clear();

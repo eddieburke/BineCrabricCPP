@@ -126,7 +126,7 @@ function M.stack.click(slot_stack, cursor, button)
     end
     return slot_stack, cursor
   end
-  if cursor.count <= M.stack.max_count(slot_stack) then
+  if cursor.count <= M.stack.max_count(cursor) then
     local swapped = M.stack.copy(slot_stack)
     slot_stack = M.stack.copy(cursor)
     cursor = swapped
@@ -297,9 +297,6 @@ function M.slots(spec)
       local slot_stack, next_cursor = M.stack.click(ctx.get(index), cursor, button)
       ctx.set(index, slot_stack)
       inv.cursor_set(next_cursor)
-      if spec.on_slot_change then
-        spec.on_slot_change(ctx, index)
-      end
       return
     end
     local player_slot = player_slot_at(mouse_x, mouse_y)

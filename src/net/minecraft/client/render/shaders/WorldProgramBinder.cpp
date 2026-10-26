@@ -140,6 +140,12 @@ void bindWorldProgram(gl::ShaderProgram& program, const WorldProgramBindContext&
    ++unit;
   if(unit < maxUnits && bindSceneSampler(program, context.handDepthTexture, unit, context.pack, {"depthtex2"}))
    ++unit;
+  if(unit < maxUnits &&
+     bindSceneSampler(program, context.dhDepthTexture, unit, context.pack, {"dhDepthTex", "dhDepthTex0"}))
+   ++unit;
+  if(unit < maxUnits &&
+     bindSceneSampler(program, context.dhDepthTextureNoTranslucent, unit, context.pack, {"dhDepthTex1"}))
+   ++unit;
  }
  if(context.pack != nullptr) {
   unit = bindAvailableSamplers(program, context.pack->worldTextures,

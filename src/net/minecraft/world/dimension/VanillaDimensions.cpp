@@ -14,6 +14,7 @@
 #include "net/minecraft/world/biome/source/FixedBiomeSource.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 #include "net/minecraft/world/dimension/DimensionType.hpp"
+#include "net/minecraft/world/gen/TerrainStyle.hpp"
 #include "net/minecraft/world/gen/chunk/NetherChunkGenerator.hpp"
 #include "net/minecraft/world/gen/chunk/OverworldChunkGenerator.hpp"
 #include "net/minecraft/world/gen/chunk/SkyChunkGenerator.hpp"
@@ -43,12 +44,16 @@ void registerBuiltinDimensions() {
  DimensionType overworld;
  overworld.id = 0;
  overworld.name = "Overworld";
+ overworld.usesTerrainStyle = true;
  overworld.makeGenerator = [](World* world, std::uint64_t seed, bool localBiomeSource) {
   auto generator = std::make_unique<OverworldChunkGenerator>(world, seed);
   generator->useLocalBiomeSource(localBiomeSource);
   return std::unique_ptr<ChunkSource>(std::move(generator));
  };
  overworld.makeBiomeSource = [](World* world) -> std::unique_ptr<BiomeSource> {
+  if(world::gen::terrainStyleFromOptions(world->getProperties().getModOptions(), 0) == world::gen::TerrainStyle::Alpha) {
+   return std::make_unique<FixedBiomeSource>(Biome::shrubland(), 0.8, 0.4);
+  }
   return std::make_unique<BiomeSource>(world->getSeed());
  };
  overworld.fogColor = [](float timeOfDay) { return brightnessFog(timeOfDay, -1); };

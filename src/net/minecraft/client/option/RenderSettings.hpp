@@ -23,7 +23,6 @@ struct RenderSettings {
  bool oldLighting = false;
  bool mipmapLinearFilter = false;
  bool fancyLeaves = true;
- int leafInteriorFaces = 1;
  bool fancyGrass = true;
  bool renderWater = true;
  bool fancyWater = true;
@@ -37,6 +36,10 @@ struct RenderSettings {
  bool smoothFps = false;
  float chunkUpdatesSlider = 0.5f;
  bool chunkUpdatesDynamic = false;
+ bool terrainLod = true;
+ // see LOD_DESIGN.md §2: real sections stop at the native radius, far tiles cover the rest.
+ bool distantTerrain = false;
+ int nativeChunkRadius = 16;
  bool renderSky = true;
  bool renderStars = true;
  bool renderClouds = true;

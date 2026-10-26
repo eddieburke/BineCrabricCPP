@@ -1,4 +1,6 @@
 #include "net/minecraft/client/platform/audio/AudioEngine.hpp"
+#include "net/minecraft/util/diagnostics/Instrumentation.hpp"
+#define MINA_ENABLE_TELEMETRY MINECRAFT_ENABLE_PROFILING
 #define MINA_IMPLEMENTATION
 #include "mina.h"
 #include <algorithm>

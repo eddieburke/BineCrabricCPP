@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include "net/minecraft/client/render/VertexAbi.hpp"
 #include "net/minecraft/util/math/Matrix4f.hpp"
 namespace net::minecraft::client::gl {
 class ShaderProgram;
@@ -62,10 +63,14 @@ struct FogUniforms {
  bool enabled = false;
  int mode = 0; // 0 off, 1 linear, 2 exp, 3 exp2
  int shape = 0;
+ bool custom = false;
  float color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
  float density = 0.0f;
  float start = 0.0f;
  float end = 0.0f;
+ // see third_party/iris/common/src/main/java/net/irisshaders/iris/uniforms/FogUniforms.java
+ float environmentalStart = 0.0f;
+ float environmentalEnd = 0.0f;
 };
 // Java Iris uploads the GL fog-mode constants (0 / GL_LINEAR / GL_EXP2); the
 // engine keeps internal 1/2/3 (0 off, 1 linear, 2 exp, 3 exp2) and maps at the
@@ -316,10 +321,8 @@ void submitIndexedQuads(const RenderPass& pass, unsigned indexBuffer, int indexC
 bool configureIndexedVao(unsigned vao,
                          unsigned vertexBuffer,
                          unsigned indexBuffer,
-                         std::size_t baseOffset,
                          int stride,
-                         bool hasTexture,
-                         bool hasNormals);
+                         std::span<const vertex_abi::Format> formats);
 int submitIndexedQuadsBatch(const RenderPass& pass,
                             unsigned vao,
                             std::span<const int> indexCounts,

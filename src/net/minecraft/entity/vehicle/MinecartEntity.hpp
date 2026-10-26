@@ -31,6 +31,9 @@ class MinecartEntity : public Entity, public Inventory {
  bool interact(player::PlayerEntity* player) override;
  void writeNbt(NbtCompound& nbt) const override;
  void readNbt(const NbtCompound& nbt) override;
+ [[nodiscard]] bool isCollidable() const override {
+  return !dead;
+ }
  [[nodiscard]] bool isPushable() const override {
   return true;
  }

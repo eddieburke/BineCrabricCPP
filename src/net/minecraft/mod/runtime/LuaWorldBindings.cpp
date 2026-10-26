@@ -17,6 +17,7 @@
 #include <string>
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/biome/Biome.hpp"
+#include "net/minecraft/world/dimension/DimensionType.hpp"
 namespace net::minecraft::mod::runtime {
 using namespace net::minecraft::mod::lua;
 namespace {
@@ -500,6 +501,29 @@ int luaWorldGetBiome(lua_State* state) {
  api.pushstring(state, std::string(world->getBiome(x, z).wireName()).c_str());
  return 1;
 }
+int luaWorldDimensions(lua_State* state) {
+ LuaApi& api = luaApi();
+ const auto& types = dimension::allDimensions();
+ api.createtable(state, static_cast<int>(types.size()), 0);
+ int index = 1;
+ for(const DimensionType* type : types) {
+  api.createtable(state, 0, 6);
+  api.pushinteger(state, type->id);
+  api.setfield(state, -2, "id");
+  api.pushstring(state, type->name.c_str());
+  api.setfield(state, -2, "name");
+  api.pushboolean(state, type->isNether ? 1 : 0);
+  api.setfield(state, -2, "nether");
+  api.pushboolean(state, type->hasCeiling ? 1 : 0);
+  api.setfield(state, -2, "has_ceiling");
+  api.pushboolean(state, type->hasGround ? 1 : 0);
+  api.setfield(state, -2, "has_ground");
+  api.pushboolean(state, type->usesTerrainStyle ? 1 : 0);
+  api.setfield(state, -2, "terrain_styles");
+  api.rawseti(state, -2, index++);
+ }
+ return 1;
+}
 int luaWorldSetSpawn(lua_State* state) {
  LuaApi& api = luaApi();
  LuaArgs args(state);
@@ -601,6 +625,7 @@ void installWorldApi(lua_State* state, ModHost::LoadedLuaMod& mod) {
                        {"get_weather", luaWorldGetWeather},
                        {"set_weather", luaWorldSetWeather},
                        {"get_biome", luaWorldGetBiome},
+                       {"dimensions", luaWorldDimensions},
                        {"set_spawn", luaWorldSetSpawn},
                        {"get_spawn", luaWorldGetSpawn},
                    });

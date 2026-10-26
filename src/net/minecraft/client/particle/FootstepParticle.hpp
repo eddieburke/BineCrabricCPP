@@ -43,6 +43,9 @@ class FootstepParticle : public Particle {
  [[nodiscard]] int getGroup() const override {
   return 3;
  }
+ [[nodiscard]] ParticleSheet renderSheet() const override {
+  return ParticleSheet::Translucent;
+ }
  int footstepAge = 0;
  int footstepMaxAge = 0;
 

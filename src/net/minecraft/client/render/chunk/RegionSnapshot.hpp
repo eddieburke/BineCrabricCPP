@@ -8,9 +8,7 @@
 #include "net/minecraft/util/math/Types.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 #include "net/minecraft/world/biome/source/BiomeSource.hpp"
-namespace net::minecraft {
-class Chunk;
-}
+#include "net/minecraft/world/chunk/Chunk.hpp"
 namespace net::minecraft::client::render::chunk {
 // A private copy of the blocks and light a single mesh job reads, so the worker
 // never races the main thread's edits.
@@ -64,9 +62,11 @@ class RegionSnapshot final : public net::minecraft::BlockView {
  [[nodiscard]] int getRawBrightness(int x, int y, int z, bool useNeighborLight) const;
  [[nodiscard]] int getBlockLight(int x, int y, int z) const;
  [[nodiscard]] int getSkyLight(int x, int y, int z) const;
+ // see third_party/mcp/net/minecraft/src/World.java:578 getSavedLightValue: y clamps into the world, an absent chunk reads 0
  void sampleLight(int x, int y, int z, int& blockLight, int& skyLight) const noexcept {
   blockLight = 0;
-  skyLight = y < 0 ? 0 : 15;
+  skyLight = 0;
+  y = y < 0 ? 0 : (y >= net::minecraft::Chunk::height ? net::minecraft::Chunk::height - 1 : y);
   const int column = columnIndex(x, z);
   if(column < 0 || !containsY(y)) {
    return;

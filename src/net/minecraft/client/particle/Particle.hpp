@@ -6,6 +6,12 @@
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/world/World.hpp"
 namespace net::minecraft::client::particle {
+// see third_party/iris/common/src/main/java/net/irisshaders/iris/pipeline/IrisPipelines.java:47-48
+enum class ParticleSheet {
+ Opaque,
+ Translucent,
+ Lit
+};
 class Particle : public Entity {
  public:
  inline static double xOffset = 0.0;
@@ -115,6 +121,9 @@ class Particle : public Entity {
  }
  [[nodiscard]] virtual int getGroup() const {
   return 0;
+ }
+ [[nodiscard]] virtual ParticleSheet renderSheet() const {
+  return ParticleSheet::Opaque;
  }
  [[nodiscard]] virtual int boundTextureGl(texture::TextureManager& /*textureManager*/) const {
   return -1;

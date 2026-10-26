@@ -159,6 +159,7 @@ struct PackDefinition {
  // pack's texture.properties format line.
  bool labPbr = false;
  bool labPbr13 = false;
+ bool distantHorizons = false;
  float ambientOcclusionLevel = 1.0f;
  float entityShadowDistanceMul = 1.0f;
  float voxelDistance = 0.0f;

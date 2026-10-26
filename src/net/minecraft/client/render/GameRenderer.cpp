@@ -35,6 +35,7 @@
 #include "net/minecraft/mod/model/ModModels.hpp"
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 #include "net/minecraft/util/hit/HitResult.hpp"
+#include "net/minecraft/util/diagnostics/Instrumentation.hpp"
 #include "net/minecraft/util/math/Intersect.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/util/math/Matrix4f.hpp"
@@ -512,7 +513,12 @@ void GameRenderer::renderWorld(float tickDelta,
  if(!frameCamera_.customView && !frameCamera_.shadowPass) {
   frameCamera_.nearPlane = frameSettings_.renderDistance.nearPlane();
   frameCamera_.farPlane = frameSettings_.renderDistance.farPlane();
-  frameCamera_.renderDistanceBlocks = frameSettings_.renderDistance.sectionCoverageBlocks();
+  frameCamera_.renderDistanceBlocks = static_cast<float>(frameSettings_.nativeChunkRadius * 16);
+  frameCamera_.dhRenderDistanceBlocks = frameSettings_.renderDistance.blocks;
+  frameCamera_.dhNearPlane = frameSettings_.distantTerrain ? 16.0f : 0.0f;
+  // see third_party/iris/common/src/main/java/net/irisshaders/iris/compat/dh/DHCompatInternal.java getFarPlane
+  frameCamera_.dhFarPlane =
+      frameSettings_.distantTerrain ? (frameSettings_.renderDistance.blocks + 512.0f) * 1.41421356f : 0.0f;
  }
  if(!frameCamera_.orthographic) {
   const float focal = 1.0f / std::tan(fov * 3.14159265f / 360.0f);
@@ -573,7 +579,7 @@ void GameRenderer::renderFirstPersonHand(float tickDelta) {
  }
  handCamera.nearPlane = frameSettings_.renderDistance.nearPlane();
  handCamera.farPlane = frameSettings_.renderDistance.farPlane();
- handCamera.renderDistanceBlocks = frameSettings_.renderDistance.sectionCoverageBlocks();
+ handCamera.renderDistanceBlocks = static_cast<float>(frameSettings_.nativeChunkRadius * 16);
  handCamera.depthScale = kHandDepth;
  math::Matrix4f handProjection;
  buildCameraProjection(handProjection.data(), handCamera);
@@ -790,15 +796,9 @@ void drawCutoutTerrain(WorldRenderer& worldRenderer,
                        LivingEntity& camera,
                        int terrainTextureId) {
  bindTerrainTexture(terrainTextureId);
- {
-  const RenderPassScope cutoutScope(RenderType::cutout());
-  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
-  worldRenderer.render(camera, chunk::terrain_layer::Cutout);
- }
- bindTerrainTexture(terrainTextureId);
- const RenderPassScope interiorScope(RenderType::cutoutInterior());
+ const RenderPassScope cutoutScope(RenderType::cutout());
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
- worldRenderer.render(camera, chunk::terrain_layer::CutoutInterior);
+ worldRenderer.render(camera, chunk::terrain_layer::Cutout);
 }
 void drawTranslucentTerrain(WorldRenderer& worldRenderer,
                             LivingEntity& camera,
@@ -832,7 +832,8 @@ void renderBlockOverlay(WorldRenderer& worldRenderer,
  worldRenderer.renderMiningProgress(&player, *client->crosshairTarget, 0, hand, tickDelta);
  worldRenderer.renderBlockOutline(&player, *client->crosshairTarget, 0, hand, tickDelta);
 }
-constexpr unsigned kDebugSourceApplication = 0x824A; // GL_DEBUG_SOURCE_APPLICATION
+#if MINECRAFT_ENABLE_PROFILING
+constexpr unsigned kDebugSourceApplication = 0x824A;
 [[nodiscard]] const char* stageDebugName(mod::WorldRenderStage stage) {
  switch(stage) {
  case mod::WorldRenderStage::Sky:
@@ -889,6 +890,7 @@ public:
 private:
  bool active_ = false;
 };
+#endif
 template <typename Draw>
 bool renderWorldStage(const AtmosphereContext& context,
                       float tickDelta,
@@ -918,7 +920,9 @@ bool renderWorldStage(const AtmosphereContext& context,
   mod::runtime::luaHookWorldRender(event);
  }
  if(enabled && !event.cancelVanilla) {
+#if MINECRAFT_ENABLE_PROFILING
   const DebugGroupScope debugGroup(stageDebugName(stage), shadowPass);
+#endif
   if constexpr(requires { draw(event); }) {
    draw(event);
   } else {
@@ -1120,6 +1124,7 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
  core::setCameraFrame(frameCamera_);
  core::setDrawCameraStateFromCamera(frameCamera_);
  if(!frameCamera_.shadowPass && !renderCameraEntity) {
+  shaderPipeline_->setDistantHorizons(frameSettings_.distantTerrain);
   shaderPipeline_->prepareFrame(client->world);
  shaderPipeline_->setFrameUniforms(buildFrameUniforms(tickDelta));
 }
@@ -1251,6 +1256,12 @@ if(!frameCamera_.shadowPass && !renderCameraEntity) {
   return;
  }
  const bool skipGbuffers = frameCamera_.skipAllRendering;
+ const bool drawDistant = !renderCameraEntity && !skipGbuffers;
+ if(drawDistant) {
+  const Vec3d eye = WorldRenderer::sectionOrigin();
+  worldRenderer->distantTerrain().update(*client->world, frameSettings_, eye.x, eye.y, eye.z);
+  worldRenderer->distantTerrain().renderOpaque(*shaderPipeline_, frameSettings_, activeCuller);
+ }
  renderWorldStage(atmosphereCtx, tickDelta, mod::WorldRenderStage::OpaqueTerrain, !skipGbuffers, false, [&] {
   drawSolidTerrain(*worldRenderer, *camera, terrainTextureId);
   drawCutoutTerrain(*worldRenderer, *camera, terrainTextureId);
@@ -1260,31 +1271,26 @@ if(!frameCamera_.shadowPass && !renderCameraEntity) {
  const Vec3d frameCameraPos{frameCamera_.x, frameCamera_.y, frameCamera_.z};
  const bool hasDeferred = shaderPipeline_->hasDeferredPasses();
  const bool splitEntities = hasDeferred && definition.separateEntityDraws;
- std::string particleOrder = definition.particleOrdering;
- if(particleOrder.empty()) particleOrder = hasDeferred ? "after" : "mixed";
+ const bool translucentParticlesBeforeDeferred = definition.particleOrdering == "before";
  renderWorldStage(atmosphereCtx, tickDelta, mod::WorldRenderStage::Entities, !skipGbuffers, false, [&] {
   if(splitEntities) render::setDrawPhase(render::DrawPhase::Opaque);
   worldRenderer->renderEntities(frameCameraPos, activeCuller, tickDelta);
   render::setDrawPhase(render::DrawPhase::All);
  });
- const auto renderLitParticles = [&] {
-  renderWorldStage(atmosphereCtx, tickDelta, mod::WorldRenderStage::LitParticles, !skipGbuffers, false, [&] {
-   core::activeTexture(gl::tex::Texture0);
-   client->particleManager.renderLit(camera, tickDelta);
-  });
- };
+ // see third_party/iris/common/src/main/java/net/irisshaders/iris/mixin/MixinLevelRenderer.java:276-283
+ renderWorldStage(atmosphereCtx, tickDelta, mod::WorldRenderStage::LitParticles, !skipGbuffers, false, [&] {
+  core::activeTexture(gl::tex::Texture0);
+  core::setWorldLight(worldLight);
+  client->particleManager.render(camera, tickDelta, particle::ParticleSheet::Opaque);
+  client->particleManager.render(camera, tickDelta, particle::ParticleSheet::Lit);
+ });
  const auto renderTranslucentParticles = [&] {
   renderWorldStage(atmosphereCtx, tickDelta, mod::WorldRenderStage::Particles, !skipGbuffers, false, [&] {
-   core::setLightingEnabled(false);
+   core::activeTexture(gl::tex::Texture0);
    core::setWorldLight(worldLight);
-   core::enableBlend();
-   core::blendAlpha();
-   client->particleManager.render(camera, tickDelta);
+   client->particleManager.render(camera, tickDelta, particle::ParticleSheet::Translucent);
   });
  };
- if(particleOrder == "before" || particleOrder == "mixed") {
-  renderLitParticles();
- }
  {
   shaderPipeline_->captureHandDepth();
  }
@@ -1293,7 +1299,7 @@ if(!frameCamera_.shadowPass && !renderCameraEntity) {
  {
   shaderPipeline_->captureOpaqueDepth();
  }
- if(particleOrder == "before") {
+ if(translucentParticlesBeforeDeferred) {
   renderTranslucentParticles();
  }
  if(hasDeferred) {
@@ -1316,10 +1322,7 @@ if(!frameCamera_.shadowPass && !renderCameraEntity) {
   worldRenderer->renderEntities(frameCameraPos, activeCuller, tickDelta);
   render::setDrawPhase(render::DrawPhase::All);
  }
- {
-  if(particleOrder == "after") renderLitParticles();
-  if(particleOrder != "before") renderTranslucentParticles();
- }
+ core::setLightingEnabled(false);
  if(client->crosshairTarget.has_value()) {
   if(auto* player = dynamic_cast<PlayerEntity*>(camera)) {
    if(camera->isInFluid(material::Material::WATER)) {
@@ -1327,9 +1330,15 @@ if(!frameCamera_.shadowPass && !renderCameraEntity) {
    }
   }
  }
+ if(drawDistant) {
+  worldRenderer->distantTerrain().renderWater(*shaderPipeline_, frameSettings_, activeCuller);
+ }
  renderWorldStage(atmosphereCtx, tickDelta, mod::WorldRenderStage::TranslucentTerrain, !skipGbuffers, false, [&] {
   drawTranslucentTerrain(*worldRenderer, *camera, tickDelta, terrainTextureId, fancyGraphics);
  });
+ if(!translucentParticlesBeforeDeferred) {
+  renderTranslucentParticles();
+ }
  if(!skipGbuffers) {
   shaderPipeline_->sampleCenterDepth();
  }

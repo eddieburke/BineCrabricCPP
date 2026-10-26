@@ -73,6 +73,9 @@ class PickupParticle : public Particle {
  [[nodiscard]] int getGroup() const override {
   return 3;
  }
+ [[nodiscard]] ParticleSheet renderSheet() const override {
+  return ParticleSheet::Lit;
+ }
 
  private:
  Entity* entity_ = nullptr;

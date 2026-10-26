@@ -24,7 +24,7 @@ class CountingLogHandler final : public util::logging::LogHandler {
  std::size_t count_ = 0;
 };
 } // namespace
-TEST(LoggingDispatcherTest, ReportsQueueAndWriterCostWithoutSynchronousPublishing) {
+TEST(LoggingDispatcherTest, QueuesRecordsWithOptionalProfiling) {
  auto& dispatcher = util::logging::LogDispatcher::instance();
  dispatcher.start();
  auto& logger = util::logging::Logger::getLogger("logging-dispatcher-perf-test");
@@ -38,10 +38,18 @@ TEST(LoggingDispatcherTest, ReportsQueueAndWriterCostWithoutSynchronousPublishin
  }
  ASSERT_TRUE(observed->waitFor(records));
  const auto after = dispatcher.stats();
- EXPECT_GE(after.enqueued - before.enqueued, records);
- EXPECT_GE(after.written - before.written, records);
- EXPECT_GT(after.enqueueCpuNanos, before.enqueueCpuNanos);
- EXPECT_GT(after.writerCpuNanos, before.writerCpuNanos);
+ if constexpr(util::diagnostics::profilingEnabled) {
+  EXPECT_GE(after.enqueued - before.enqueued, records);
+  EXPECT_GT(after.enqueueCpuNanos, before.enqueueCpuNanos);
+  EXPECT_GT(after.writerCpuNanos, before.writerCpuNanos);
+ } else {
+  EXPECT_EQ(after.enqueued, 0u);
+  EXPECT_EQ(after.written, 0u);
+  EXPECT_EQ(after.dropped, 0u);
+  EXPECT_EQ(after.maxQueueDepth, 0u);
+  EXPECT_EQ(after.enqueueCpuNanos, 0u);
+  EXPECT_EQ(after.writerCpuNanos, 0u);
+ }
  EXPECT_LE(after.maxQueueDepth, 16384U);
 }
 } // namespace net::minecraft::test

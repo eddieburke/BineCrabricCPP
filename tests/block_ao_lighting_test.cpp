@@ -84,6 +84,33 @@ TEST(BlockAoLighting, ZeroCornerLightFallsBackToFaceCenter) {
  }
  EXPECT_TRUE(found);
 }
+TEST(BlockAoLighting, TorchLitCellWithoutSkyDoesNotBorrowCenterSky) {
+ constexpr int x = 8;
+ constexpr int y = 8;
+ constexpr int z = 8;
+ auto chunk = std::make_unique<Chunk>(nullptr, 0, 0);
+ chunk->blocks[blockIndex(x, y, z)] = static_cast<std::uint8_t>(block::Block::STONE->id);
+ for(int sampleX = x - 1; sampleX <= x + 1; ++sampleX) {
+  for(int sampleZ = z - 1; sampleZ <= z + 1; ++sampleZ) {
+   chunk->blockLight.set(sampleX, y + 1, sampleZ, 12);
+   chunk->skyLight.set(sampleX, y + 1, sampleZ, 0);
+  }
+ }
+ chunk->blockLight.set(x, y + 1, z, 0);
+ chunk->skyLight.set(x, y + 1, z, 12);
+ const MeshedBlock scene = meshBlock(std::move(chunk), *block::Block::STONE, x, y, z);
+ bool found = false;
+ for(const auto& vertex : scene.mesh.vertices) {
+  if(std::fabs(vertex.x - 9.0f) > 0.01f || std::fabs(vertex.y - 9.0f) > 0.01f ||
+     std::fabs(vertex.z - 9.0f) > 0.01f || normalY(vertex) < 0.9f) {
+   continue;
+  }
+  found = true;
+  EXPECT_EQ(skyLight(vertex), 3 * 16);
+  EXPECT_EQ(blockLight(vertex), 9 * 16);
+ }
+ EXPECT_TRUE(found);
+}
 TEST(BlockAoLighting, InsetStairTopSamplesItsOwnLightPlane) {
  constexpr int x = 8;
  constexpr int y = 8;
@@ -128,7 +155,7 @@ TEST(BlockAoLighting, AoStrengthDoesNotFlattenTheLightmap) {
    }
   }
   // One low corner, so the four top-face corners cannot all average the same.
-  // Non-zero: averageCornerChannel reads a zero channel as the face centre.
+  // Non-zero: a cell whose packed light is zero reads as the face centre.
   chunk->blockLight.set(x + 1, y + 1, z + 1, 3);
   chunk->skyLight.set(x + 1, y + 1, z + 1, 3);
   return chunk;

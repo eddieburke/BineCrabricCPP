@@ -104,6 +104,11 @@ bool Pipeline::renderCompositePasses(PackInstance& pack, CompositeStage stageId,
  textures["depthtex0"] = static_cast<int>(targets.depthTexture());
  textures["depthtex1"] = pack.opaqueDepthTexture(textures["depthtex0"]);
  textures["depthtex2"] = pack.handDepthTexture(textures["depthtex0"]);
+ if(pack.dhDepthTexture != 0) {
+  textures["dhDepthTex"] = static_cast<int>(pack.dhDepthTexture);
+  textures["dhDepthTex0"] = static_cast<int>(pack.dhDepthTexture);
+ }
+ if(pack.dhDepthTextureNoTranslucent != 0) textures["dhDepthTex1"] = static_cast<int>(pack.dhDepthTextureNoTranslucent);
  targets.applyPreFlips(pack.definition, stage);
  refreshColorMaps(targets, textures, colorImages, true);
  for(const auto& [name, texture] : pack.publishedTextures) {

@@ -8,6 +8,7 @@
 #include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/chunk/ChunkBuilder.hpp"
+#include "net/minecraft/client/render/distant/DistantRenderer.hpp"
 #include "net/minecraft/client/render/world/ChunkCompilePipeline.hpp"
 #include "net/minecraft/client/render/world/ChunkSectionSystem.hpp"
 #include "net/minecraft/client/render/world/TerrainScene.hpp"
@@ -111,6 +112,9 @@ class WorldRenderer : public net::minecraft::GameEventListener {
  [[nodiscard]] const ChunkSectionSystem& sections() const noexcept {
   return chunkSections_;
  }
+ [[nodiscard]] distant::DistantRenderer& distantTerrain() noexcept {
+  return distant_;
+ }
  [[nodiscard]] ChunkCompilePipeline& compiler() noexcept {
   return compilePipeline_;
  }
@@ -191,5 +195,6 @@ private:
  std::array<std::vector<ModMeshDraw>, chunk::terrain_layer::Count> modMeshDraws_{};
  std::array<TerrainDrawList, chunk::terrain_layer::Count> terrainDrawLists_{};
  int terrainDrawListStamp_ = -1;
+ distant::DistantRenderer distant_;
 };
 } // namespace net::minecraft::client::render

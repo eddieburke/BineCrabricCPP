@@ -68,12 +68,10 @@ bool ensurePackResources(PackInstance& pack, int width, int height, const gl::Gl
   ::glTexParameteri(gl::cap::Texture2D, 0x2802, 0x2901);
   ::glTexParameteri(gl::cap::Texture2D, 0x2803, 0x2901);
  }
- const std::uint64_t vram = vramBytes();
  for(const BufferObject& declaration : pack.definition.bufferObjects) {
   if(declaration.index < 0 || declaration.index >= kMaxShaderStorageBuffers || !gl::GLCore::ssboSupported)
    return false;
   // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/gl/buffer/ShaderStorageBufferHolder.java
-  if(declaration.byteSize > vram) return false;
   if(declaration.index > gl::GLCore::maxShaderStorageUnits) return false;
   std::size_t bytes = declaration.byteSize;
   if(declaration.relative) {
@@ -89,6 +87,7 @@ bool ensurePackResources(PackInstance& pack, int width, int height, const gl::Gl
   }
   gl::GlBuffer& buffer = pack.bufferObjects[declaration.index];
   if(!buffer || pack.bufferBytes[declaration.index] != bytes) {
+   if(declaration.byteSize > vramBytes()) return false;
    std::vector<std::uint8_t> initData;
    if(!declaration.initPath.empty()) {
     std::string path = declaration.initPath;

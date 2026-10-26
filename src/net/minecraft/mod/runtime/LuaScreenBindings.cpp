@@ -569,9 +569,11 @@ int luaGuiDrawCenteredText(lua_State* state) {
   y = static_cast<int>(luaFloatField(state, 1, "y", 0.0f));
   width = static_cast<int>(luaFloatField(state, 1, "width", luaFloatField(state, 1, "w", 0.0f)));
   text = luaStringField(state, 1, "text", "");
-  color = luaArgb(state, 1, 0xFFFFFFFFU);
+  api.getfield(state, 1, "color");
+  color = luaArgb(state, -1, 0xFFFFFFFFU);
+  pop(state, 1);
  } else {
-  if(api.gettop(state) < 4 || api.type(state, 3) != kLuaTString) {
+  if(api.gettop(state) < 4 || api.type(state, 4) != kLuaTString) {
    return 0;
   }
   x = luaIntArg(state, 1);

@@ -13,11 +13,7 @@ using net::minecraft::client::option::OptionSpec;
 [[nodiscard]] bool cloudsHeightEnabled(const GameOptions& options) noexcept {
  return (options.clouds & 3) != 2;
 }
-[[nodiscard]] bool leafInteriorEnabled(const GameOptions& options) noexcept {
- // Fast leaves are opaque cubes, so there is no interior to look into.
- return options.trees == 0;
-}
-std::array<OptionSpec, 11> kSpecs{{
+std::array<OptionSpec, 10> kSpecs{{
     d::makeCycle("clouds",
                  28,
                  ApplyFlags::None,
@@ -38,14 +34,6 @@ std::array<OptionSpec, 11> kSpecs{{
                  d::cycleIntMod<&GameOptions::trees, 2>,
                  d::loadIntMember<&GameOptions::trees>,
                  d::saveIntMember<&GameOptions::trees>),
-    d::makeCycle("leafInterior",
-                 48,
-                 ApplyFlags::ReloadWorld,
-                 d::cycleIntMod<&GameOptions::leafInterior, 3>,
-                 d::loadIntMember<&GameOptions::leafInterior>,
-                 d::saveIntMember<&GameOptions::leafInterior>,
-                 nullptr,
-                 leafInteriorEnabled),
     d::makeCycle("grass",
                  31,
                  ApplyFlags::ReloadWorld,
@@ -130,13 +118,6 @@ class DetailSettingsScreen : public SettingsScreen {
   gui.toggle(x2, y0 + dy * 3, "stars", "Stars");
   gui.toggle(x1, y0 + dy * 4, "vignette", "Vignette");
   gui.toggle(x2, y0 + dy * 4, "underwaterOverlay", "Underwater Overlay");
-  gui.intCycle(x1,
-               y0 + dy * 5,
-               "leafInterior",
-               "Leaf Interior",
-               {"OFF", "Shell", "All"},
-               &GameOptions::leafInterior,
-               leafInteriorEnabled);
  }
 };
 } // namespace detail_screen

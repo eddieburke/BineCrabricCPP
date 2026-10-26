@@ -318,10 +318,13 @@ void uploadFogUniforms(ShaderProgram& program, const FogUniforms& fog, bool on) 
  using Slot = ShaderProgram::IrisUniformSlot;
  program.set3fAt(program.uniformLocation(Slot::FogColor), fog.color);
  program.set1fAt(program.uniformLocation(Slot::FogDensity), fog.density);
- program.set1fAt(program.uniformLocation(Slot::FogStart), fog.start);
- program.set1fAt(program.uniformLocation(Slot::FogEnd), fog.end);
+ program.set1fAt(program.uniformLocation(Slot::FogStart), fog.environmentalStart);
+ program.set1fAt(program.uniformLocation(Slot::FogEnd), fog.environmentalEnd);
+ program.set1f("betaFogStart", fog.start);
+ program.set1f("betaFogEnd", fog.end);
  program.set1iAt(program.uniformLocation(Slot::FogMode), on ? fogModeToGlConstant(fog.mode) : 0);
  program.set1iAt(program.uniformLocation(Slot::FogShape), on ? fog.shape : -1);
+ program.set1i("customFog", fog.custom ? 1 : 0);
 }
 void bindAndUploadUniforms(const RenderPass& pass) {
  ShaderProgram* active = pass.programOverride != nullptr ? pass.programOverride : g_activeProgram;
@@ -451,8 +454,10 @@ void bindAndUploadUniforms(const RenderPass& pass) {
  const bool fogOn = g_fog.enabled && active->fogClass();
  if(!g_fogUploaded || drawStateInvalidated || fogOn != g_uploadedFogOn ||
     g_uploadedFog.mode != g_fog.mode || g_uploadedFog.shape != g_fog.shape ||
+    g_uploadedFog.custom != g_fog.custom ||
     g_uploadedFog.density != g_fog.density || g_uploadedFog.start != g_fog.start ||
-    g_uploadedFog.end != g_fog.end ||
+    g_uploadedFog.end != g_fog.end || g_uploadedFog.environmentalStart != g_fog.environmentalStart ||
+    g_uploadedFog.environmentalEnd != g_fog.environmentalEnd ||
     std::memcmp(g_uploadedFog.color, g_fog.color, sizeof(float) * 3) != 0) {
   uploadFogUniforms(*active, g_fog, fogOn);
   g_uploadedFog = g_fog;
@@ -526,42 +531,22 @@ void submitIndexedQuads(const RenderPass& pass, unsigned indexBuffer, int indexC
 bool configureIndexedVao(unsigned vao,
                          unsigned vertexBuffer,
                          unsigned indexBuffer,
-                         std::size_t baseOffset,
                          int stride,
-                         bool hasTexture,
-                         bool hasNormals) {
+                         std::span<const abi::Format> formats) {
  if(vao == 0 || vertexBuffer == 0 || indexBuffer == 0 || !gl::GLCore::vaoSupported ||
-    gl::GLCore::bindVertexArray == nullptr) {
+    gl::GLCore::bindVertexArray == nullptr || gl::GLCore::vertexAttribIPointer == nullptr) {
   return false;
  }
  gl::GLCore::bindVertexArray(vao);
  gl::GLCore::bindBuffer(kArrayBuffer, vertexBuffer);
- for(const abi::Format& format : abi::Formats) {
-  const bool enabled = format.availability == abi::Availability::Always ||
-                       (format.availability == abi::Availability::Texture && hasTexture) ||
-                       (format.availability == abi::Availability::Normal && hasNormals);
-  if(!enabled) {
-   gl::GLCore::disableVertexAttribArray(format.location);
-   continue;
-  }
+ for(const abi::Format& format : formats) {
   gl::GLCore::enableVertexAttribArray(format.location);
   if(format.integer) {
-   if(gl::GLCore::vertexAttribIPointer != nullptr) {
-    gl::GLCore::vertexAttribIPointer(format.location, format.components, format.type, stride,
-                                     bufOffset(baseOffset + format.offset));
-   }
+   gl::GLCore::vertexAttribIPointer(format.location, format.components, format.type, stride, bufOffset(format.offset));
   } else {
    gl::GLCore::vertexAttribPointer(format.location, format.components, format.type,
-                                   format.normalized ? 1 : 0, stride,
-                                   bufOffset(baseOffset + format.offset));
+                                   format.normalized ? 1 : 0, stride, bufOffset(format.offset));
   }
- }
- if(!hasTexture) {
-  gl::GLCore::vertexAttrib4f(abi::Texture, 0.0f, 0.0f, 0.0f, 1.0f);
- }
- gl::GLCore::disableVertexAttribArray(abi::ChunkFade);
- if(gl::GLCore::vertexAttrib4f != nullptr) {
-  gl::GLCore::vertexAttrib4f(abi::ChunkFade, 1.0f, 0.0f, 0.0f, 0.0f);
  }
  constexpr unsigned kElementArrayBuffer = 0x8893;
  gl::GLCore::bindBuffer(kElementArrayBuffer, indexBuffer);
@@ -737,14 +722,9 @@ void fogUpdateFromWorld(::net::minecraft::client::Minecraft* client, float tickD
  namespace option = ::net::minecraft::client::option;
  World& world = *client->world;
  mod::FogSettingsEvent settings{&world, client->camera};
- settings.enabled = g_modFogEnabled;
- settings.spherical = g_fog.shape == 0;
- settings.exponential = g_modFogExponential;
- settings.start = g_modFogStart;
- settings.end = g_modFogEnd;
- settings.density = g_modFogDensity;
  net::minecraft::mod::runtime::luaHookFogSettings(settings);
  g_modFogEnabled = settings.enabled;
+ g_fog.custom = settings.enabled;
  g_fog.shape = settings.spherical ? 0 : 1;
  g_modFogExponential = settings.exponential;
  g_modFogStart = settings.start;
@@ -778,6 +758,11 @@ void fogUpdateFromWorld(::net::minecraft::client::Minecraft* client, float tickD
   r = 0.6f;
   g = 0.1f;
   b = 0.0f;
+ }
+ if(settings.enabled && settings.customColor) {
+  r = settings.red;
+  g = settings.green;
+  b = settings.blue;
  }
  g_fog.color[0] = r;
  g_fog.color[1] = g;
@@ -821,13 +806,26 @@ void fogApplyMode(::net::minecraft::client::Minecraft* client, bool skyPass,
    g_fog.end = frame.renderDistance.skyFogEnd();
   } else {
    g_fog.end = fogEnd * (g_modFogEnabled ? g_modFogEnd : 1.0f);
-   const float start = g_modFogEnabled ? fogEnd * g_modFogStart : frame.renderDistance.fogStart();
+   const float distanceStart = frame.distantTerrain
+                                   ? std::max(frame.renderDistance.fogStart(),
+                                              static_cast<float>(frame.nativeChunkRadius * 16))
+                                   : frame.renderDistance.fogStart();
+   const float start = g_modFogEnabled ? fogEnd * g_modFogStart : distanceStart;
    g_fog.start = std::min(start, g_fog.end * 0.9f);
   }
   if(client->world->dimension != nullptr && client->world->dimension->isNether) {
    g_fog.start = 0.0f;
+  } else if(!g_modFogEnabled) {
+   // Divergence from Java Iris, deliberate: clear-air Beta fog is render-distance fog, which
+   // Iris packs derive from `far` themselves. Handing them Beta's 25% start as environmental
+   // fog washed every chunk past a quarter of the view distance into the fog colour.
+   g_fog.environmentalStart = fogEnd;
+   g_fog.environmentalEnd = frame.renderDistance.farPlane();
+   return;
   }
  }
+ g_fog.environmentalStart = g_fog.start;
+ g_fog.environmentalEnd = g_fog.end;
 }
 void setSkyUniforms(const SkyUniforms& sky) {
  g_skyUniforms = sky;

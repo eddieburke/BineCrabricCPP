@@ -4,6 +4,7 @@
 #include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockFaceLighting.hpp"
+#include "net/minecraft/client/render/block/BlockRenderType.hpp"
 #include "net/minecraft/client/render/block/BlockRenderers.hpp"
 #include "net/minecraft/world/BlockView.hpp"
 #include "net/minecraft/world/World.hpp"

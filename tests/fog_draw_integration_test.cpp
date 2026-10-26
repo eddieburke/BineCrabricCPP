@@ -11,6 +11,12 @@
 #include <GLFW/glfw3.h>
 #include <GL/gl.h>
 #include "net/minecraft/client/gl/GLCore.hpp"
+#include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/option/RenderSettings.hpp"
+#include "net/minecraft/entity/player/PlayerEntity.hpp"
+#include "net/minecraft/mod/ModSettingsRegistry.hpp"
+#include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
+#include "net/minecraft/world/World.hpp"
 #define GL_GLEXT_PROTOTYPES
 #include <GL/glext.h>
 #include "net/minecraft/client/resource/pack/ZippedTexturePack.hpp"
@@ -195,8 +201,8 @@ TEST_F(FogDrawIntegrationTest, WorldFogReachesTerrainAndEntityPrograms) {
   const std::pair<ShaderProgram*, const char*> programs[] = {{terrain, "gbuffers_terrain"}, {entities, "gbuffers_entities"}};
   for(const auto& [program, name] : programs) {
    EXPECT_EQ(readIntUniform(*program, "fogMode"), 0x2601) << name;
-   EXPECT_NEAR(readFloatUniform(*program, "fogStart"), 192.0f, 0.001f) << name;
-   EXPECT_NEAR(readFloatUniform(*program, "fogEnd"), 256.0f, 0.001f) << name;
+   EXPECT_NEAR(readFloatUniform(*program, "betaFogStart"), 192.0f, 0.001f) << name;
+   EXPECT_NEAR(readFloatUniform(*program, "betaFogEnd"), 256.0f, 0.001f) << name;
    float color[3]{};
    readVec3Uniform(*program, "fogColor", color);
    EXPECT_NEAR(color[0], 0.5f, 0.001f) << name;
@@ -222,7 +228,7 @@ TEST_F(FogDrawIntegrationTest, SnapshotPushDoesNotClobberPerDrawFog) {
   submitQuad(entities);
   EXPECT_EQ(readIntUniform(*entities, "fogMode"), 0x2601)
       << "the per-draw fog must win over the frame snapshot after the uploader runs";
-  EXPECT_NEAR(readFloatUniform(*entities, "fogStart"), 192.0f, 0.001f);
+  EXPECT_NEAR(readFloatUniform(*entities, "betaFogStart"), 192.0f, 0.001f);
 }
 TEST_F(FogDrawIntegrationTest, ProgramFogClassGatesWorldFog) {
   PackInstance pack;
@@ -240,7 +246,7 @@ TEST_F(FogDrawIntegrationTest, ProgramFogClassGatesWorldFog) {
   submitQuad(entities);
   EXPECT_EQ(readIntUniform(*entities, "fogMode"), 0x2601) << "world program class keeps fog on";
   EXPECT_LE(readIntUniform(*entities, "fogShape"), 0);
-  EXPECT_NEAR(readFloatUniform(*entities, "fogEnd"), 256.0f, 0.001f);
+  EXPECT_NEAR(readFloatUniform(*entities, "betaFogEnd"), 256.0f, 0.001f);
 }
 TEST_F(FogDrawIntegrationTest, ShadowProgramClassGatesFogOff) {
   PackInstance pack;
@@ -355,5 +361,120 @@ TEST_F(FogDrawIntegrationTest, VanillaSkyBlendsAtHorizonWithoutFoggingStarsOrSun
  EXPECT_EQ(::glGetError(), GL_NO_ERROR);
  core::setFog(savedFog);
  core::setCameraFrame(savedCamera);
+}
+TEST_F(FogDrawIntegrationTest, CustomFogSettingsReachWorldAndResetWhenDisabled) {
+ class FogMinecraft final : public client::Minecraft {
+  public:
+  using client::Minecraft::Minecraft;
+  void handleCrash(const util::crash::CrashReport&) override {}
+ };
+ struct RestoreState {
+  client::Minecraft* instance = client::Minecraft::INSTANCE;
+  FogUniforms fog = core::fog();
+  std::vector<mod::ModSettingDef> settings = mod::ModSettingsRegistry::instance().getSettings("fog_settings");
+  ~RestoreState() {
+   client::Minecraft::INSTANCE = instance;
+   core::setFog(fog);
+   auto& registry = mod::ModSettingsRegistry::instance();
+   for(const auto& setting : settings) {
+    *registry.findSetting("fog_settings", setting.key) = setting;
+   }
+  }
+ } restore;
+ FogMinecraft minecraft(64, 64, false);
+ minecraft.options.modsEnabled = true;
+ minecraft.options.shaderPack = "vanilla";
+ World world("fog_settings_test", 42);
+ entity::player::PlayerEntity camera(&world);
+ camera.setPosition(0.0, 80.0, 0.0);
+ minecraft.world = &world;
+ minecraft.camera = &camera;
+ auto& registry = mod::ModSettingsRegistry::instance();
+ ASSERT_TRUE(mod::runtime::hasLuaHook(mod::runtime::LuaEventId::FogSettings));
+ const auto toggle = [&](const char* key, bool value) {
+  auto* setting = registry.findSetting("fog_settings", key);
+  ASSERT_NE(setting, nullptr) << key;
+  setting->boolCurrent = value;
+ };
+ const auto slider = [&](const char* key, float value) {
+  auto* setting = registry.findSetting("fog_settings", key);
+  ASSERT_NE(setting, nullptr) << key;
+  setting->floatCurrent = value;
+ };
+ toggle("enabled", true);
+ toggle("spherical", true);
+ toggle("exponential", false);
+ toggle("custom_color", true);
+ slider("start", 0.25f);
+ slider("end", 0.75f);
+ slider("density", 0.15f);
+ slider("red", 0.1f);
+ slider("green", 0.3f);
+ slider("blue", 0.7f);
+ client::option::RenderSettings frame;
+ core::fogUpdateFromWorld(&minecraft, 0.0f, frame);
+ core::fogApplyMode(&minecraft, false, frame);
+ EXPECT_TRUE(core::fog().custom);
+ EXPECT_EQ(core::fog().shape, 0);
+ EXPECT_FLOAT_EQ(core::fog().start, frame.renderDistance.fogEnd() * 0.25f);
+ EXPECT_FLOAT_EQ(core::fog().end, frame.renderDistance.fogEnd() * 0.75f);
+ EXPECT_FLOAT_EQ(core::fog().environmentalStart, core::fog().start);
+ EXPECT_FLOAT_EQ(core::fog().environmentalEnd, core::fog().end);
+ EXPECT_FLOAT_EQ(core::fog().color[0], 0.1f);
+ EXPECT_FLOAT_EQ(core::fog().color[1], 0.3f);
+ EXPECT_FLOAT_EQ(core::fog().color[2], 0.7f);
+ toggle("spherical", false);
+ toggle("exponential", true);
+ core::fogUpdateFromWorld(&minecraft, 0.0f, frame);
+ core::fogApplyMode(&minecraft, false, frame);
+ EXPECT_EQ(core::fog().shape, 1);
+ EXPECT_EQ(core::fog().mode, 2);
+ EXPECT_FLOAT_EQ(core::fog().density, 0.15f);
+ minecraft.options.modsEnabled = false;
+ core::fogUpdateFromWorld(&minecraft, 0.0f, frame);
+ core::fogApplyMode(&minecraft, false, frame);
+ EXPECT_FALSE(core::fog().custom);
+ EXPECT_EQ(core::fog().mode, 1);
+ EXPECT_FLOAT_EQ(core::fog().end, frame.renderDistance.fogEnd());
+ EXPECT_FLOAT_EQ(core::fog().start, frame.renderDistance.fogStart());
+ EXPECT_FLOAT_EQ(core::fog().environmentalStart, frame.renderDistance.fogEnd());
+ EXPECT_FLOAT_EQ(core::fog().environmentalEnd, frame.renderDistance.farPlane());
+ PackUniformValues packFrame = client::render::buildShaderFrameData(
+     64, 64, 0.0f, 0, false, false, client::render::FrameRenderCamera{}, client::render::FrameRenderCamera{}, nullptr);
+ EXPECT_FLOAT_EQ(packFrame.fogStart, frame.renderDistance.fogEnd());
+ EXPECT_FLOAT_EQ(packFrame.fogEnd, frame.renderDistance.farPlane());
+ minecraft.world = nullptr;
+ minecraft.camera = nullptr;
+}
+TEST_F(FogDrawIntegrationTest, CustomProjectionChangesFogCoordinateAndRestoresPlanarDefault) {
+ ShaderProgram program;
+ const std::string common = VanillaPackEmbed::get("shaders/lib/common.glsl");
+ ASSERT_FALSE(common.empty());
+ ASSERT_TRUE(program.compile(
+     "layout(location=0) in vec3 position;void main(){gl_Position=vec4(position,1.0);}",
+     common + "\nlayout(location=0) out vec4 color;void main(){color=vec4(fogCoord(vec3(3,4,-12))/20.0);}",
+     "#version 430 core\n"));
+ const core::DepthScope depth(false, false);
+ const core::BlendScope blend(false);
+ const core::CullScope cull(false);
+ GLCore::bindFramebuffer(GL_FRAMEBUFFER, 0);
+ core::viewport(0, 0, 64, 64);
+ ::glReadBuffer(GL_BACK);
+ const auto savedFog = core::fog();
+ for(const bool custom : {true, false}) {
+  for(const int shape : {0, 1}) {
+   FogUniforms fog = worldFog();
+   fog.custom = custom;
+   fog.shape = shape;
+   core::setFog(fog);
+   submitQuad(&program);
+   float pixel[4]{};
+   ::glReadPixels(40, 20, 1, 1, GL_RGBA, GL_FLOAT, pixel);
+   const float expected = !custom ? 12.0f : shape == 0 ? 13.0f : std::sqrt(153.0f);
+   EXPECT_NEAR(pixel[0], expected / 20.0f, 2.0f / 255.0f);
+  }
+ }
+ core::setActiveProgram(nullptr);
+ core::setFog(savedFog);
 }
 } // namespace net::minecraft::test

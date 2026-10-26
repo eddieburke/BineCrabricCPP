@@ -93,5 +93,43 @@ TEST(LightingChannel, CornerUpdateNeedsCardinalChunksOnly) {
  }
  world::light::UnifiedLightRegistry::setBlockEmission(emitterId, 0);
 }
+TEST(LightingChannel, BorderCellSkippedForMissingNeighbourRelightsWhenItRegisters) {
+ util::concurrent::ThreadCoordinator::instance().configure(8, 2, {.maxComputeThreads = 8});
+ constexpr int emitterId = 250;
+ world::light::UnifiedLightRegistry::setBlockEmission(emitterId, 15);
+ world::light::UnifiedLightRegistry registry;
+ LightingEngine lighting(registry);
+ std::vector<Chunk> chunks;
+ chunks.reserve(5);
+ chunks.emplace_back(0, 0);
+ chunks.emplace_back(-1, 0);
+ chunks.emplace_back(0, -1);
+ chunks.emplace_back(0, 1);
+ for(Chunk& chunk : chunks) {
+  lighting.registerChunk(&chunk);
+ }
+ const auto settle = [&] {
+  lighting.flushStaging();
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+  while(lighting.busy() && std::chrono::steady_clock::now() < deadline) {
+   std::this_thread::yield();
+  }
+  EXPECT_FALSE(lighting.busy());
+ };
+ chunks[0].setBlock(15, 64, 8, emitterId);
+ lighting.push(LightType::Block, 15, 64, 8, 15, 64, 8, false);
+ settle();
+ EXPECT_EQ(chunks[0].getLight(LightType::Block, 15, 64, 8), 0);
+ chunks.emplace_back(1, 0);
+ lighting.registerChunk(&chunks.back());
+ settle();
+ EXPECT_EQ(chunks[0].getLight(LightType::Block, 15, 64, 8), 15);
+ EXPECT_EQ(chunks[0].getLight(LightType::Block, 14, 64, 8), 14);
+ lighting.stop();
+ for(Chunk& chunk : chunks) {
+  lighting.unregisterChunk(&chunk);
+ }
+ world::light::UnifiedLightRegistry::setBlockEmission(emitterId, 0);
+}
 }
 }

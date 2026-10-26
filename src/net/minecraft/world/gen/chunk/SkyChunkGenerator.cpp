@@ -53,7 +53,8 @@ Chunk& SkyChunkGenerator::getChunk(int chunkX, int chunkZ) {
                                             chunkX,
                                             chunkZ,
                                             world_ != nullptr && world_->isLuaModGenerationEnabled(),
-                                            false};
+                                            false,
+                                            1};
  world::gen::runVanillaStage(world::gen::ChunkStage::Terrain, context, [&] {
   buildTerrain(chunkX, chunkZ, chunk, biomeSource->temperatureMap());
  });
@@ -85,7 +86,8 @@ void SkyChunkGenerator::decorate(ChunkSource* source, int chunkX, int chunkZ) {
                                             chunkX,
                                             chunkZ,
                                             world_ != nullptr && world_->isLuaModGenerationEnabled(),
-                                            false};
+                                            false,
+                                            1};
  world::gen::runVanillaStage(world::gen::ChunkStage::Features, context, [&] {
   world::gen::feature::decorateSkyChunk(
       world_, random_, *biomeSource, forestNoise_, chunkX, chunkZ, decorateTemperatures_);

@@ -59,6 +59,9 @@ struct FrameRenderCamera {
  // The pack's `far`: getEffectiveRenderDistance() * 16, i.e. sectionCoverageBlocks().
  // https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CameraUniforms.java
  float renderDistanceBlocks = 256.0f;
+ float dhRenderDistanceBlocks = 0.0f;
+ float dhNearPlane = 0.0f;
+ float dhFarPlane = 0.0f;
  bool shadowPass = false;
  bool shadowEntities = true;
  bool shadowPlayer = true;

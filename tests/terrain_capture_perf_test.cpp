@@ -168,8 +168,6 @@ PassResult meshWholeGrid(const Grid& grid, bool skipEmptySections = false) {
     }
     client::render::block::BlockRenderManager manager(tessellator, &snapshot, opts);
     for(int layer = 0; layer < terrain_layer::Count; ++layer) {
-     const bool interiorFacePass = layer == terrain_layer::CutoutInterior;
-     manager.ctx.interiorFacePass = interiorFacePass;
      bool began = false;
      for(int x = minX; x < minX + kSection; ++x) {
       for(int z = minZ; z < minZ + kSection; ++z) {
@@ -190,11 +188,7 @@ PassResult meshWholeGrid(const Grid& grid, bool skipEmptySections = false) {
         if(block == nullptr) {
          continue;
         }
-        if(interiorFacePass) {
-         if(!client::render::block::hasLeafInteriorFaces(*block, opts.leafInteriorFaces)) {
-          continue;
-         }
-        } else if(layerOf[static_cast<std::size_t>(blockId)] != layer) {
+        if(layerOf[static_cast<std::size_t>(blockId)] != layer) {
          continue;
         }
         if(!began) {

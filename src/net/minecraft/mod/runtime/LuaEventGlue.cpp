@@ -114,6 +114,12 @@ void setClientTickFields(lua_State* state, const ClientTickEvent& event) {
  setField(state, "before", event.before);
  setField(state, "after_world", event.afterWorld);
  setField(state, "paused", event.paused);
+ setField(state, "world_remote", event.world != nullptr && event.world->isRemote());
+#ifdef MINECRAFT_NATIVE_EXPORTS
+ setField(state, "has_screen", event.client != nullptr && event.client->currentScreen() != nullptr);
+#else
+ setField(state, "has_screen", false);
+#endif
  setField(state, "has_player", event.player != nullptr);
  setWorldContextFields(state, event.world);
  double cameraY = 64.0;

@@ -751,7 +751,7 @@ void World::queueLightUpdate(LightType type, int minX, int minY, int minZ, int m
 }
 bool World::doLightingUpdates(std::size_t maxDirtyRegions, std::int64_t timeBudgetNs) {
  lighting_.flushStaging();
- const auto start = std::chrono::steady_clock::now();
+ const auto start = timeBudgetNs >= 0 ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
  std::size_t drained = 0;
  std::size_t readyColumns = 0;
  while(drained < maxDirtyRegions) {

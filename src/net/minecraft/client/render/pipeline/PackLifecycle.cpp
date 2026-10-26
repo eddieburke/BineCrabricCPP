@@ -121,6 +121,8 @@ WorldProgramBindContext Pipeline::makeWorldBindContext(WorldProgramId id) {
   ctx.sceneDepthTexture = static_cast<int>(pack->colorTargets.depthTexture());
   ctx.opaqueDepthTexture = pack->opaqueDepthTexture(ctx.sceneDepthTexture);
   ctx.handDepthTexture = pack->handDepthTexture(ctx.sceneDepthTexture);
+  ctx.dhDepthTexture = static_cast<int>(pack->dhDepthTexture);
+  ctx.dhDepthTextureNoTranslucent = static_cast<int>(pack->dhDepthTextureNoTranslucent);
  }
  ctx.bindTextureAtlases = !interfaceProgram && pack != nullptr && bindsTextureAtlases(id);
  ctx.normalTexture = normalFallbackTexture();
@@ -391,7 +393,7 @@ void Pipeline::initializePackRuntime(PackInstance& pack) {
   pack.settings.try_emplace(setting.key, defaultSettingValue(setting));
  }
  std::string customError;
- if(!pack.rebuildRuntime(customError)) logOnce(pack, customError);
+ if(!pack.rebuildRuntime(customError)) logOnce(pack, customError, LogLevel::Warning);
 }
 void Pipeline::refreshSummaries() {
  summaries_.clear();
@@ -517,7 +519,7 @@ void Pipeline::compileExecutionPlan(PackInstance& pack, std::size_t programBudge
   ++count;
  }
  std::string error;
- if(!pack.buildExecutionPlan(error)) logOnce(pack, error);
+ if(!pack.buildExecutionPlan(error)) logOnce(pack, error, LogLevel::Severe);
 }
 void Pipeline::activatePack(std::size_t index) {
  PackInstance* previous = activePack();
@@ -624,6 +626,34 @@ void Pipeline::bindWorldProgramState(gl::ShaderProgram& program, WorldProgramId 
 }
 void Pipeline::bindWorldProgramMaterial(gl::ShaderProgram& program, WorldProgramId id) {
  bindProgramMaterialTextures(program, makeWorldBindContext(id));
+}
+gl::ShaderProgram* Pipeline::distantProgram(bool water) {
+ PackInstance* pack = renderPack();
+ if(pack == nullptr || !pack->summary.valid) return nullptr;
+ const auto log = [this](PackInstance& target, const std::string& message, LogLevel level) {
+  logOnce(target, message, level);
+ };
+ if(water && pack->definition.programs.contains("dh_water")) {
+  if(gl::ShaderProgram* program = PackCompiler::compile(*pack, "dh_water", log)) return program;
+ }
+ return pack->definition.programs.contains("dh_terrain") ? PackCompiler::compile(*pack, "dh_terrain", log) : nullptr;
+}
+void Pipeline::bindDistantProgram(gl::ShaderProgram& program, bool water) {
+ PackInstance* pack = renderPack();
+ if(pack == nullptr) return;
+ program.bind();
+ const std::string key = water && pack->definition.programs.contains("dh_water") ? "dh_water" : "dh_terrain";
+ if(pack->colorTargets.valid()) {
+  program.applyDrawBuffers(std::max(1, pack->colorTargets.colorCount()));
+ }
+ applyBufferBlends(pack->definition, key, program.drawBufferColortexIndices());
+ applyAlphaTest(pack->definition, key);
+ bindWorldProgram(program,
+                  makeWorldBindContext(water ? WorldProgramId::TerrainTranslucent : WorldProgramId::TerrainSolid));
+}
+PackInstance* Pipeline::distantScenePack() noexcept {
+ PackInstance* pack = activePack();
+ return pack != nullptr && pack->summary.valid && pack->colorTargets.valid() ? pack : nullptr;
 }
 int Pipeline::resolveObjectId(const std::string& kind, const std::string& name, int fallback) const {
  const PackDefinition& definition = activeDefinition();

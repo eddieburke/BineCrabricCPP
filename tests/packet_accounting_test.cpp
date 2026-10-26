@@ -1,9 +1,3 @@
-// WI-9 / HZ-17 regression test: per-Connection read accounting merged on the game thread.
-// Before the fix, Packet::read() mutated process-global packetTrackers()/incomingCount()
-// directly from every connection's reader thread (a data race on the static unordered_map).
-// Now each Connection keeps its own decode-side stats and Connection::tick() merges them on
-// the game thread. This test runs several connections' readers concurrently and asserts the
-// merged global counters come out exact (no torn/lost/double-counted updates).
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -120,7 +114,7 @@ ConnectionPair makePair() {
 }
 } // namespace
 namespace net::minecraft::test {
-TEST(PacketAccounting, ConcurrentReadersMergeWithoutTornCounters) {
+TEST(PacketAccounting, ConcurrentReadersDeliverWithOptionalAccounting) {
  Packet::ensureRegistered();
  Packet::resetReadStats();
  constexpr int kConnectionPairs = 4;
@@ -154,10 +148,15 @@ TEST(PacketAccounting, ConcurrentReadersMergeWithoutTornCounters) {
  for(ConnectionPair& pair : pairs) {
   pair.client->tick();
  }
- EXPECT_EQ(Packet::incomingReadCount(), kConnectionPairs * kPacketsPerConnection);
  const auto snapshot = Packet::snapshotReadStats();
- const auto it = snapshot.find(0);
- ASSERT_NE(it, snapshot.end());
- EXPECT_EQ(it->second.count(), kConnectionPairs * kPacketsPerConnection);
+ if constexpr(util::diagnostics::profilingEnabled) {
+  EXPECT_EQ(Packet::incomingReadCount(), kConnectionPairs * kPacketsPerConnection);
+  const auto it = snapshot.find(0);
+  ASSERT_NE(it, snapshot.end());
+  EXPECT_EQ(it->second.count(), kConnectionPairs * kPacketsPerConnection);
+ } else {
+  EXPECT_EQ(Packet::incomingReadCount(), 0);
+  EXPECT_TRUE(snapshot.empty());
+ }
 }
 } // namespace net::minecraft::test

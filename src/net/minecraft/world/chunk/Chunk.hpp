@@ -43,7 +43,6 @@ class Chunk {
   private:
   const Chunk& chunk_;
  };
- static inline bool hasSkyLight{false};
  Chunk() : Chunk(nullptr, 0, 0) {
  }
  Chunk(int x, int z) : Chunk(nullptr, x, z) {
@@ -208,9 +207,6 @@ class Chunk {
  }
  [[nodiscard]] int getLight(int localX, int yPos, int localZ, int ambientDarkness) const {
   int sky = skyLight.get(localX, yPos, localZ);
-  if(sky > 0) {
-    hasSkyLight = true;
-  }
   const int block = blockLight.get(localX, yPos, localZ);
   if(block > (sky -= ambientDarkness)) {
    sky = block;

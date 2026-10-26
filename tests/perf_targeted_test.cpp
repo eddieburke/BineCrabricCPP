@@ -232,7 +232,7 @@ TEST(PerfTraceTargeted, ChunkArenaGrowDirectMeasurement) {
    v.color = 0xFF00FF00U;
    v.light = 0x00F000F0;
   }
-  region.upload(0, alloc, std::span<const client::render::TessellatorVertex>(smallBatch));
+  region.upload(0, alloc, std::span<client::render::TessellatorVertex>(smallBatch));
   std::vector<client::render::TessellatorVertex> bigBatch(capacities[static_cast<std::size_t>(trial)]);
   for(auto& v : bigBatch) {
    v.x = 1.0f;
@@ -244,7 +244,7 @@ TEST(PerfTraceTargeted, ChunkArenaGrowDirectMeasurement) {
   client::render::chunk::TerrainAllocation bigAlloc{};
   bool ok = false;
   const StallProfile grow = measureStall([&] {
-   ok = region.upload(0, bigAlloc, std::span<const client::render::TessellatorVertex>(bigBatch));
+   ok = region.upload(0, bigAlloc, std::span<client::render::TessellatorVertex>(bigBatch));
   });
   if(ok) {
    ++measured;

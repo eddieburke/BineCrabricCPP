@@ -109,7 +109,8 @@ function util.in_rect(x, y, left, top, width, height)
 end
 function util.real_world(event) return event ~= nil and event.mod_generation ~= false end
 function util.parse_boolean(value)
-  value = tostring(value or ""):match("^%s*(.-)%s*$"):lower()
+  if value == nil then return nil end
+  value = tostring(value):match("^%s*(.-)%s*$"):lower()
   if value == "true" or value == "1" or value == "yes" or value == "on" then return true end
   if value == "false" or value == "0" or value == "no" or value == "off" then return false end
   return nil

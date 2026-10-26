@@ -9,6 +9,7 @@
 #include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
+#include "net/minecraft/client/render/chunk/TerrainLod.hpp"
 #include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/culling/Frustum.hpp"
 #include "net/minecraft/client/render/culling/ShadowFrustum.hpp"
@@ -55,7 +56,7 @@ chunk::ChunkBuilder* ChunkSectionSystem::sectionAt(int sectionX, int sectionY, i
  return it == columns_.end() ? nullptr : it->second[static_cast<std::size_t>(sectionY)].get();
 }
 void ChunkSectionSystem::enqueueColumn(int sectionX, int sectionZ) {
- if(sectionAt(sectionX, 0, sectionZ) != nullptr) {
+ if(!columnInMeshRange(sectionX, sectionZ) || sectionAt(sectionX, 0, sectionZ) != nullptr) {
   return;
  }
  const world::ColumnPos key{sectionX, sectionZ};
@@ -63,8 +64,17 @@ void ChunkSectionSystem::enqueueColumn(int sectionX, int sectionZ) {
   pendingColumns_.push_back(key);
  }
 }
+bool ChunkSectionSystem::columnInMeshRange(int sectionX, int sectionZ) const {
+ if(meshRadius_ < 0) return scene_.settings == nullptr;
+ return chunk::terrainColumnInRange(sectionX, sectionZ, meshCameraX_, meshCameraZ_, meshRadius_);
+}
+int ChunkSectionSystem::columnLod(int sectionX, int sectionZ, int previous) const {
+ if(meshRadius_ < 0) return 0;
+ const int distance = std::max(std::abs(sectionX - meshCameraX_), std::abs(sectionZ - meshCameraZ_));
+ return chunk::terrainLodLevel(distance, previous, lodEnabled_);
+}
 void ChunkSectionSystem::createColumn(int sectionX, int sectionZ) {
- if(scene_.world == nullptr || scene_.world->getChunkSource() == nullptr ||
+ if(!columnInMeshRange(sectionX, sectionZ) || scene_.world == nullptr || scene_.world->getChunkSource() == nullptr ||
     !scene_.world->getChunkSource()->isChunkLoaded(sectionX, sectionZ)) {
   return;
  }
@@ -87,6 +97,8 @@ void ChunkSectionSystem::createColumn(int sectionX, int sectionZ) {
                                                        sectionY * chunk::kSectionBlocks,
                                                        sectionZ * chunk::kSectionBlocks);
   const bool hasBlocks = sourceChunk->sectionHasBlocks(sectionY);
+  builder->requestedLod = columnLod(sectionX, sectionZ);
+  builder->builtLod = builder->requestedLod;
   builder->lightingReady = lightingReady || !hasBlocks;
   if(hasBlocks) {
    builder->invalidate();
@@ -192,10 +204,14 @@ void ChunkSectionSystem::updateDebugCounts() {
  dirtyChunkCount = 0;
  inFlightChunkCount = 0;
  lightingPendingChunkCount = 0;
+ lodCounts_.fill(0);
+ lodSavedVertices_ = 0;
  forEachSection(regions_, [this](chunk::ChunkBuilder* chunk) {
   ++chunkCount;
   if(chunk->built) {
    ++builtChunkCount;
+   ++lodCounts_[static_cast<std::size_t>(chunk->builtLod)];
+   lodSavedVertices_ += chunk->lodSavedVertices;
   }
   if(chunk->dirty) {
    ++dirtyChunkCount;
@@ -240,6 +256,8 @@ void ChunkSectionSystem::clearSections() {
   pendingLit_.clear();
   pendingAmbientColumns_.clear();
   pendingAmbientSet_.clear();
+ meshRadius_ = -1;
+ meshCameraX_ = meshCameraZ_ = std::numeric_limits<int>::min();
 }
 void ChunkSectionSystem::drainPendingColumns() {
  if(scene_.world == nullptr) {
@@ -263,11 +281,43 @@ void ChunkSectionSystem::drainPendingColumns() {
  }
 }
 void ChunkSectionSystem::reloadIfViewDistanceChanged() {
- const net::minecraft::client::option::GameOptions& opts = *scene_.options;
- if(opts.viewDistance != lastViewDistance) {
-  if(scene_.reloadRequested) {
-   scene_.reloadRequested();
+ if(scene_.world == nullptr || scene_.settings == nullptr) return;
+ const net::minecraft::Entity* camera = scene_.camera != nullptr ? scene_.camera :
+                                       scene_.client != nullptr ? scene_.client->camera : nullptr;
+ if(camera == nullptr) return;
+ const int cameraX = MathHelper::floor(camera->x) >> 4;
+ const int cameraZ = MathHelper::floor(camera->z) >> 4;
+ const int radius = scene_.settings->nativeChunkRadius + 1;
+ const bool lod = scene_.settings->terrainLod;
+ if(cameraX == meshCameraX_ && cameraZ == meshCameraZ_ && radius == meshRadius_ && lod == lodEnabled_) return;
+ const bool coverageChanged = cameraX != meshCameraX_ || cameraZ != meshCameraZ_ || radius != meshRadius_;
+ meshCameraX_ = cameraX;
+ meshCameraZ_ = cameraZ;
+ meshRadius_ = radius;
+ lodEnabled_ = lod;
+ for(auto it = columns_.begin(); it != columns_.end();) {
+  const world::ColumnPos key = it->first;
+  if(!columnInMeshRange(key.x, key.z)) {
+   ++it;
+   removeColumn(key.x, key.z);
+   continue;
   }
+  for(auto& section : it->second) {
+   if(section == nullptr) continue;
+   const int level = columnLod(key.x, key.z, section->requestedLod);
+   if(level == section->requestedLod) continue;
+   section->requestedLod = level;
+   if(section->hasNoGeometry() && !section->dirty && !section->meshJobInFlight) {
+    section->builtLod = level;
+    continue;
+   }
+   section->invalidate();
+   compilePipeline_->enqueueDirtyChunk(section.get());
+  }
+  ++it;
+ }
+ if(coverageChanged && scene_.world->getChunkSource() != nullptr) {
+  scene_.world->getChunkSource()->forEachLoadedChunk([this](int x, int z, Chunk&) { enqueueColumn(x, z); });
  }
 }
 void ChunkSectionSystem::cullChunks(Frustum* culler, bool updateGraph) {
@@ -326,12 +376,22 @@ bool ChunkSectionSystem::applyOcclusionCulling(const Frustum& culler,
  return true;
 }
 std::string ChunkSectionSystem::getChunkDebugInfo() const {
+ std::size_t gpuBytes = 0;
+ std::size_t liveBytes = 0;
+ for(const auto& entry : regions_) {
+  gpuBytes += entry.second->gpuBytes();
+  liveBytes += entry.second->liveBytes();
+ }
+ constexpr std::size_t kMiB = 1024 * 1024;
  return "Chunks: vis " + std::to_string(compiledChunkCount) + "/" + std::to_string(chunkCount) +
         ", built " + std::to_string(visibleBuiltChunkCount) + "/" + std::to_string(builtChunkCount) +
         ", dirty " + std::to_string(dirtyChunkCount) + ", flight " + std::to_string(inFlightChunkCount) +
         ", light " + std::to_string(lightingPendingChunkCount) + ", cull " +
         std::to_string(invisibleChunkCount) + ", empty " + std::to_string(emptyChunkCount) + ", calls " +
-        std::to_string(chunk::ChunkBuilder::frameDrawCalls);
+        std::to_string(chunk::ChunkBuilder::frameDrawCalls) + ", vram " + std::to_string(liveBytes / kMiB) + "/" +
+        std::to_string(gpuBytes / kMiB) + " MiB, LOD " + std::to_string(lodCounts_[1]) + "/" +
+        std::to_string(lodCounts_[2]) + "/" + std::to_string(lodCounts_[3]) + ", saved " +
+        std::to_string(lodSavedVertices_ * sizeof(TerrainVertex) / kMiB) + " MiB";
 }
 void ChunkSectionSystem::markDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
  const int startX = MathHelper::floorDiv(minX, chunk::kSectionBlocks);

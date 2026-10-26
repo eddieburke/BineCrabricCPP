@@ -151,6 +151,7 @@ void Connection::tick() {
    break;
   }
  }
+#if MINECRAFT_ENABLE_PROFILING
  {
   std::lock_guard lock(readMutex_);
   if(!readStats_.empty()) {
@@ -158,6 +159,7 @@ void Connection::tick() {
    readStats_.clear();
   }
  }
+#endif
  if(!isOpen() && readQueueEmpty() && !disconnectedNotified_) {
   disconnectedNotified_ = true;
   std::string reason;
@@ -240,7 +242,9 @@ void Connection::readLoop() {
      readPos_ = 0;
      break;
     }
+#if MINECRAFT_ENABLE_PROFILING
     const int rawId = packet->rawId();
+#endif
     const int size = static_cast<int>(packet->size());
     {
      // Backpressure: hold a large inbound backlog (e.g. a burst of chunk packets
@@ -254,7 +258,9 @@ void Connection::readLoop() {
      }
      readQueue_.push_back(std::move(packet));
      readQueueSize_.fetch_add(static_cast<std::size_t>(size) + 1, std::memory_order_acq_rel);
+#if MINECRAFT_ENABLE_PROFILING
      readStats_.emplace_back(rawId, size);
+#endif
     }
     readPos_ = static_cast<std::size_t>(src - readBuffer_.data());
    }

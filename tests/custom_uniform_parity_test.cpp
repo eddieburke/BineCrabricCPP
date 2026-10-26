@@ -102,6 +102,38 @@ TEST(CustomUniformParity, RejectsCyclesAndUnknownReferences) {
  EXPECT_FALSE(runtime.compile({{"a", CustomUniformType::Float, true, "unknownFunction(1.0)"}}, error));
 }
 
+TEST(CustomUniformParity, FailingDeclarationDropsOnlyItselfAndDependents) {
+ CustomUniformRuntime runtime;
+ std::string error;
+ EXPECT_FALSE(runtime.compile({{"framemod2", CustomUniformType::Int, true, "frameCounter % 2"},
+                               {"bad", CustomUniformType::Float, false, "missingInput * 2.0"},
+                               {"usesBad", CustomUniformType::Float, true, "bad + 1.0"},
+                               {"after", CustomUniformType::Float, true, "framemod2 + 0.5"}}, error));
+ EXPECT_NE(error.find("missingInput"), std::string::npos);
+ EXPECT_NE(error.find("usesBad"), std::string::npos);
+ EXPECT_FALSE(runtime.values().contains("bad"));
+ EXPECT_FALSE(runtime.values().contains("usesBad"));
+ PackUniformValues frame{};
+ frame.frameCounter = 7;
+ runtime.evaluate(frame);
+ EXPECT_EQ(runtime.values().at("framemod2").asInt(), 1);
+ EXPECT_FLOAT_EQ(runtime.values().at("after").asFloat(), 1.5f);
+}
+
+TEST(CustomUniformParity, ModernIrisBiomeConstantsNeverMatchBetaBiomes) {
+ CustomUniformRuntime runtime;
+ std::string error;
+ ASSERT_TRUE(runtime.compile({{"nether", CustomUniformType::Bool, true,
+                               "in(biome, BIOME_CRIMSON_FOREST, BIOME_WARPED_FOREST, BIOME_SOUL_SAND_VALLEY, "
+                               "BIOME_BASALT_DELTAS, BIOME_PALE_GARDEN)"}}, error)) << error;
+ PackUniformValues frame{};
+ for(int biome = 0; biome < 13; ++biome) {
+  frame.biome = biome;
+  runtime.evaluate(frame);
+  EXPECT_FALSE(runtime.values().at("nether").asBool()) << biome;
+ }
+}
+
 TEST(CustomUniformParity, DuplicateSmoothIdsHaveIndependentHistories) {
  CustomUniformRuntime runtime;
  std::string error;

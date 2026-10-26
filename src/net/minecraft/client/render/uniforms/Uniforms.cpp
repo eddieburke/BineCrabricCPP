@@ -67,6 +67,12 @@ void uploadShaderUniforms(const gl::ShaderProgram& program, const PackUniformVal
  program.set1fAt(program.uniformLocation(IrisUniformSlot::AspectRatio), aspectRatio);
  program.set1fAt(program.uniformLocation(IrisUniformSlot::Near), values.nearPlane);
  program.set1fAt(program.uniformLocation(IrisUniformSlot::Far), values.renderDistanceBlocks);
+ program.set1i("dhRenderDistance", values.dhRenderDistance);
+ program.set1f("dhNearPlane", values.dhNearPlane);
+ program.set1f("dhFarPlane", values.dhFarPlane);
+ program.setMatrix4At(program.location("dhProjection"), values.dhProjection);
+ program.setMatrix4At(program.location("dhProjectionInverse"), values.dhProjectionInverse);
+ program.setMatrix4At(program.location("dhPreviousProjection"), values.dhPreviousProjection);
  program.set1fAt(program.uniformLocation(IrisUniformSlot::ShadowMapResolution), shadowMapResolution);
  program.set3fAt(program.uniformLocation(IrisUniformSlot::CameraPosition), values.cameraPosition);
  program.set3fAt(program.uniformLocation(IrisUniformSlot::CameraPositionFract), values.cameraPositionFract);

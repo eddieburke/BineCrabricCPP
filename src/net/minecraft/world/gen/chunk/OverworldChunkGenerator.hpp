@@ -11,6 +11,8 @@
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 #include "net/minecraft/world/gen/Generator.hpp"
+#include "net/minecraft/world/gen/ModernTerrain.hpp"
+#include "net/minecraft/world/gen/TerrainStyle.hpp"
 #include "net/minecraft/world/gen/carver/CaveWorldCarver.hpp"
 namespace net::minecraft {
 class World;
@@ -32,7 +34,9 @@ class OverworldChunkGenerator : public ChunkSource {
        floatingIslandScale_(constructionRandom_, 10),
        floatingIslandNoise_(constructionRandom_, 16),
        forestNoise_(constructionRandom_, 8),
+       modern_(seed),
        biomeSource_(seed) {
+  resolveTerrainStyle();
  }
  // Worker-thread generator clones must sample their own seeded BiomeSource;
  // the world's source has mutable scratch buffers shared with the main thread.
@@ -42,8 +46,12 @@ class OverworldChunkGenerator : public ChunkSource {
  void enableModGeneration(bool value) noexcept {
   modGenerationEnabled_ = value;
  }
- void setWorld(World* world) noexcept {
-  world_ = world;
+ void setWorld(World* world);
+ void setTerrainStyle(world::gen::TerrainStyle style) noexcept {
+  style_ = style;
+ }
+ [[nodiscard]] world::gen::TerrainStyle terrainStyle() const noexcept {
+  return style_;
  }
  [[nodiscard]] Chunk loadChunk(ChunkSource* source, int chunkX, int chunkZ);
  void decorate(ChunkSource* source, int chunkX, int chunkZ) override;
@@ -74,6 +82,7 @@ class OverworldChunkGenerator : public ChunkSource {
 
  private:
  std::optional<Chunk> scratchChunk_;
+ void resolveTerrainStyle();
  [[nodiscard]] BiomeSource* activeBiomeSource();
  [[nodiscard]] const BiomeSource* activeBiomeSource() const;
  std::vector<double>& generateHeightMap(
@@ -84,7 +93,11 @@ class OverworldChunkGenerator : public ChunkSource {
   static constexpr int sizeX = cellSize + 1;
   static constexpr int sizeY = 17;
   static constexpr int sizeZ = cellSize + 1;
-  heightMap_ = generateHeightMap(heightMap_, chunkX * cellSize, 0, chunkZ * cellSize, sizeX, sizeY, sizeZ);
+  if(style_ == world::gen::TerrainStyle::Modern) {
+   modern_.fill(heightMap_, chunkX * cellSize, chunkZ * cellSize);
+  } else {
+   heightMap_ = generateHeightMap(heightMap_, chunkX * cellSize, 0, chunkZ * cellSize, sizeX, sizeY, sizeZ);
+  }
   for(int cellX = 0; cellX < cellSize; ++cellX) {
    for(int cellZ = 0; cellZ < cellSize; ++cellZ) {
     for(int cellY = 0; cellY < 16; ++cellY) {
@@ -150,6 +163,8 @@ class OverworldChunkGenerator : public ChunkSource {
  }
  void buildSurfaces(int chunkX, int chunkZ, Chunk& chunk, const std::vector<Biome*>& biomes) {
   static constexpr int seaLevel = 64;
+  static constexpr int modernRockLine = 98;
+  static constexpr int modernSnowLine = 108;
   constexpr double scale = 0.03125;
   sandBuffer_ = perlinNoise2_.create(sandBuffer_, chunkX * 16, chunkZ * 16, 0.0, 16, 16, 1, scale, scale, 1.0);
   gravelBuffer_ =
@@ -195,6 +210,10 @@ class OverworldChunkGenerator : public ChunkSource {
         soil = static_cast<std::uint8_t>(Block::SAND->id);
        }
       }
+      if(style_ == world::gen::TerrainStyle::Modern && y >= modernRockLine) {
+       top = static_cast<std::uint8_t>(y >= modernSnowLine ? Block::SNOW_BLOCK->id : Block::STONE->id);
+       soil = static_cast<std::uint8_t>(Block::STONE->id);
+      }
       if(y < seaLevel && top == 0) {
        top = static_cast<std::uint8_t>(Block::WATER->id);
       }
@@ -229,7 +248,9 @@ class OverworldChunkGenerator : public ChunkSource {
  OctavePerlinNoiseSampler floatingIslandScale_;
  OctavePerlinNoiseSampler floatingIslandNoise_;
  OctavePerlinNoiseSampler forestNoise_;
+ world::gen::ModernTerrain modern_;
  BiomeSource biomeSource_;
+ world::gen::TerrainStyle style_ = world::gen::TerrainStyle::Beta;
  CaveWorldCarver cave_;
  std::vector<Biome*> biomes_;
  std::vector<double> heightMap_;

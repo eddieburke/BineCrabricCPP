@@ -171,6 +171,8 @@ class ColorTargets {
              int gbufferColorCount = kMaxColorAttachments);
  bool ensureNamed(const std::string& name, int width, int height, ColorFormat format);
  void bindGbuffers();
+ // see third_party/iris/common/src/main/java/net/irisshaders/iris/compat/dh/DHCompatInternal.java reconnectDHTextures
+ void bindGbuffersWithDepth(unsigned int depthTexture);
  void endGbuffers();
  bool bindWrite(const std::vector<std::string>& outputs);
  void clearColors(const std::vector<bool>& enabled, const std::vector<std::array<float, 4>>& colors);

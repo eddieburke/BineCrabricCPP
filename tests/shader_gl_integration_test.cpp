@@ -32,6 +32,8 @@
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
+#include "net/minecraft/client/render/chunk/ChunkBuilder.hpp"
+#include "net/minecraft/client/render/chunk/TerrainLod.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderer.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/shaders/IncludeResolver.hpp"
@@ -356,6 +358,55 @@ TEST_F(ShaderGlIntegrationTest, CachedMeshColorOverrideReplacesStoredVertexColor
  EXPECT_LT(pixel[2], 5);
  EXPECT_GT(pixel[3], 250);
  client::render::core::setActiveProgram(nullptr);
+}
+TEST_F(ShaderGlIntegrationTest, TerrainLodArenaUploadPreservesRasterizedCoverageAndHoles) {
+ using namespace client::render;
+ client::gl::ShaderProgram program;
+ ASSERT_TRUE(program.compile(
+     "layout(location=0)in vec3 vaPosition;void main(){gl_Position=vec4(vaPosition.xy/8.0-1.0,0.0,1.0);}",
+     "layout(location=0)out vec4 outColor;void main(){outColor=vec4(1.0,0.0,0.0,1.0);}",
+     "#version 430 core\n")) << program.lastError();
+ Tessellator tess;
+ tess.setCaptureOnly(true);
+ tess.startQuads();
+ tess.color(1.0f, 1.0f, 1.0f);
+ tess.normal(0, 0, 1);
+ for(int y = 0; y < 16; ++y) {
+  for(int x = 0; x < 16; ++x) {
+   if(x == 7 && y == 7) continue;
+   tess.blockData(x, y, 0, 0, 15, 15, 1);
+   tess.vertex(x, y, 0, 0, 0);
+   tess.vertex(x + 1, y, 0, 1, 0);
+   tess.vertex(x + 1, y + 1, 0, 1, 1);
+   tess.vertex(x, y + 1, 0, 0, 1);
+  }
+ }
+ auto detailedMesh = tess.takeMesh();
+ auto distantMesh = detailedMesh;
+ ASSERT_GT(chunk::simplifyTerrainMesh(distantMesh, 3, std::vector<std::uint8_t>(255, 1)), 0u);
+ std::vector<net::minecraft::block::entity::BlockEntity*> entities;
+ chunk::TerrainRegion region(0, 0, 0);
+ chunk::ChunkBuilder section(nullptr, entities, 0, 0, 0);
+ section.setTerrainRegion(region);
+ region.addSection(&section);
+ std::array<unsigned char, 64 * 64 * 4> nearPixels{}, farPixels{};
+ core::setActiveProgram(&program);
+ core::viewport(0, 0, 64, 64);
+ const std::array<const chunk::TerrainAllocation*, 1> allocations{&section.terrainAllocation(0)};
+ const auto render = [&](TessellatorMesh& mesh, auto& pixels) {
+  EXPECT_TRUE(region.upload(0, section.terrainAllocations_[0], mesh.vertices));
+  ::glClearColor(0, 0, 0, 1);
+  ::glClear(client::gl::attrib::ColorBufferBit);
+  EXPECT_GT(region.drawLayer(0, allocations), 0);
+  ::glReadPixels(0, 0, 64, 64, client::gl::pixel::Rgba, client::gl::pixel::UnsignedByte, pixels.data());
+ };
+ render(detailedMesh, nearPixels);
+ render(distantMesh, farPixels);
+ EXPECT_EQ(nearPixels, farPixels);
+ EXPECT_EQ(farPixels[(30 * 64 + 30) * 4], 0);
+ EXPECT_EQ(farPixels[(10 * 64 + 10) * 4], 255);
+ EXPECT_EQ(::glGetError(), 0u);
+ core::setActiveProgram(nullptr);
 }
 TEST_F(ShaderGlIntegrationTest, DisabledBufferBlendReplacesDestination) {
  if(!GLCore::perBufferBlendingSupported || GLCore::blendFunci == nullptr) {

@@ -54,6 +54,11 @@ ItemTint tintColor(const ItemStack& stack) {
  };
 }
 int shaderId(const ItemStack& stack) {
+ // see third_party/iris/common/src/main/java/net/irisshaders/iris/mixin/entity_render_context/ItemStackStateLayerMixin.java:46
+ if(const net::minecraft::block::Block* block = blockOf(stack)) {
+  const int id = net::minecraft::client::render::resolveShaderBlockId(block->id);
+  return id >= 0 ? id : 0;
+ }
  const net::minecraft::Item* item = stack.getItem();
  if(item == nullptr) return -1;
  std::string name = item->getTranslationKey(&stack);

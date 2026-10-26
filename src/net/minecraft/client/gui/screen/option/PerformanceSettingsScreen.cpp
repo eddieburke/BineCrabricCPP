@@ -17,7 +17,7 @@ void cyclePreloadedChunks(GameOptions& o, int delta) {
  o.preloadedChunks =
      d::cycleDiscrete(o.preloadedChunks, delta, kPreloadedChunks.data(), static_cast<int>(kPreloadedChunks.size()));
 }
-std::array<OptionSpec, 9> kSpecs{{
+std::array<OptionSpec, 10> kSpecs{{
     d::makeCycle("fpsLimit",
                  9,
                  ApplyFlags::None,
@@ -81,6 +81,13 @@ std::array<OptionSpec, 9> kSpecs{{
                   d::cycleBoolMember<&GameOptions::frustumCulling>,
                   d::loadBoolMember<&GameOptions::frustumCulling>,
                   d::saveBoolMember<&GameOptions::frustumCulling>),
+    d::makeToggle("terrainLod",
+                  71,
+                  ApplyFlags::None,
+                  d::getBoolMember<&GameOptions::terrainLod>,
+                  d::cycleBoolMember<&GameOptions::terrainLod>,
+                  d::loadBoolMember<&GameOptions::terrainLod>,
+                  d::saveBoolMember<&GameOptions::terrainLod>),
 }};
 class PerformanceSettingsScreen : public SettingsScreen {
  public:
@@ -120,6 +127,7 @@ class PerformanceSettingsScreen : public SettingsScreen {
    return optionLabel("Entity Distance", std::to_string(static_cast<int>(pct)) + "%");
   });
   gui.toggle(x1, y0 + dy * 4, "frustumCulling", "Frustum Culling");
+  gui.toggle(x2, y0 + dy * 4, "terrainLod", "Terrain LOD");
  }
 };
 } // namespace performance_screen

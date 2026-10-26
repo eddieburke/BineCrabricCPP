@@ -238,7 +238,10 @@ local function break_targeted_block()
   return minecraft.world.harvest_block(hit.block_x, hit.block_y, hit.block_z) == true
 end
 
-minecraft.on("client_tick", { before = true }, function()
+minecraft.on("client_tick", { before = true }, function(event)
+  if event.has_screen == true or event.world_remote == true then
+    return event
+  end
   for _, binding in pairs(bindings) do
     if minecraft.keybinds.consume(binding.id) then
       commands.execute(binding.command)
@@ -247,6 +250,7 @@ minecraft.on("client_tick", { before = true }, function()
   if state.instant_mine and minecraft.is_mouse_down(0) then
     break_targeted_block()
   end
+  return event
 end)
 
 -- The whole of flight: travelFlying drops gravity, and vy is re-driven every tick because

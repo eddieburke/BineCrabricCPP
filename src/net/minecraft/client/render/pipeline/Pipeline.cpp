@@ -81,14 +81,15 @@ Pipeline::~Pipeline() {
  presentReadFbo_.destroy();
  colorSpace_.destroy();
 }
-void Pipeline::logOnce(PackInstance& pack, const std::string& message,
+void Pipeline::logOnce(PackInstance& pack, std::string_view message,
                        ::net::minecraft::util::logging::LogLevel level) const {
- if(!pack.logged.insert(message).second) return;
+ if(pack.logged.contains(message)) return;
+ pack.logged.emplace(message);
  const std::string& label =
      !pack.summary.name.empty()      ? pack.summary.name
      : !pack.definition.name.empty() ? pack.definition.name
                                      : std::string("Shader pack");
- ClientLog::LOGGER.log(level, "[shaderpack:" + label + "] " + message);
+ ClientLog::LOGGER.log(level, "[shaderpack:" + label + "] " + std::string(message));
 }
 void Pipeline::reset() {
  pipelinePhase_ = WorldPipelinePhase::None;
@@ -156,19 +157,21 @@ void Pipeline::refreshResourcePackState(PackInstance* basePack,
   const auto setFormat = [this](auto&& self, PackDefinition& definition) -> void {
    definition.labPbr = labPbr_;
    definition.labPbr13 = labPbr13_;
+   definition.distantHorizons = distantHorizons_;
    for(auto& [name, dimension] : definition.dimensionDefinitions) {
     (void)name;
     if(dimension != nullptr) self(self, *dimension);
    }
   };
-  const bool changed = pack->definition.labPbr != labPbr_ || pack->definition.labPbr13 != labPbr13_;
+  const bool changed = pack->definition.labPbr != labPbr_ || pack->definition.labPbr13 != labPbr13_ ||
+                       pack->definition.distantHorizons != distantHorizons_;
   setFormat(setFormat, pack->rootDefinition);
   setFormat(setFormat, pack->definition);
   if(changed) {
    core::setActiveProgram(nullptr);
    if(gl::GLCore::useProgram != nullptr) gl::GLCore::useProgram(0);
    pack->resetPrograms();
-   logOnce(*pack, "clearing programs (labPBR format changed)", LogLevel::Info);
+   logOnce(*pack, "clearing programs (labPBR format or DISTANT_HORIZONS changed)", LogLevel::Info);
   }
  };
  apply(basePack);
@@ -244,10 +247,9 @@ bool Pipeline::selectDimension(PackInstance& pack, const net::minecraft::World* 
  pack.dimensionKey = selectedKey;
  pack.definition = selected != &pack.rootDefinition ? *selected : pack.rootDefinition;
  if(selected != &pack.rootDefinition) {
-  // Collections are rebuilt per folder, so re-base them on the root and overlay
-  // the dimension's own entries.
-  pack.definition.programs = pack.rootDefinition.programs;
-  pack.definition.passes = pack.rootDefinition.passes;
+  // see third_party/iris/common/src/main/java/net/irisshaders/iris/shaderpack/ShaderPack.java:573-581
+  pack.definition.programs = selected->programs;
+  pack.definition.passes = selected->passes;
   pack.definition.targets = pack.rootDefinition.targets;
   pack.definition.bufferBlends = pack.rootDefinition.bufferBlends;
   pack.definition.images = pack.rootDefinition.images;
@@ -255,7 +257,6 @@ bool Pipeline::selectDimension(PackInstance& pack, const net::minecraft::World* 
   pack.definition.bufferObjects = pack.rootDefinition.bufferObjects;
   pack.definition.dimensionFolders = pack.rootDefinition.dimensionFolders;
   pack.definition.dimensionDefinitions = pack.rootDefinition.dimensionDefinitions;
-  for(const auto& [name, program] : selected->programs) pack.definition.programs[name] = program;
   // A dimension folder's own scan can under-report a target's format (e.g. via a
   // default RENDERTARGETS output) even when the root scan already saw the real
   // const colortexNFormat declaration; never let that downgrade root's value.
@@ -300,16 +301,6 @@ bool Pipeline::selectDimension(PackInstance& pack, const net::minecraft::World* 
   if(!selected->customUniforms.empty()) {
    pack.definition.customUniforms = selected->customUniforms;
   }
-  for(const PackPass& pass : selected->passes) {
-   const auto match = std::find_if(pack.definition.passes.begin(), pack.definition.passes.end(),
-                                   [&pass](const PackPass& root) {
-                                    return root.type == pass.type && root.name == pass.name;
-                                   });
-   if(match == pack.definition.passes.end())
-    pack.definition.passes.push_back(pass);
-   else
-    *match = pass;
-  }
  }
  std::string customError;
  if(!pack.rebuildRuntime(customError)) logOnce(pack, customError, LogLevel::Warning);
@@ -336,13 +327,6 @@ void Pipeline::prepareFrame(net::minecraft::World* world, PackInstance* activePa
   worldUniforms_.viewWidth = static_cast<float>(width);
   worldUniforms_.viewHeight = static_cast<float>(height);
   worldUniforms_.aspectRatio = static_cast<float>(width) / static_cast<float>(std::max(height, 1));
- }
- if(minecraft != nullptr && minecraft->player != nullptr) {
-  if(const ItemStack* held = minecraft->player->inventory.getSelectedItem()) {
-   std::string name = lower(held->getTranslationKey());
-   if(name.rfind("item.", 0) == 0 || name.rfind("tile.", 0) == 0) name.erase(0, 5);
-   worldUniforms_.heldItemId = render::resolveShaderObjectId("item", name, -1);
-  }
  }
  if(minecraft != nullptr) {
   core::setTextureFilteringMode(minecraft->options.mipmapLinear ? 1 : 0);
@@ -509,6 +493,7 @@ bool Pipeline::ensureSceneTargets(PackInstance* activePack, int width, int heigh
    return false;
   }
  }
+#if MINECRAFT_ENABLE_PROFILING
  {
   std::ostringstream slots;
   for(int i = 0; i < activePack->colorTargets.colorCount(); ++i) {
@@ -519,6 +504,7 @@ bool Pipeline::ensureSceneTargets(PackInstance* activePack, int width, int heigh
   logOnce(*activePack, "scene targets " + std::to_string(width) + "x" + std::to_string(height) + " {" +
                            slots.str() + "} depthtex");
  }
+#endif
  return true;
 }
 void Pipeline::bindScene(PackInstance* activePack) {

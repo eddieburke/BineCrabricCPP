@@ -25,10 +25,12 @@ namespace net::minecraft::client::diagnostics {
 namespace {
 const char* gStartupPhase = "before main";
 #ifdef _WIN32
+#if MINECRAFT_ENABLE_PROFILING
 std::atomic<std::uint64_t> gHeartbeat{0};
 std::atomic<bool> gHangDumpWritten{false};
 std::atomic<bool> gWatchdogDisarmed{false};
 std::jthread gWatchdog;
+#endif
 std::string executableDirectory() {
  char path[MAX_PATH] = {};
  const DWORD length = GetModuleFileNameA(nullptr, path, MAX_PATH);
@@ -227,6 +229,7 @@ void pauseBeforeExit() {
  MessageBoxA(
      nullptr, "The application has stopped. Press OK to exit.", "Minecraft Native", MB_OK | MB_SETFOREGROUND);
 }
+#if MINECRAFT_ENABLE_PROFILING
 void pingMainLoopHeartbeat() {
  gHeartbeat.fetch_add(1, std::memory_order_relaxed);
  gHangDumpWritten.store(false, std::memory_order_relaxed);
@@ -271,5 +274,6 @@ void installHangWatchdog() {
   }
  });
 }
+#endif
 #endif // _WIN32
 } // namespace net::minecraft::client::diagnostics

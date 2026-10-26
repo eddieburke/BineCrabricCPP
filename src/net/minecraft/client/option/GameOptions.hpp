@@ -45,14 +45,13 @@ class GameOptions {
  bool entityShadows = true;
  float chunkUpdates = 0.5f;
  bool chunkUpdatesDynamic = false;
+ bool terrainLod = true;
  int preloadedChunks = 0;
  float entityDistanceScale = 1.0f;
  // Details
  int clouds = 0;
  float cloudsHeight = 0.0f;
  int trees = 0;
- // Interior faces inside a leaf blob: 0 = Off, 1 = Shell, 2 = All.
- int leafInterior = 1;
  int grass = 0;
  int water = 0;
  int rain = 0;

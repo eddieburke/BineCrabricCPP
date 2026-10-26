@@ -98,6 +98,7 @@ void WorldRenderer::setWorld(net::minecraft::World* worldIn) {
  }
  world = worldIn;
  scene_.world = worldIn;
+ distant_.reset();
  blockRenderManager.setBlockView(worldIn);
  if(client != nullptr) {
   entity::EntityRenderDispatcher::instance().setWorld(worldIn);
@@ -409,12 +410,14 @@ void WorldRenderer::markDirty(int minX, int minY, int minZ, int maxX, int maxY, 
 }
 void WorldRenderer::blockUpdate(int x, int y, int z) {
  chunkSections_.blockUpdate(x, y, z);
+ distant_.markChunkDirty(x >> 4, z >> 4);
 }
 void WorldRenderer::setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
  chunkSections_.setBlocksDirty(minX, minY, minZ, maxX, maxY, maxZ);
 }
 void WorldRenderer::chunkAvailable(int chunkX, int chunkZ) {
  chunkSections_.chunkAvailable(chunkX, chunkZ);
+ distant_.markChunkDirty(chunkX, chunkZ);
 }
 void WorldRenderer::chunkUnloaded(int chunkX, int chunkZ) {
  chunkSections_.chunkUnloaded(chunkX, chunkZ);

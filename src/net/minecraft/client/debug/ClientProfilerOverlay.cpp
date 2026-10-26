@@ -85,9 +85,6 @@ void renderProfilerChartInViewport(int viewportWidth, int viewportHeight) {
  tessellator.draw();
 }
 } // namespace
-void ClientProfilerOverlay::recordFrameTime(Minecraft& client) {
- client.timeAfterLastTick = nanoTime();
-}
 void ClientProfilerOverlay::renderProfilerChart(Minecraft& client, std::int64_t tickTime) {
  if(client.timeAfterLastTick == -1) {
   client.timeAfterLastTick = nanoTime();
@@ -102,7 +99,9 @@ std::string ClientProfilerOverlay::getRenderChunkDebugInfo(const Minecraft& clie
  return client.worldRenderer != nullptr ? client.worldRenderer->sections().getChunkDebugInfo() : std::string{};
 }
 std::string ClientProfilerOverlay::getRenderEntityDebugInfo(const Minecraft& client) {
- return client.worldRenderer != nullptr ? client.worldRenderer->getEntityDebugInfo() : std::string{};
+ return client.worldRenderer != nullptr
+            ? client.worldRenderer->getEntityDebugInfo() + " | " + client.worldRenderer->distantTerrain().debugInfo()
+            : std::string{};
 }
 std::string ClientProfilerOverlay::getChunkSourceDebugInfo(const Minecraft& client) {
  if(client.world == nullptr) {

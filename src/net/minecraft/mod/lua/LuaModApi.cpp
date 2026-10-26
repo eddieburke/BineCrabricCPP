@@ -183,11 +183,13 @@ int luaWorldSampleGrid(lua_State* state) {
  std::string channel = "grass";
  std::vector<std::string> channels;
  bool modGeneration = false;
+ std::string terrainStyle;
  if(api.type(state, 4) == kLuaTTable) {
   radiusChunks = std::clamp(luaIntField(state, 4, "radius_chunks", radiusChunks), 1, 4096);
   maxSide = std::clamp(luaIntField(state, 4, "max_side", maxSide), 8, 256);
   channel = luaStringField(state, 4, "channel", channel);
   modGeneration = luaBoolField(state, 4, "mod_generation", false);
+  terrainStyle = luaStringField(state, 4, "terrain_style", "");
   api.getfield(state, 4, "channels");
   if(api.type(state, -1) == kLuaTTable) {
    const int channelTable = api.gettop(state);
@@ -238,6 +240,7 @@ int luaWorldSampleGrid(lua_State* state) {
   generator = std::make_unique<OverworldChunkGenerator>(nullptr, seed);
   generator->useLocalBiomeSource(true);
   generator->enableModGeneration(modGeneration);
+  generator->setTerrainStyle(net::minecraft::world::gen::parseTerrainStyle(terrainStyle));
  }
  api.createtable(state, 0, 8);
  setField(state, "side", side);

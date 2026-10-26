@@ -116,6 +116,17 @@ void LightingEngine::registerChunk(Chunk* chunk) {
   const std::lock_guard lock(registryMutex_);
   registry_[chunkKey(chunk->x, chunk->z)] = chunk;
  }
+ std::vector<Box> waiting;
+ {
+  const std::lock_guard lock(borderMutex_);
+  if(const auto it = pendingBorders_.find(chunkKey(chunk->x, chunk->z)); it != pendingBorders_.end()) {
+   waiting = std::move(it->second);
+   pendingBorders_.erase(it);
+  }
+ }
+ for(const Box& box : waiting) {
+  push(box.type, box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ, true);
+ }
 }
 void LightingEngine::unregisterChunk(Chunk* chunk) {
  if(chunk == nullptr) {
@@ -127,6 +138,15 @@ void LightingEngine::unregisterChunk(Chunk* chunk) {
   if(it != registry_.end() && it->second == chunk) {
    registry_.erase(it);
   }
+ }
+ const int minX = chunk->x * 16;
+ const int minZ = chunk->z * 16;
+ const std::lock_guard lock(borderMutex_);
+ for(auto it = pendingBorders_.begin(); it != pendingBorders_.end();) {
+  std::erase_if(it->second, [&](const Box& box) {
+   return box.minX >= minX && box.maxX <= minX + 15 && box.minZ >= minZ && box.maxZ <= minZ + 15;
+  });
+  it = it->second.empty() ? pendingBorders_.erase(it) : std::next(it);
  }
 }
 std::vector<LightingEngine::DirtyRegion> LightingEngine::drainDirtyRegions(std::size_t maxRegions) {
@@ -156,6 +176,10 @@ void LightingEngine::stop() {
  {
   const std::lock_guard pendingLock(pendingMutex_);
   pending_.clear();
+ }
+ {
+  const std::lock_guard borderLock(borderMutex_);
+  pendingBorders_.clear();
  }
  std::unique_lock lock(queueMutex_);
  if(stopping_.load(std::memory_order_relaxed) && scheduledWorkers_ == 0) {
@@ -344,6 +368,53 @@ void LightingEngine::queuePropagationBox(LightType type, int minX, int minY, int
  }
  push(type, minX, minY, minZ, maxX, maxY, maxZ, true);
 }
+void LightingEngine::deferBorderCell(LightType type, int x, int minY, int maxY, int z, Chunk* negX, Chunk* posX,
+                                     Chunk* negZ, WorkerState& state) {
+ const std::uint64_t missing = negX == nullptr   ? chunkKey((x - 1) >> 4, z >> 4)
+                               : posX == nullptr ? chunkKey((x + 1) >> 4, z >> 4)
+                               : negZ == nullptr ? chunkKey(x >> 4, (z - 1) >> 4)
+                                                 : chunkKey(x >> 4, (z + 1) >> 4);
+ for(auto& [key, box] : state.deferredBorders) {
+  if(key == missing) {
+   box.cover(x, minY, z, x, maxY, z);
+   return;
+  }
+ }
+ state.deferredBorders.emplace_back(missing, Box{type, x, minY, z, x, maxY, z});
+}
+void LightingEngine::parkDeferredBorders(WorkerState& state) {
+ if(state.deferredBorders.empty()) {
+  return;
+ }
+ std::vector<Box> ready;
+ {
+  const std::lock_guard lock(borderMutex_);
+  for(const auto& [key, box] : state.deferredBorders) {
+   bool registered = false;
+   {
+    const std::lock_guard registryLock(registryMutex_);
+    registered = registry_.contains(key);
+   }
+   if(registered) {
+    ready.push_back(box);
+    continue;
+   }
+   std::vector<Box>& parked = pendingBorders_[key];
+   const auto touching = std::find_if(parked.begin(), parked.end(), [&](const Box& other) {
+    return other.conflictsWith(box);
+   });
+   if(touching != parked.end()) {
+    touching->cover(box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ);
+   } else {
+    parked.push_back(box);
+   }
+  }
+ }
+ state.deferredBorders.clear();
+ for(const Box& box : ready) {
+  push(box.type, box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ, true);
+ }
+}
 void LightingEngine::runUpdate(const Box& update, WorkerState& state) {
  using block::Block;
  const LightType lightType = update.type;
@@ -482,8 +553,11 @@ void LightingEngine::runUpdate(const Box& update, WorkerState& state) {
    Chunk* const posXChunk = chunkAt((x + 1) >> 4, z >> 4, state);
    Chunk* const negZChunk = chunkAt(x >> 4, (z - 1) >> 4, state);
    Chunk* const posZChunk = chunkAt(x >> 4, (z + 1) >> 4, state);
-   if(selfChunk == nullptr || negXChunk == nullptr || posXChunk == nullptr || negZChunk == nullptr ||
-      posZChunk == nullptr) {
+   if(selfChunk == nullptr) {
+    continue;
+   }
+   if(negXChunk == nullptr || posXChunk == nullptr || negZChunk == nullptr || posZChunk == nullptr) {
+    deferBorderCell(lightType, x, minY, maxY, z, negXChunk, posXChunk, negZChunk, state);
     continue;
    }
    for(int y = minY; y <= maxY; ++y) {
@@ -507,12 +581,16 @@ void LightingEngine::runUpdate(const Box& update, WorkerState& state) {
   Chunk* const posXChunk = chunkAt((x + 1) >> 4, z >> 4, state);
   Chunk* const negZChunk = chunkAt(x >> 4, (z - 1) >> 4, state);
   Chunk* const posZChunk = chunkAt(x >> 4, (z + 1) >> 4, state);
-  if(selfChunk == nullptr || negXChunk == nullptr || posXChunk == nullptr || negZChunk == nullptr ||
-     posZChunk == nullptr) {
+  if(selfChunk == nullptr) {
+   continue;
+  }
+  if(negXChunk == nullptr || posXChunk == nullptr || negZChunk == nullptr || posZChunk == nullptr) {
+   deferBorderCell(lightType, x, y, y, z, negXChunk, posXChunk, negZChunk, state);
    continue;
   }
   visit(x, y, z, selfChunk, negXChunk, posXChunk, negZChunk, posZChunk);
  }
+ parkDeferredBorders(state);
  if(!anyChanged) {
   return;
  }

@@ -13,6 +13,8 @@ struct WorldProgramBindContext {
  int sceneDepthTexture = -1;
  int opaqueDepthTexture = -1;
  int handDepthTexture = -1;
+ int dhDepthTexture = 0;
+ int dhDepthTextureNoTranslucent = 0;
  int atlasWidth = 1;
  int atlasHeight = 1;
  int pbrTextureFlags = 0;

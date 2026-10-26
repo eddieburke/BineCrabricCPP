@@ -15,6 +15,7 @@
 #include <vector>
 #include "net/minecraft/network/PacketIO.hpp"
 #include "net/minecraft/network/packet/PacketTracker.hpp"
+#include "net/minecraft/util/diagnostics/Instrumentation.hpp"
 namespace net::minecraft {
 class NetworkHandler;
 class Packet {
@@ -98,20 +99,34 @@ class Packet {
   [[nodiscard]] virtual std::size_t size() const = 0;
   static void ensureRegistered();
   static void mergeReadStats(const std::vector<std::pair<int, int>>& stats) {
+#if MINECRAFT_ENABLE_PROFILING
    for(const auto& [rawId, size] : stats) {
     packetTrackers()[rawId].update(size);
    }
    incomingCount() += static_cast<int>(stats.size());
+#else
+   (void)stats;
+#endif
   }
   static void resetReadStats() {
+#if MINECRAFT_ENABLE_PROFILING
    packetTrackers().clear();
    incomingCount() = 0;
+#endif
   }
   [[nodiscard]] static std::unordered_map<int, PacketTracker> snapshotReadStats() {
+#if MINECRAFT_ENABLE_PROFILING
    return packetTrackers();
+#else
+   return {};
+#endif
   }
   [[nodiscard]] static int incomingReadCount() noexcept {
+#if MINECRAFT_ENABLE_PROFILING
    return incomingCount();
+#else
+   return 0;
+#endif
   }
 
  private:
@@ -132,6 +147,7 @@ class Packet {
   static std::unordered_set<int> ids;
   return ids;
  }
+#if MINECRAFT_ENABLE_PROFILING
  [[nodiscard]] static std::unordered_map<int, PacketTracker>& packetTrackers() {
   static std::unordered_map<int, PacketTracker> trackers;
   return trackers;
@@ -140,5 +156,6 @@ class Packet {
   static int count = 0;
   return count;
  }
+#endif
 };
 } // namespace net::minecraft

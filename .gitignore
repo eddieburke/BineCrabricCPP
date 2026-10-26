@@ -38,6 +38,9 @@ tools/
 **/agents.md
 **/RULES FOR AGENTS.md
 CURRENT_STATE.md
+LOD_DESIGN.md
+RENDER_FIX_PLAN.md
+docs/terrain-lod-implementation.md
 artifacts/
 .vs/
 .idea/

@@ -68,6 +68,7 @@
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/entity/projectile/FishingBobberEntity.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
+#include "net/minecraft/mod/ModSettingsRegistry.hpp"
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 #include "net/minecraft/mod/runtime/ModHost.hpp"
 #include "net/minecraft/mod/runtime/WorldRequiredMods.hpp"
@@ -716,6 +717,9 @@ void Minecraft::tick() {
   resize(displayWidth, displayHeight);
  }
  input::InputSystem::instance().pollGame(*this);
+ if(currentScreen() != nullptr) {
+  net::minecraft::mod::ModSettingsRegistry::instance().clearPendingKeys();
+ }
  mod::ClientTickEvent preSimClientTick{this, player, world, paused.load(), false, false};
  net::minecraft::mod::runtime::luaHookClientTick(preSimClientTick);
  runWorldSimulation();
@@ -768,20 +772,27 @@ void Minecraft::runPacePhase() {
 void Minecraft::runDiagnosticsPhase(std::int64_t tickDuration, int& frames, std::int64_t& fpsWindowStart) {
  if(options.debugHud) {
   debug::ClientProfilerOverlay::renderProfilerChart(*this, tickDuration);
+  const std::int64_t now = currentTimeMillis();
+  if(fpsWindowStart == 0) {
+   fpsWindowStart = now;
+  }
+  ++frames;
+  if(now >= fpsWindowStart + 1000) {
+   debugText = std::to_string(frames) + " fps, " + std::to_string(render::chunk::ChunkBuilder::chunkUpdates) +
+               " chunk updates";
+   render::chunk::ChunkBuilder::chunkUpdates = 0;
+   fpsWindowStart = now;
+   frames = 0;
+  }
  } else {
-  debug::ClientProfilerOverlay::recordFrameTime(*this);
+  timeAfterLastTick = -1;
+  fpsWindowStart = 0;
+  frames = 0;
+  render::chunk::ChunkBuilder::chunkUpdates = 0;
  }
  toast.tick();
  handleScreenshotKey();
- ++frames;
  paused = !isWorldRemote() && currentScreen() != nullptr && currentScreen()->shouldPause();
- while(currentTimeMillis() >= fpsWindowStart + 1000) {
-  debugText = std::to_string(frames) + " fps, " + std::to_string(render::chunk::ChunkBuilder::chunkUpdates) +
-              " chunk updates";
-  render::chunk::ChunkBuilder::chunkUpdates = 0;
-  fpsWindowStart += 1000;
-  frames = 0;
- }
 }
 void Minecraft::run() {
  running = true;
@@ -793,7 +804,7 @@ void Minecraft::run() {
  }
  try {
   diagnostics::setStartupPhase("main: running");
-  std::int64_t fpsWindowStart = currentTimeMillis();
+  std::int64_t fpsWindowStart = 0;
   int frames = 0;
   util::FramePipeline framePipeline;
   while(running.load()) {
@@ -835,7 +846,7 @@ void Minecraft::run() {
       } else {
        timer.advance();
       }
-      tickStart = nanoTime();
+      tickStart = options.debugHud ? nanoTime() : 0;
       break;
      }
      case util::FramePipeline::Phase::Ticks:
@@ -849,7 +860,7 @@ void Minecraft::run() {
         setScreen(std::make_unique<gui::screen::world::WorldSaveConflictScreen>());
        }
       }
-      tickDuration = nanoTime() - tickStart;
+      tickDuration = tickStart != 0 ? nanoTime() - tickStart : 0;
       break;
      case util::FramePipeline::Phase::Render:
       runRenderPhase();
@@ -909,6 +920,7 @@ void Minecraft::setWorld(World* worldIn, const std::string& message, PlayerEntit
  notifyWorldChanged(worldIn);
 }
 void Minecraft::notifyWorldChanged(World* worldIn) {
+ net::minecraft::mod::ModSettingsRegistry::instance().clearPendingKeys();
  if(serverProcessCoordinator_ != nullptr) {
   serverProcessCoordinator_->afterWorldChange(worldIn);
  }

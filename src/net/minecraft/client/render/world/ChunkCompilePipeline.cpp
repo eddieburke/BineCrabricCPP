@@ -1,6 +1,5 @@
 #include "net/minecraft/client/render/world/ChunkCompilePipeline.hpp"
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <cstdio>
@@ -13,6 +12,7 @@
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
 #include "net/minecraft/client/render/chunk/ChunkBuilder.hpp"
 #include "net/minecraft/client/render/chunk/ChunkMeshJob.hpp"
+#include "net/minecraft/client/render/chunk/MeshUploadBudget.hpp"
 #include "net/minecraft/entity/Entity.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include <limits>
@@ -79,30 +79,23 @@ bool ChunkCompilePipeline::startMeshJob(chunk::ChunkBuilder* chunk,
  if(chunk == nullptr || !chunk->readyForMeshCapture()) {
   return false;
  }
- const auto captureStart = std::chrono::steady_clock::now();
  auto job = chunk::ChunkMeshJob::capture(*chunk, resolvedOpts);
  if(job == nullptr) {
   return false;
  }
- job->captureNs = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                                 std::chrono::steady_clock::now() - captureStart)
-                                                 .count());
  chunk->meshJobInFlight = true;
  dirtyChunks_.erase(chunk);
  const auto enqueue = [&](std::shared_ptr<chunk::ChunkMeshJob> job, int jobPriority) {
   meshHandoff_.enqueue(
       std::move(job),
       [](chunk::ChunkMeshJob& meshJob) {
-       const auto buildStart = std::chrono::steady_clock::now();
        try {
         meshJob.buildSnapshot();
         chunk::ChunkBuilder::buildMesh(meshJob);
        } catch(...) {
         meshJob.failed = true;
        }
-       meshJob.buildNs = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                                        std::chrono::steady_clock::now() - buildStart)
-                                                        .count());
+       meshJob.snapshot.reset();
       },
       jobPriority);
  };
@@ -140,6 +133,7 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
      net::minecraft::util::concurrent::FrameBudget::fromSharedMs(2, minUploadsPerFrame);
  int uploadCount = 0;
  int nearUploadCount = 0;
+ chunk::MeshUploadBudget byteBudget;
  deferredMeshUploadQueue_.clear();
  deferredMeshUploadQueue_.reserve(pendingMeshUploads_.size() + meshHandoff_.pendingJobs());
  const auto processUpload = [&](std::shared_ptr<chunk::ChunkMeshJob> job, bool nearLane) {
@@ -150,28 +144,33 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
    return;
   }
   chunk::ChunkBuilder* builder = owner.get();
-  const net::minecraft::util::concurrent::FrameBudget& budget = nearLane ? nearBudget : uploadBudget;
-  const int budgetCount = nearLane ? nearUploadCount : uploadCount;
-  if(!budget.hasRemaining(budgetCount)) {
-   ++deferredMeshUploads_;
-   deferredMeshUploadQueue_.push_back(std::move(job));
-   return;
-  }
-  builder->meshJobInFlight = false;
   if(job->failed || job->version != builder->version) {
-   ++staleMeshJobs_;
+   builder->meshJobInFlight = false;
    builder->dirty = true;
    enqueueDirtyChunk(builder);
    return;
   }
-  builder->uploadMesh(*job);
+  const net::minecraft::util::concurrent::FrameBudget& budget = nearLane ? nearBudget : uploadBudget;
+  const int budgetCount = nearLane ? nearUploadCount : uploadCount;
+  std::size_t bytes = 0;
+  for(int layer = 0; layer < chunk::terrain_layer::Count; ++layer) {
+   bytes += job->result.layers[layer].vertices.size() * sizeof(TerrainVertex);
+   for(const auto& mesh : job->result.modLayers[layer]) bytes += mesh.mesh.vertices.size() * sizeof(TessellatorVertex);
+  }
+  if(!budget.hasRemaining(budgetCount) || !byteBudget.tryConsume(bytes)) {
+   deferredMeshUploadQueue_.push_back(std::move(job));
+   return;
+  }
+  builder->meshJobInFlight = false;
+  if(nearLane) ++nearUploadCount;
+  else ++uploadCount;
+  if(!builder->uploadMesh(*job)) {
+   builder->dirty = true;
+   enqueueDirtyChunk(builder);
+   return;
+  }
   builder->dirty = false;
   dirtyChunks_.erase(builder);
-  if(nearLane) {
-   ++nearUploadCount;
-  } else {
-   ++uploadCount;
-  }
  };
  nearMeshUploads_.clear();
  backgroundMeshUploads_.clear();
@@ -204,7 +203,16 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
  pendingMeshUploads_.swap(deferredMeshUploadQueue_);
  const std::size_t targetInFlight = workerCount * (force ? 6u : 3u);
  std::size_t inFlight = meshHandoff_.pendingJobs();
- if(inFlight < targetInFlight && pendingMeshUploads_.size() < targetInFlight * 2u) {
+ std::size_t pendingCpuBytes = 0;
+ for(const auto& job : pendingMeshUploads_) {
+  for(int layer = 0; layer < chunk::terrain_layer::Count; ++layer) {
+   pendingCpuBytes += job->result.layers[layer].vertices.capacity() * sizeof(TessellatorVertex);
+   for(const auto& mesh : job->result.modLayers[layer])
+    pendingCpuBytes += mesh.mesh.vertices.capacity() * sizeof(TessellatorVertex);
+  }
+ }
+ if(inFlight < targetInFlight && pendingMeshUploads_.size() < targetInFlight * 2u &&
+    pendingCpuBytes < 64u * 1024u * 1024u) {
   const int requestedCaptures =
       client::option::chunkUpdatesPerPass(resolvedOpts, static_cast<int>(dirtyChunks_.size()));
   const int minCapturesPerFrame = force ? static_cast<int>(workerCount * 2u)

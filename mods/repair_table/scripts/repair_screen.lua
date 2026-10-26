@@ -23,8 +23,8 @@ local screen = inventory_helper.slots({
     if inventory_helper.stack.is_empty(left) or inventory_helper.stack.is_empty(right) then
       return
     end
-    local repaired = inventory_helper.stack.combine_damage(inventory_helper.stack.copy(left), inventory_helper.stack.copy(right))
-    if inventory_helper.stack.is_empty(repaired) then
+    local repaired, remainder = inventory_helper.stack.combine_damage(inventory_helper.stack.copy(left), inventory_helper.stack.copy(right))
+    if inventory_helper.stack.is_empty(repaired) or not inventory_helper.stack.is_empty(remainder) then
       return
     end
     ctx.set(3, repaired)

@@ -75,6 +75,14 @@ class Pipeline {
  // uniform half is skippable when the program already holds that snapshot.
  void bindWorldProgramState(gl::ShaderProgram& program, WorldProgramId id, bool withUniforms);
  void bindWorldProgramMaterial(gl::ShaderProgram& program, WorldProgramId id);
+ // see third_party/iris/common/src/main/java/net/irisshaders/iris/compat/dh/DHCompatInternal.java
+ gl::ShaderProgram* distantProgram(bool water);
+ void bindDistantProgram(gl::ShaderProgram& program, bool water);
+ [[nodiscard]] PackInstance* distantScenePack() noexcept;
+ // see third_party/iris/common/src/main/java/net/irisshaders/iris/compat/dh/DHCompatInternal.java checkFrame
+ void setDistantHorizons(bool enabled) noexcept {
+  distantHorizons_ = enabled;
+ }
  [[nodiscard]] int resolveObjectId(const std::string& kind, const std::string& name,
                                    int fallback) const;
  [[nodiscard]] std::uint64_t objectIdRevision() const noexcept {
@@ -225,7 +233,7 @@ private:
  void stopDirectoryWatcher();
  void directoryWatchLoop(const std::stop_token& stop);
  void captureDepth(PackInstance* activePack, std::size_t index);
- void logOnce(PackInstance& pack, const std::string& message,
+ void logOnce(PackInstance& pack, std::string_view message,
               ::net::minecraft::util::logging::LogLevel level =
                   ::net::minecraft::util::logging::LogLevel::Info) const;
  [[nodiscard]] bool blitColortex0ToScreen(PackInstance& pack, int screenWidth, int screenHeight);
@@ -260,6 +268,7 @@ private:
  std::string resourcePackKey_;
  bool labPbr_ = false;
  bool labPbr13_ = false;
+ bool distantHorizons_ = false;
  bool lightmapLit_ = false;
  int lightmapAmbient_ = -1;
  WorldPipelinePhase pipelinePhase_ = WorldPipelinePhase::None;

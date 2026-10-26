@@ -10,11 +10,12 @@
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
-#include "net/minecraft/client/render/block/LeafInteriorFaces.hpp"
 #include "net/minecraft/client/render/block/entity/BlockEntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/chunk/ChunkMeshJob.hpp"
+#include "net/minecraft/client/render/chunk/TerrainLod.hpp"
 #include "net/minecraft/client/render/chunk/RegionSnapshot.hpp"
 #include "net/minecraft/client/render/pipeline/Pipeline.hpp"
+#include "net/minecraft/mod/ModClient.hpp"
 #include "net/minecraft/util/concurrent/ThreadNames.hpp"
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -213,6 +214,7 @@ std::shared_ptr<ChunkMeshJob> ChunkMeshJob::capture(ChunkBuilder& owner,
 ChunkMeshJob::ChunkMeshJob(ChunkBuilder& owner, client::option::RenderSettings options)
     : builder(owner.weak_from_this()),
       version(owner.version),
+      lodLevel(owner.requestedLod),
       x(owner.x),
       y(owner.y),
       z(owner.z),
@@ -326,22 +328,19 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
     const auto packed = static_cast<std::uint16_t>((((blockX - minX) & 0xF) << 8) |
                                                    (((blockY - minY) & 0xF) << 4) | ((blockZ - minZ) & 0xF));
     buckets[static_cast<std::size_t>(layerOf[static_cast<std::size_t>(blockId)])].push_back(packed);
-    // A leaf block owns geometry in the interior layer as well as its own.
-    if(block::hasLeafInteriorFaces(*block, job.opts.leafInteriorFaces)) {
-     buckets[terrain_layer::CutoutInterior].push_back(packed);
-    }
    }
   }
  }
  for(int layer = 0; layer < terrain_layer::Count; ++layer) {
   bool beganCompile = false;
   bool drewGeometry = false;
+  static thread_local std::vector<std::uint8_t> lodEligible;
+  lodEligible.clear();
   ModMeshCollector modMeshes;
   modMeshes.chunkOffX = -static_cast<double>(job.x);
   modMeshes.chunkOffY = -static_cast<double>(job.y);
   modMeshes.chunkOffZ = -static_cast<double>(job.z);
   blockRenderManager.ctx.modMeshes = &modMeshes;
-  blockRenderManager.ctx.interiorFacePass = layer == terrain_layer::CutoutInterior;
   for(const std::uint16_t packed : buckets[static_cast<std::size_t>(layer)]) {
    const int blockX = minX + ((packed >> 8) & 0xF);
    const int blockY = minY + ((packed >> 4) & 0xF);
@@ -365,13 +364,25 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
         static_cast<double>(-net::minecraft::util::math::MathHelper::floorDiv(job.z, kRegionBlocksZ) *
                             kRegionBlocksZ));
    }
+   const bool simplify = job.lodLevel > 0 && layer != terrain_layer::Translucent &&
+                         block->id < 96 && block->id != 18 && block->isOpaque() &&
+                         block->getRenderType() == block::BlockRenderType::FULL_CUBE &&
+                         !net::minecraft::mod::hasCustomWorldDraw(block->id);
+   const std::size_t firstQuad = tessellator.capturedVertexCount() / 4;
+   blockRenderManager.ctx.opts.ambientOcclusionActive = simplify ? false : job.opts.ambientOcclusionActive;
    drewGeometry |= blockRenderManager.render(*block, blockX, blockY, blockZ);
+   if(job.lodLevel > 0) {
+    const std::size_t lastQuad = tessellator.capturedVertexCount() / 4;
+    lodEligible.resize(lastQuad, 0);
+    std::fill(lodEligible.begin() + static_cast<std::ptrdiff_t>(firstQuad), lodEligible.end(), simplify ? 1 : 0);
+   }
   }
   if(beganCompile) {
    result.layers[static_cast<std::size_t>(layer)] = tessellator.takeMesh();
+   job.lodSavedVertices += simplifyTerrainMesh(result.layers[static_cast<std::size_t>(layer)],
+                                               job.lodLevel, lodEligible);
   }
   blockRenderManager.ctx.modMeshes = nullptr;
-  blockRenderManager.ctx.interiorFacePass = false;
   for(ModMeshCollector::Entry& modEntry : modMeshes.entries) {
    TessellatorMesh modMesh = modEntry.tess.takeMesh();
    if(!modMesh.empty()) {
@@ -383,23 +394,24 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
  }
  result.hasSkyLight = snapshot.sawSkyLight();
 }
-void ChunkBuilder::uploadMesh(ChunkMeshJob& job) {
+bool ChunkBuilder::uploadMesh(ChunkMeshJob& job) {
  ++chunkUpdates;
+ bool success = true;
  for(int layer = 0; layer < terrain_layer::Count; ++layer) {
   TessellatorMesh& mesh = job.result.layers[static_cast<std::size_t>(layer)];
-  renderLayerEmpty[static_cast<std::size_t>(layer)] = job.result.layerEmpty[static_cast<std::size_t>(layer)];
   TerrainAllocation& allocation = terrainAllocations_[static_cast<std::size_t>(layer)];
   if(mesh.empty() || terrainRegion_ == nullptr) {
    if(terrainRegion_ != nullptr) terrainRegion_->release(layer, allocation);
   } else if(!terrainRegion_->upload(layer, allocation, mesh.vertices)) {
-   terrainRegion_->release(layer, allocation);
-   renderLayerEmpty[static_cast<std::size_t>(layer)] =
-       job.result.modLayers[static_cast<std::size_t>(layer)].empty();
+   success = false;
+   continue;
   }
+  renderLayerEmpty[static_cast<std::size_t>(layer)] = job.result.layerEmpty[static_cast<std::size_t>(layer)];
   // The arena owns the vertices now; hand the buffer back rather than letting the job
   // destructor free it on this thread.
   mesh.releaseCpuVertices();
  }
+ if(!success) return false;
  // Resolve block-entity positions against the live world and apply the same
  // joined/removed diff the old synchronous rebuild kept.
  const bool hadBlockEntities = !blockEntities_.empty();
@@ -446,6 +458,9 @@ void ChunkBuilder::uploadMesh(ChunkMeshJob& job) {
   }
  }
  built = true;
+ builtLod = job.lodLevel;
+ lodSavedVertices = job.lodSavedVertices;
+ return true;
 }
 void ChunkBuilder::freeGpuBuffers() noexcept {
  for(int layer = 0; layer < terrain_layer::Count; ++layer) {

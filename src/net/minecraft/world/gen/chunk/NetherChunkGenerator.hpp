@@ -50,7 +50,8 @@ class NetherChunkGenerator : public ChunkSource {
                                              chunkX,
                                              chunkZ,
                                              world_ != nullptr && world_->isLuaModGenerationEnabled(),
-                                             false};
+                                             false,
+                                             -1};
   world::gen::runVanillaStage(
       world::gen::ChunkStage::Terrain, context, [&] { buildTerrain(chunkX, chunkZ, chunk); });
   world::gen::runVanillaStage(
@@ -81,7 +82,8 @@ class NetherChunkGenerator : public ChunkSource {
                                              chunkX,
                                              chunkZ,
                                              world_ != nullptr && world_->isLuaModGenerationEnabled(),
-                                             false};
+                                             false,
+                                             -1};
   world::gen::runVanillaStage(world::gen::ChunkStage::Features, context, [&] {
    if(world_ == nullptr) {
     return;

@@ -73,12 +73,7 @@ const std::string& IncludeGraph::resolve(const std::string& path,
                                                 ? std::filesystem::path("shaders") / include.substr(1)
                                                 : std::filesystem::path(path).parent_path() / include;
   const std::string includeResolved = includePath.lexically_normal().generic_string();
-  const std::string& included = resolve(includeResolved, memo);
-  if(included.empty()) {
-   throw IncludeResolveError("missing or empty #include \"" + std::string(include) + "\" from " + path +
-                             " (resolved " + includeResolved + ")");
-  }
-  result += included;
+  result += resolve(includeResolved, memo);
  }
  stack_.pop_back();
  return memo.emplace(path, std::move(result)).first->second;

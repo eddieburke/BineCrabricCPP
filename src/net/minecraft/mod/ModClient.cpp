@@ -25,6 +25,9 @@ void registerDraw(int blockId, BlockWorldDraw world, BlockInvDraw inventory) {
   inventoryDraws()[blockId] = inventory;
  }
 }
+bool hasCustomWorldDraw(int blockId) {
+ return blockId >= 0 && blockId < block::Block::BLOCK_COUNT && worldDraws()[blockId] != nullptr;
+}
 bool drawBlockWorld(client::render::block::BlockRenderManager& manager, block::Block& block, int x, int y, int z) {
  if(block.id < 0 || block.id >= block::Block::BLOCK_COUNT) {
   return false;

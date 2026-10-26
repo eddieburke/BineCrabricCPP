@@ -8,6 +8,7 @@
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 #include "net/minecraft/util/CharacterUtils.hpp"
+#include "net/minecraft/world/World.hpp"
 namespace net::minecraft::client::gui::screen {
 void ChatScreen::init() {
  text_.clear();
@@ -35,6 +36,7 @@ void ChatScreen::sendCurrentText() {
  }
  net::minecraft::mod::ChatEvent event;
  event.world = minecraft()->world;
+ event.remote = minecraft()->world != nullptr && minecraft()->world->isRemote();
  event.message = trimmedText();
  if(event.message.empty()) {
   return;

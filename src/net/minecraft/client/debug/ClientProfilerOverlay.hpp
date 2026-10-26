@@ -14,7 +14,6 @@ class ClientProfilerOverlay {
  inline static std::array<std::int64_t, 512> tickTimes{};
  inline static int frameTimeIndex = 0;
  static void renderProfilerChart(Minecraft& client, std::int64_t tickTime);
- static void recordFrameTime(Minecraft& client);
  [[nodiscard]] static std::string getRenderChunkDebugInfo(const Minecraft& client);
  [[nodiscard]] static std::string getRenderEntityDebugInfo(const Minecraft& client);
  [[nodiscard]] static std::string getChunkSourceDebugInfo(const Minecraft& client);

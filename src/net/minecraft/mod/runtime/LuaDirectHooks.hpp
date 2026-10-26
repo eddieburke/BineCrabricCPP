@@ -110,6 +110,10 @@ struct FogSettingsEvent {
  float start = 0.2f;
  float end = 0.8f;
  float density = 0.1f;
+ bool customColor = false;
+ float red = 0.0f;
+ float green = 0.0f;
+ float blue = 0.0f;
 };
 struct ModelPartPose {
  float yaw = std::numeric_limits<float>::quiet_NaN();

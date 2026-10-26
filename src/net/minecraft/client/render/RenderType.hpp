@@ -65,7 +65,6 @@ class RenderType {
  }
  static RenderType& solid();
  static RenderType& cutout();
- static RenderType& cutoutInterior();
  static RenderType& translucent();
  static RenderType& gui();
  static RenderType& guiTextured();
@@ -77,6 +76,7 @@ class RenderType {
  static RenderType& block();
  static RenderType& blockTranslucent();
  static RenderType& particles();
+ static RenderType& particlesOpaque();
  static RenderType& particlesTranslucent();
  static RenderType& sky();
  static RenderType& skyTextured();

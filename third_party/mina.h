@@ -584,6 +584,15 @@ void mina_engine_set_load_deadline(mina_engine *e, mina_u32 milliseconds);
 /* ================================================================== */
 #ifdef MINA_IMPLEMENTATION
 
+#ifndef MINA_ENABLE_TELEMETRY
+#define MINA_ENABLE_TELEMETRY 1
+#endif
+#if MINA_ENABLE_TELEMETRY
+#define MINA_TRACK_TELEMETRY(statement) do { statement; } while (0)
+#else
+#define MINA_TRACK_TELEMETRY(statement) do {} while (0)
+#endif
+
 #if !defined(MINA_NO_STDIO)
 #include <stdio.h>
 #endif
@@ -10969,7 +10978,7 @@ int mina_engine_play_clip(mina_engine *e, const char *name, mina_clip *c,
         mina_voice_begin(e, v, name, p, volume, pitch);
         v->clip = mina_clip_retain(c);
     } else {
-        e->telemetry.rejected = mina_u64_add(e->telemetry.rejected, mina_u64_from(1));
+        MINA_TRACK_TELEMETRY(e->telemetry.rejected = mina_u64_add(e->telemetry.rejected, mina_u64_from(1)));
     }
     MINA_EUNLOCK(e);
     return v != NULL;
@@ -11022,7 +11031,7 @@ int mina_engine_play_stream(mina_engine *e, const char *name, mina_stream *s,
         ok = mina_voice_attach_stream(e, v, s);
     } else {
         mina_stream_close(s);
-        e->telemetry.rejected = mina_u64_add(e->telemetry.rejected, mina_u64_from(1));
+        MINA_TRACK_TELEMETRY(e->telemetry.rejected = mina_u64_add(e->telemetry.rejected, mina_u64_from(1)));
     }
     MINA_EUNLOCK(e);
     return ok;
@@ -11402,11 +11411,13 @@ mina_result mina_engine_pump(mina_engine *e) {
     if (!e->dev) return MINA_ERR_UNSUPPORTED;
     mina_engine_render(e, e->mixbuf, e->block);
     r = mina_device_write(e->dev, e->mixbuf, e->block);
+#if MINA_ENABLE_TELEMETRY
     if (r != MINA_OK) {
         MINA_ELOCK(e);
         e->telemetry.underruns = mina_u64_add(e->telemetry.underruns, mina_u64_from(1));
         MINA_EUNLOCK(e);
     }
+#endif
     return r;
 }
 
@@ -11486,11 +11497,11 @@ static mina_clip *mina_cache_get(mina_engine *e, const char *path) {
     for (i = 0; i < e->ncache; i++) {
         if (strcmp(e->cache[i].path, path) == 0) {
             e->cache[i].used = ++e->cache_clock;
-            e->telemetry.cache_hits = mina_u64_add(e->telemetry.cache_hits, mina_u64_from(1));
+            MINA_TRACK_TELEMETRY(e->telemetry.cache_hits = mina_u64_add(e->telemetry.cache_hits, mina_u64_from(1)));
             return mina_clip_retain(e->cache[i].c);
         }
     }
-    e->telemetry.cache_misses = mina_u64_add(e->telemetry.cache_misses, mina_u64_from(1));
+    MINA_TRACK_TELEMETRY(e->telemetry.cache_misses = mina_u64_add(e->telemetry.cache_misses, mina_u64_from(1)));
     return NULL;
 }
 
@@ -11571,9 +11582,11 @@ static void mina_engine_service(mina_engine *e, const mina_loadreq *rq) {
     mina_loader_fn fn;
     void *user;
     int live;
+#if MINA_ENABLE_TELEMETRY
     mina_u32 began = mina_now_ms();
     int expired = 0;
     int loaded = 0;
+#endif
 
     MINA_ELOCK(e);
     fn = e->loader;
@@ -11583,7 +11596,10 @@ static void mina_engine_service(mina_engine *e, const mina_loadreq *rq) {
     /* A short effect that waited out its deadline is dropped rather than
      * played late: a backlog should not come back as an echo. */
     if (live && e->deadline_ms && !rq->keep &&
-        (mina_u32)(mina_now_ms() - rq->queued) > e->deadline_ms) { live = 0; expired = 1; }
+        (mina_u32)(mina_now_ms() - rq->queued) > e->deadline_ms) {
+        live = 0;
+        MINA_TRACK_TELEMETRY(expired = 1);
+    }
     if (live && !rq->stream) c = mina_cache_get(e, rq->path);
     MINA_EUNLOCK(e);
 
@@ -11606,8 +11622,9 @@ static void mina_engine_service(mina_engine *e, const mina_loadreq *rq) {
         }
     }
     MINA_FREE(img);
-    loaded = c != NULL || st != NULL;
+    MINA_TRACK_TELEMETRY(loaded = c != NULL || st != NULL);
     mina_engine_attach(e, rq, c, st);
+#if MINA_ENABLE_TELEMETRY
     MINA_ELOCK(e);
     e->telemetry.loads = mina_u64_add(e->telemetry.loads, mina_u64_from(1));
     e->telemetry.load_milliseconds = mina_u64_add(e->telemetry.load_milliseconds,
@@ -11615,6 +11632,7 @@ static void mina_engine_service(mina_engine *e, const mina_loadreq *rq) {
     if (expired || (live && !loaded))
         e->telemetry.dropped = mina_u64_add(e->telemetry.dropped, mina_u64_from(1));
     MINA_EUNLOCK(e);
+#endif
 }
 
 /* ---- queueing ---- */
@@ -11626,26 +11644,26 @@ static int mina_engine_queue(mina_engine *e, const char *name, const char *path,
     mina_voice *v;
     mina_loadreq *rq;
     if (strlen(path) + 1 > MINA_PATH_MAX) {
-        e->telemetry.rejected = mina_u64_add(e->telemetry.rejected, mina_u64_from(1));
+        MINA_TRACK_TELEMETRY(e->telemetry.rejected = mina_u64_add(e->telemetry.rejected, mina_u64_from(1)));
         return 0;
     }
     if (e->lqn == e->lqcap) {
         mina_u32 ncap = e->lqcap ? e->lqcap * 2 : 64;
         mina_loadreq *q;
         if (ncap > 4096) {
-            e->telemetry.rejected = mina_u64_add(e->telemetry.rejected, mina_u64_from(1));
+            MINA_TRACK_TELEMETRY(e->telemetry.rejected = mina_u64_add(e->telemetry.rejected, mina_u64_from(1)));
             return 0;
         }
         q = (mina_loadreq *)MINA_REALLOC(e->lq, (size_t)ncap * sizeof(mina_loadreq));
         if (!q) {
-            e->telemetry.rejected = mina_u64_add(e->telemetry.rejected, mina_u64_from(1));
+            MINA_TRACK_TELEMETRY(e->telemetry.rejected = mina_u64_add(e->telemetry.rejected, mina_u64_from(1)));
             return 0;
         }
         e->lq = q; e->lqcap = ncap;
     }
     v = mina_engine_slot(e, name);
     if (!v) {
-        e->telemetry.rejected = mina_u64_add(e->telemetry.rejected, mina_u64_from(1));
+        MINA_TRACK_TELEMETRY(e->telemetry.rejected = mina_u64_add(e->telemetry.rejected, mina_u64_from(1)));
         return 0;
     }
     mina_voice_begin(e, v, name, p, volume, pitch);
@@ -11705,7 +11723,7 @@ MINA_THREADFN(mina_engine_mix_thread, arg) {
         if (mina_device_write(e->dev, e->mixbuf, e->block) != MINA_OK) {
             MINA_ELOCK(e);
             e->dev_failed = 1;
-            e->telemetry.underruns = mina_u64_add(e->telemetry.underruns, mina_u64_from(1));
+            MINA_TRACK_TELEMETRY(e->telemetry.underruns = mina_u64_add(e->telemetry.underruns, mina_u64_from(1)));
             MINA_EUNLOCK(e);
             break;
         }
@@ -11801,6 +11819,7 @@ int mina_engine_reopen_output(mina_engine *e, const char *backend, const char *i
     if (restart && !mina_engine_start(e)) return 0;
     return mina_engine_is_real(e) ? 1 : 0;
 }
+#undef MINA_TRACK_TELEMETRY
 #endif /* MINA_IMPLEMENTATION */
 
 #ifdef __cplusplus

@@ -34,6 +34,10 @@ struct TessellatorMesh {
  [[nodiscard]] bool empty() const noexcept {
   return vertexCount_ == 0;
  }
+ void resizeCpuVertices(std::size_t count) {
+  vertices.resize(count);
+  vertexCount_ = count;
+ }
  [[nodiscard]] std::size_t vertexCount() const noexcept { return vertexCount_; }
  [[nodiscard]] bool uploadToGpu();
  void releaseCpuVertices();
@@ -107,6 +111,9 @@ public:
  }
  [[nodiscard]] bool drawing() const noexcept {
   return drawing_;
+ }
+ [[nodiscard]] std::size_t capturedVertexCount() const noexcept {
+  return builder_.vertexCount();
  }
 
  private:

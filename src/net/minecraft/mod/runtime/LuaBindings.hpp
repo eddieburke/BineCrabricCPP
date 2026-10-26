@@ -7,6 +7,7 @@ void installItemApi(lua_State* state, ModHost::LoadedLuaMod& mod);
 void installRecipeApi(lua_State* state, ModHost::LoadedLuaMod& mod);
 void installCoreApi(lua_State* state, ModHost::LoadedLuaMod& mod);
 void installWorldApi(lua_State* state, ModHost::LoadedLuaMod& mod);
+void installSeedApi(lua_State* state, ModHost::LoadedLuaMod& mod);
 void pushChunkObject(lua_State* state);
 #ifdef MINECRAFT_NATIVE_EXPORTS
 void installTextureApi(lua_State* state);

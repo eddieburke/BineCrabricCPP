@@ -254,6 +254,9 @@ void ModSettingsRegistry::markKeyPressed(int keyCode) {
   pendingKeys_.insert(keyCode);
  }
 }
+void ModSettingsRegistry::clearPendingKeys() {
+ pendingKeys_.clear();
+}
 bool ModSettingsRegistry::consumeKeybind(const std::string& id) {
  const auto* kb = findKeybind(id);
  if(kb != nullptr && kb->currentKeyCode != 0) {

@@ -24,6 +24,8 @@ For textures to load:
 
 ### Lua Modding Engine
 
+See the [complete Lua mod documentation and small-model agent prompt](docs/modding/AGENT_PROMPT.md).
+
 A full **Lua 5.4 scripting runtime** embedded into the game, letting mods register custom:
 - Blocks, items, entities, crafting recipes
 - GUI screens, inventory interactions

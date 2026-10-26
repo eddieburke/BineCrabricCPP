@@ -27,6 +27,7 @@ struct DimensionType {
  bool hasGround = true;
  bool hasWorldSpawn = true;
  bool hasBackgroundColor = true;
+ bool usesTerrainStyle = false;
  bool fixedTime = false;
  float fixedTimeOfDay = 0.0f;
  float brightnessFactor = 0.05f;

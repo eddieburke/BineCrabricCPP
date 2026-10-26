@@ -92,7 +92,9 @@ class Connection {
    std::deque<std::unique_ptr<Packet>> delayedSendQueue_;
    std::atomic<std::size_t> sendQueueSize_{0};
    std::atomic<std::size_t> readQueueSize_{0};
+#if MINECRAFT_ENABLE_PROFILING
    std::vector<std::pair<int, int>> readStats_;
+#endif
    std::optional<DrainLimit> externalDrainLimit_;
    std::thread reader_;
    std::thread writer_;

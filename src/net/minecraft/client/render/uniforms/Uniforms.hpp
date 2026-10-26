@@ -20,6 +20,12 @@ struct PackUniformValues {
  // see FrameRenderCamera for why the two are not the same number.
  float farPlane = 256.0f;
  float renderDistanceBlocks = 256.0f;
+ int dhRenderDistance = 0;
+ float dhNearPlane = 0.0f;
+ float dhFarPlane = 0.0f;
+ float dhProjection[16] = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+ float dhProjectionInverse[16] = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+ float dhPreviousProjection[16] = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
  float shadowMapResolution = 0.0f;
  // --- CameraUniforms: camera positions ---
  float cameraPosition[3] = {0.0f, 0.0f, 0.0f};
@@ -153,8 +159,8 @@ struct PackUniformValues {
  int currentRenderedItemId = -1;
  int currentSelectedBlockId = 0;
  float currentSelectedBlockPos[3] = {-256.0f, -256.0f, -256.0f};
- int heldItemId = 0;
- int heldItemId2 = 0;
+ int heldItemId = -1;
+ int heldItemId2 = -1;
  int heldBlockLightValue = 0;
  int heldBlockLightValue2 = 0;
  int handLightPackedLR = 0;

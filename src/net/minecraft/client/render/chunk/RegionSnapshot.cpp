@@ -6,6 +6,7 @@
 #include <thread>
 #include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/block/material/Material.hpp"
+#include "net/minecraft/util/diagnostics/Instrumentation.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
 namespace net::minecraft::client::render::chunk {
 namespace {
@@ -20,7 +21,9 @@ struct PooledBuffer {
 constexpr std::size_t kMaxPooledBuffers = 32;
 std::mutex gPoolMutex;
 std::vector<PooledBuffer> gPooledBuffers;
+#if MINECRAFT_ENABLE_PROFILING
 std::atomic<std::uint64_t> gLockedCaptures{0};
+#endif
 [[nodiscard]] PooledBuffer acquireSnapshotBuffer(std::size_t wanted) {
  {
   const std::lock_guard<std::mutex> guard(gPoolMutex);
@@ -117,7 +120,9 @@ void captureChunkRect(const Chunk& chunk, CopyRect&& copyRect) {
    return;
   }
  }
+#if MINECRAFT_ENABLE_PROFILING
  gLockedCaptures.fetch_add(1, std::memory_order_relaxed);
+#endif
  const Chunk::RenderWriteGuard guard(chunk);
  copyRect();
 }
@@ -207,7 +212,11 @@ RegionSnapshot::RegionSnapshot(std::span<const SourceChunk> sourceChunks,
  biomeSource_ = std::move(biomeSource);
 }
 std::uint64_t RegionSnapshot::lockedCaptureCount() noexcept {
+#if MINECRAFT_ENABLE_PROFILING
  return gLockedCaptures.load(std::memory_order_relaxed);
+#else
+ return 0;
+#endif
 }
 RegionSnapshot::~RegionSnapshot() {
  releaseSnapshotBuffer({std::move(buffer_), bufferCapacity_});
@@ -308,23 +317,19 @@ int RegionSnapshot::getRawBrightness(int x, int y, int z, bool useNeighborLight)
  }
  return sky < 0 ? 0 : sky;
 }
-int RegionSnapshot::getBlockLight(const int x, const int y, const int z) const {
+int RegionSnapshot::getBlockLight(const int x, int y, const int z) const {
+ y = std::clamp(y, 0, Chunk::height - 1);
  const int column = columnIndex(x, z);
  if(column < 0 || !containsY(y)) {
   return 0;
  }
  return nibbleAt(blockLight_, column, y);
 }
-int RegionSnapshot::getSkyLight(const int x, const int y, const int z) const {
- if(y < 0) {
-  return 0;
- }
+int RegionSnapshot::getSkyLight(const int x, int y, const int z) const {
+ y = std::clamp(y, 0, Chunk::height - 1);
  const int column = columnIndex(x, z);
- if(y >= Chunk::height) {
-  return 15;
- }
  if(column < 0 || !containsY(y)) {
-  return 15;
+  return 0;
  }
  const int sky = nibbleAt(skyLight_, column, y);
  if(sky > 0) {

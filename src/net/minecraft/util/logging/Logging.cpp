@@ -149,23 +149,33 @@ void LogDispatcher::shutdown() {
  }
 }
 void LogDispatcher::enqueue(Logger* logger, LogRecord record) {
+#if MINECRAFT_ENABLE_PROFILING
  const auto enqueueStart = std::chrono::steady_clock::now();
+#endif
  record.logger = logger;
  std::lock_guard<std::mutex> lock(mutex_);
+#if MINECRAFT_ENABLE_PROFILING
  ++enqueued_;
+#endif
  if(queue_.size() >= kMaxQueued) {
   queue_.pop_front();
+#if MINECRAFT_ENABLE_PROFILING
   ++dropped_;
+#endif
  }
  const bool wakeWriter = queue_.empty();
  queue_.push_back(std::move(record));
+#if MINECRAFT_ENABLE_PROFILING
  maxQueueDepth_ = std::max(maxQueueDepth_, queue_.size());
+#endif
  if(wakeWriter && running_) {
   cv_.notify_one();
  }
+#if MINECRAFT_ENABLE_PROFILING
  enqueueCpuNanos_ += static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                                     std::chrono::steady_clock::now() - enqueueStart)
                                                     .count());
+#endif
 }
 LogDispatcherStats LogDispatcher::stats() const {
  std::lock_guard<std::mutex> lock(mutex_);
@@ -179,14 +189,20 @@ void LogDispatcher::writerMain() {
    LogRecord record = std::move(queue_.front());
    queue_.pop_front();
    lock.unlock();
+#if MINECRAFT_ENABLE_PROFILING
    const auto writeStart = std::chrono::steady_clock::now();
+#endif
    record.logger->publish(record);
+#if MINECRAFT_ENABLE_PROFILING
    const auto writeNanos = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                                           std::chrono::steady_clock::now() - writeStart)
                                                           .count());
+#endif
    lock.lock();
+#if MINECRAFT_ENABLE_PROFILING
    writerCpuNanos_ += writeNanos;
    ++written_;
+#endif
   }
   if(!running_) {
    break;

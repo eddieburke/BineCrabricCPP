@@ -43,8 +43,8 @@ TEST(RegionSnapshotLight, PreservesMissingChunksNegativeCoordinatesAndWorldBound
   int x, y, z, block, sky;
  };
  constexpr Sample samples[] = {
-     {0, 64, 0, 0, 0}, {-1, -1, -1, 0, 0}, {-1, 128, -1, 0, 15},
-     {1, 64, 1, 0, 15}, {-1, 0, -1, 0, 0}, {-1, 127, -1, 0, 0}};
+     {0, 64, 0, 0, 0}, {-1, -1, -1, 0, 0}, {-1, 128, -1, 0, 0},
+     {1, 64, 1, 0, 0}, {-1, 0, -1, 0, 0}, {-1, 127, -1, 0, 0}};
  for(const Sample& sample : samples) {
   int block = -1;
   int sky = -1;

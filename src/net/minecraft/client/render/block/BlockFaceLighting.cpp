@@ -66,13 +66,10 @@ FaceNeighbourhood sampleFaceNeighbourhood(BlockRenderContext& ctx, const FaceAxe
  }
  return out;
 }
-// Vanilla's corner average: a zero channel means "no light recorded there", which
-// reads as the face cell's own value rather than as darkness.
-float averageCornerChannel(int diagonal, int side, int other, int center) {
- if(diagonal == 0) diagonal = center;
- if(side == 0) side = center;
- if(other == 0) other = center;
- return static_cast<float>(diagonal + side + other + center) / 4.0f;
+// see net/minecraft/client/renderer/block/ModelBlockRenderer.java blend(): a cell whose packed
+// light is zero reads as the face cell, both channels together.
+const FaceNeighbourhood::Cell& litOrCenter(const FaceNeighbourhood::Cell& cell, const FaceNeighbourhood::Cell& center) {
+ return cell.blockLight == 0 && cell.skyLight == 0 ? center : cell;
 }
 } // namespace
 FaceCornerSamples sampleCubeFaceCorners(BlockRenderContext& ctx, int face, int faceX, int faceY, int faceZ) {
@@ -95,9 +92,11 @@ FaceCornerSamples sampleCubeFaceCorners(BlockRenderContext& ctx, int face, int f
    const bool closed = !(side.transmitsLight || other.transmitsLight);
    const FaceNeighbourhood::Cell& diagonal = closed ? side : neighbourhood.at(du, dv);
    CornerSample& corner = out.corners[uHigh][vHigh];
-   corner.blockLight =
-       averageCornerChannel(diagonal.blockLight, side.blockLight, other.blockLight, center.blockLight);
-   corner.skyLight = averageCornerChannel(diagonal.skyLight, side.skyLight, other.skyLight, center.skyLight);
+   const FaceNeighbourhood::Cell& d = litOrCenter(diagonal, center);
+   const FaceNeighbourhood::Cell& s = litOrCenter(side, center);
+   const FaceNeighbourhood::Cell& o = litOrCenter(other, center);
+   corner.blockLight = static_cast<float>(d.blockLight + s.blockLight + o.blockLight + center.blockLight) / 4.0f;
+   corner.skyLight = static_cast<float>(d.skyLight + s.skyLight + o.skyLight + center.skyLight) / 4.0f;
    corner.occlusion = (diagonal.occlusion + side.occlusion + other.occlusion + center.occlusion) / 4.0f;
   }
  }

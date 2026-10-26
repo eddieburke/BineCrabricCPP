@@ -5,6 +5,7 @@
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/render/GameRenderer.hpp"
+#include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/util/logging/Logging.hpp"
@@ -75,7 +76,12 @@ void RenderType::setupRenderState() const {
   core::disableDepthTest();
  }
  core::depthMask(state_.depthWrite);
- if(state_.cull) {
+ // see third_party/iris/common/src/main/java/net/irisshaders/iris/shadows/ShadowRenderer.java:501
+ const bool shadowTerrain = core::cameraFrame().shadowPass && worldProgram_.has_value() &&
+                            (*worldProgram_ == WorldProgramId::TerrainSolid ||
+                             *worldProgram_ == WorldProgramId::TerrainCutout ||
+                             *worldProgram_ == WorldProgramId::TerrainTranslucent);
+ if(state_.cull && !shadowTerrain) {
   core::enableCull();
   core::cullFace(state_.cullMode);
  } else {
@@ -157,18 +163,6 @@ RenderType::State cutoutState() {
  s.alphaRef = 0.5f;
  return s;
 }
-// Leaf-blob interiors: cutout with culling off. This is the one terrain layer
-// that wants it, because each leaf<->leaf boundary contributes a single quad
-// (LeafInteriorFaces.hpp) that has to be visible from both sides. Nothing in
-// this layer is coincident with anything, so rasterising both windings cannot
-// Z-fight. Everything above about back faces reaching the pack with an inverted
-// normal and tangent handedness does apply here - it is the price of one quad
-// per boundary instead of a coplanar pair.
-RenderType::State cutoutInteriorState() {
- RenderType::State s = cutoutState();
- s.cull = false;
- return s;
-}
 RenderType::State translucentState() {
  RenderType::State s{};
  s.blend = true;
@@ -207,6 +201,16 @@ RenderType::State damagedBlockState() {
  s.blend = true;
  s.depthTest = true;
  s.depthWrite = false;
+ s.cull = false;
+ s.alphaTest = true;
+ s.alphaRef = 0.1f;
+ return s;
+}
+// see third_party/iris/common/src/main/java/net/irisshaders/iris/pipeline/IrisPipelines.java:47 (OPAQUE_PARTICLE)
+RenderType::State particlesOpaqueState() {
+ RenderType::State s{};
+ s.depthTest = true;
+ s.depthWrite = true;
  s.cull = false;
  s.alphaTest = true;
  s.alphaRef = 0.1f;
@@ -291,13 +295,6 @@ RenderType& RenderType::cutout() {
       RenderType("cutout", 0x0004, true, "", cutoutState(), WorldProgramId::TerrainCutout);
  return instance;
 }
-RenderType& RenderType::cutoutInterior() {
- // Same program key as cutout(): to a pack this is still gbuffers_terrain
- // cutout geometry, and it must not need a program of its own.
- static RenderType instance =
-      RenderType("cutout_interior", 0x0004, true, "", cutoutInteriorState(), WorldProgramId::TerrainCutout);
- return instance;
-}
 RenderType& RenderType::translucent() {
  static RenderType instance =
       RenderType("translucent", 0x0004, true, "", terrainTranslucentState(), WorldProgramId::TerrainTranslucent);
@@ -371,6 +368,11 @@ RenderType& RenderType::blockTranslucent() {
 RenderType& RenderType::particles() {
  static RenderType instance =
       RenderType("particles", 0x0004, true, "", entityCutoutState(), WorldProgramId::Particles);
+ return instance;
+}
+RenderType& RenderType::particlesOpaque() {
+ static RenderType instance =
+      RenderType("particles_opaque", 0x0004, true, "", particlesOpaqueState(), WorldProgramId::Particles);
  return instance;
 }
 RenderType& RenderType::particlesTranslucent() {

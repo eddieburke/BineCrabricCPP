@@ -262,7 +262,7 @@ void ChunkCache::requestChunkAsync(int chunkX, int chunkZ, int priority) {
          priority);
 }
 void ChunkCache::integrateFinishedLoads(int budget, std::int64_t timeBudgetNs) {
- const auto start = std::chrono::steady_clock::now();
+ const auto start = timeBudgetNs >= 0 ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
  struct Candidate {
   std::shared_ptr<PendingLoad> load;
   int distance = 0;

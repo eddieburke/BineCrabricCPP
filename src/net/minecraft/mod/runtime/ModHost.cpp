@@ -65,6 +65,7 @@ void installMinecraftTable(lua_State* state, ModHost::LoadedLuaMod& mod) {
  setField(state, "mod_id", mod.modId);
  installCoreApi(state, mod);
  installWorldApi(state, mod);
+ installSeedApi(state, mod);
  installEntityApi(state, mod);
  installBlockApi(state, mod);
  installItemApi(state, mod);

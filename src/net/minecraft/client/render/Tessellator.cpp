@@ -46,6 +46,8 @@ void fillUnsetAttribs(TessellatorVertex* vertices, std::size_t count, const math
 namespace {
 std::mutex g_vertexPoolMutex;
 std::vector<std::vector<TessellatorVertex>> g_vertexPool;
+std::size_t g_vertexPoolBytes = 0;
+constexpr std::size_t kVertexPoolMaxBytes = 64u * 1024u * 1024u;
 // A section mesh is bounded, so a buffer is always worth keeping; the cap only stops the
 // pool growing without bound when uploads outpace captures.
 constexpr std::size_t kVertexPoolMax = 256;
@@ -56,6 +58,7 @@ std::vector<TessellatorVertex> VertexBufferPool::acquire() {
   return {};
  }
  std::vector<TessellatorVertex> buffer = std::move(g_vertexPool.back());
+ g_vertexPoolBytes -= buffer.capacity() * sizeof(TessellatorVertex);
  g_vertexPool.pop_back();
  buffer.clear();
  return buffer;
@@ -65,10 +68,12 @@ void VertexBufferPool::release(std::vector<TessellatorVertex>&& buffer) {
   return;
  }
  const std::lock_guard<std::mutex> guard(g_vertexPoolMutex);
- if(g_vertexPool.size() >= kVertexPoolMax) {
+ const std::size_t bytes = buffer.capacity() * sizeof(TessellatorVertex);
+ if(g_vertexPool.size() >= kVertexPoolMax || bytes > kVertexPoolMaxBytes - g_vertexPoolBytes) {
   return;
  }
  buffer.clear();
+ g_vertexPoolBytes += bytes;
  g_vertexPool.push_back(std::move(buffer));
 }
 TessellatorMesh::TessellatorMesh(const TessellatorMesh& other)

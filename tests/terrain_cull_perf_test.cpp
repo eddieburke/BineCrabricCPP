@@ -80,7 +80,7 @@ std::unique_ptr<SectionWorld> buildSectionWorld(double openness, bool scattered 
                                                   sectionY * kSectionBlocks, sectionZ * kSectionBlocks);
     ChunkBuilder* raw = section.get();
     raw->built = true;
-    raw->renderLayerEmpty = {false, true, true, true};
+    raw->renderLayerEmpty = {false, true, true};
     // Only the solid layer carries geometry, as in the benchmark world the mesher
     // produces: WorldRenderer's draw-list build still reads all four.
     raw->terrainAllocations_[0].capacityVertices = 4096;

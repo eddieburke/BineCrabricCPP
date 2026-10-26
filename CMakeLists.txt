@@ -316,6 +316,8 @@ list(FILTER MINECRAFT_SERVER_MOD_SOURCES EXCLUDE REGEX
 
 add_subdirectory(mods)
 
+option(MINECRAFT_ENABLE_PROFILING "Enable runtime profiling counters and diagnostics outside Debug builds" OFF)
+
 function(minecraft_configure_target target)
     target_include_directories(${target} PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -325,6 +327,7 @@ function(minecraft_configure_target target)
     )
     target_compile_definitions(${target} PRIVATE
         "$<$<COMPILE_LANGUAGE:CXX>:MINECRAFT_NATIVE_SOURCE_DIR=\"${MINECRAFT_NATIVE_SOURCE_DIR}\">"
+        "MINECRAFT_ENABLE_PROFILING=$<IF:$<OR:$<CONFIG:Debug>,$<BOOL:${MINECRAFT_ENABLE_PROFILING}>>,1,0>"
     )
     if (MSVC)
         target_compile_options(${target} PRIVATE /W4 /wd4996)

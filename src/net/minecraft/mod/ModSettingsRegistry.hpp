@@ -53,6 +53,7 @@ class ModSettingsRegistry {
  void setBoolValue(const std::string& modId, const std::string& key, bool value);
  void setOptionValue(const std::string& modId, const std::string& key, const std::string& value);
  void markKeyPressed(int keyCode);
+ void clearPendingKeys();
  bool consumeKeybind(const std::string& id);
 
  private:

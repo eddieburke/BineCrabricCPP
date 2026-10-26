@@ -8,9 +8,13 @@ uniform vec3 chunkOffset;
 // ShaderDoc: fogColor / skyColor are vec3.
 uniform vec3 fogColor;
 uniform float fogDensity;
-uniform float fogStart;
-uniform float fogEnd;
+// Beta's own fog range. Iris `fogStart`/`fogEnd` carry environmental fog only, which
+// Beta does not have in clear air (see RenderCore.cpp fogApplyMode).
+uniform float betaFogStart;
+uniform float betaFogEnd;
 uniform int fogMode;
+uniform int fogShape;
+uniform bool customFog;
 // Zero when the engine has the alpha test off, so a program can always compare
 // against it — Iris has no "is the test enabled" uniform.
 uniform float alphaTestRef;
@@ -21,12 +25,15 @@ uniform float alphaTestRef;
 // Not modern Minecraft's fogShape sphere/cylinder either — b1.7.3 predates both, and
 // cylinder still inflates the corner by 1.59x.
 float fogCoord(vec3 viewPosition) {
+ if(customFog) {
+  return fogShape == 0 ? length(viewPosition) : max(length(viewPosition.xz), abs(viewPosition.y));
+ }
  return abs(viewPosition.z);
 }
 
 // GL_LINEAR / GL_EXP2 as the GL fog-mode constants. fogMode 0 disables fog.
 float fogFactor(float viewDistance) {
- if(fogMode == 9729) return clamp((fogEnd - viewDistance) / max(fogEnd - fogStart, 0.0001), 0.0, 1.0);
+ if(fogMode == 9729) return clamp((betaFogEnd - viewDistance) / max(betaFogEnd - betaFogStart, 0.0001), 0.0, 1.0);
  if(fogMode == 2049) {
   float scaled = fogDensity * viewDistance;
   return clamp(exp(-scaled * scaled), 0.0, 1.0);

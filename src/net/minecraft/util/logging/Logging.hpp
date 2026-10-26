@@ -11,6 +11,7 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include "net/minecraft/util/diagnostics/Instrumentation.hpp"
 namespace net::minecraft::util::logging {
 enum class LogLevel {
  Finest,

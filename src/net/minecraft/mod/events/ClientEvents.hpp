@@ -46,6 +46,7 @@ struct ChatEvent {
  World* world = nullptr;
  std::string message;
  bool canceled = false;
+ bool remote = false;
 };
 struct ScreenGuiEvent {
  client::gui::screen::Screen* screen = nullptr;

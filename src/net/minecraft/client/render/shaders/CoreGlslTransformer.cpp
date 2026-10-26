@@ -52,6 +52,91 @@ constexpr std::array kVertexAttributes = {
     SourceDeclaration{"in", "vec2", "vaUV2"},
     SourceDeclaration{"in", "vec4", "vaColor"},
     SourceDeclaration{"in", "vec3", "vaNormal"}};
+constexpr std::array kDistantMatrixUniforms = {
+    SourceDeclaration{"uniform", "mat4", "iris_ModelViewMatrix"},
+    SourceDeclaration{"uniform", "mat4", "iris_ModelViewMatrixInverse"},
+    SourceDeclaration{"uniform", "mat4", "iris_ProjectionMatrix"},
+    SourceDeclaration{"uniform", "mat4", "iris_ProjectionMatrixInverse"},
+    SourceDeclaration{"uniform", "mat3", "iris_NormalMatrix"}};
+bool isDistantProgramName(std::string_view programName) {
+ return programName.starts_with("dh_");
+}
+const std::vector<TokenReplacement>& distantMatrixReplacements() {
+ static const std::vector<TokenReplacement> replacements = {
+     {"gl_ModelViewMatrixInverse", "iris_ModelViewMatrixInverse"},
+     {"gl_ProjectionMatrixInverse", "iris_ProjectionMatrixInverse"},
+     {"gl_ModelViewMatrix", "iris_ModelViewMatrix"},
+     {"gl_ProjectionMatrix", "iris_ProjectionMatrix"},
+     {"gl_NormalMatrix", "iris_NormalMatrix"}};
+ return replacements;
+}
+void declareDistantMatrices(std::string& source) {
+ std::string declarations;
+ appendMissingDeclarations(declarations, source, codeMask(source), kDistantMatrixUniforms);
+ if(!declarations.empty()) source.insert(sourceDeclarationOffset(source), declarations);
+}
+void lowerDistantNonVertexSource(std::string& source) {
+ replaceAllTokens(source, distantMatrixReplacements());
+ declareDistantMatrices(source);
+}
+// see third_party/iris/common/src/main/java/net/irisshaders/iris/pipeline/transform/transformer/DHTerrainTransformer.java
+std::string lowerDistantVertexSource(std::string source) {
+ const std::string position = "vec4(modelOffset + _vert_position, 1.0)";
+ std::vector<TokenReplacement> replacements = {
+     {"ftransform()", "(iris_ProjectionMatrix * iris_ModelViewMatrix * " + position + ")"},
+     {"gl_Vertex", position},
+     {"gl_ModelViewProjectionMatrix", "(iris_ProjectionMatrix * iris_ModelViewMatrix)"}};
+ for(int unit = 0; unit < 8; ++unit)
+  replacements.push_back({"gl_TextureMatrix[" + std::to_string(unit) + "]", "mat4(1.0)"});
+ replacements.push_back({"gl_MultiTexCoord0", "vec4(0.0, 0.0, 0.0, 1.0)"});
+ replacements.push_back({"gl_MultiTexCoord1", "vec4(_vert_tex_light_coord, 0.0, 1.0)"});
+ replacements.push_back({"gl_MultiTexCoord2", "vec4(_vert_tex_light_coord, 0.0, 1.0)"});
+ for(int unit = 3; unit < 8; ++unit)
+  replacements.push_back({"gl_MultiTexCoord" + std::to_string(unit), "vec4(0.0, 0.0, 0.0, 1.0)"});
+ replacements.push_back({"gl_Color", "_vert_color"});
+ replacements.push_back({"gl_Normal", "_vert_normal"});
+ replaceAllTokens(source, replacements);
+ replaceAllTokens(source, distantMatrixReplacements());
+ const CodeMask mask = codeMask(source);
+ std::string declarations;
+ const auto declareIn = [&](std::string_view location, std::string_view type, std::string_view name) {
+  if(!hasStorageDeclaration(source, mask, "in", name))
+   declarations += "layout(location = " + std::string(location) + ") in " + std::string(type) + " " +
+                   std::string(name) + ";\n";
+ };
+ declareIn("0", "uvec4", "vPosition");
+ declareIn("1", "vec4", "iris_color");
+ declareIn("2", "uvec4", "irisExtra");
+ appendMissingDeclarations(declarations, source, mask, kDistantMatrixUniforms);
+ if(!hasStorageDeclaration(source, mask, "uniform", "mircoOffset")) declarations += "uniform float mircoOffset;\n";
+ if(!hasStorageDeclaration(source, mask, "uniform", "modelOffset")) declarations += "uniform vec3 modelOffset;\n";
+ declarations +=
+     "vec3 _vert_position;\n"
+     "vec2 _vert_tex_light_coord;\n"
+     "int dhMaterialId;\n"
+     "vec4 _vert_color;\n"
+     "vec3 _vert_normal;\n"
+     "const vec3 irisNormals[6] = vec3[](vec3(0,-1,0),vec3(0,1,0),vec3(0,0,-1),vec3(0,0,1),vec3(-1,0,0),vec3(1,0,0));\n"
+     "void _vert_init() {\n"
+     " uint meta = vPosition.a;\n"
+     " uint mirco = (meta & 0xFF00u) >> 8u;\n"
+     " float mx = (mirco & 1u) != 0u ? mircoOffset : 0.0;\n"
+     " mx = (mirco & 2u) != 0u ? -mx : mx;\n"
+     " float my = (mirco & 4u) != 0u ? mircoOffset : 0.0;\n"
+     " my = (mirco & 8u) != 0u ? -my : my;\n"
+     " float mz = (mirco & 16u) != 0u ? mircoOffset : 0.0;\n"
+     " mz = (mirco & 32u) != 0u ? -mz : mz;\n"
+     " uint lights = meta & 0xFFu;\n"
+     " _vert_position = (vec3(vPosition.xyz) + vec3(mx, 0, mz));\n"
+     " _vert_normal = irisNormals[irisExtra.y];\n"
+     " dhMaterialId = int(irisExtra.x);\n"
+     " _vert_tex_light_coord = vec2((float(lights / 16u) + 0.5) / 16.0, (mod(float(lights), 16.0) + 0.5) / 16.0);\n"
+     " _vert_color = iris_color;\n"
+     "}\n";
+ source.insert(sourceDeclarationOffset(source), declarations);
+ prependToMainBody(source, "\n _vert_init();\n");
+ return source;
+}
 bool isGbufferOrShadowProgramName(const std::string& programName) {
  const std::string_view name = programName;
  return name.starts_with("gbuffers_") || name.starts_with("clrwl_gbuffers") || name == "shadow" ||
@@ -94,6 +179,8 @@ std::string injectChunkFadeAttribute(const std::string& programName,
  return source;
 }
 std::string lowerVertexSource(const std::string& programName, std::string source) {
+ const bool distant = isDistantProgramName(programName);
+ if(distant) source = lowerDistantVertexSource(std::move(source));
  const bool gbufferOrShadow = isGbufferOrShadowProgramName(programName);
  const bool hasLegacy = source.find("ftransform") != std::string::npos ||
                         source.find("gl_Vertex") != std::string::npos ||
@@ -103,7 +190,7 @@ std::string lowerVertexSource(const std::string& programName, std::string source
                         source.find("gl_ModelView") != std::string::npos ||
                         source.find("gl_Projection") != std::string::npos ||
                         source.find("gl_TextureMatrix") != std::string::npos;
- if(hasLegacy) {
+ if(hasLegacy && !distant) {
   const std::string position = gbufferOrShadow ? "vaPosition + chunkOffset" : "vaPosition";
   const std::vector<TokenReplacement> replacements = {
       {"ftransform()", "(projectionMatrix * modelViewMatrix * vec4(" + position + ", 1.0))"},
@@ -132,10 +219,12 @@ std::string lowerVertexSource(const std::string& programName, std::string source
   source.erase(at, 6);
  }
  std::string declarations; const CodeMask mask = codeMask(source);
- appendMissingDeclarations(declarations, source, mask, kVertexAttributes);
- appendMissingDeclarations(declarations, source, mask, kCompositeUniforms);
- if(gbufferOrShadow) appendMissingDeclarations(declarations, source, mask, kGbufferUniforms);
- patchMultiTexCoord3(source, declarations, mask);
+ if(!distant) {
+  appendMissingDeclarations(declarations, source, mask, kVertexAttributes);
+  appendMissingDeclarations(declarations, source, mask, kCompositeUniforms);
+  if(gbufferOrShadow) appendMissingDeclarations(declarations, source, mask, kGbufferUniforms);
+  patchMultiTexCoord3(source, declarations, mask);
+ }
  if(referencesToken(source, "iris_lightmapTextureMatrix") &&
     !hasStorageDeclaration(source, "const", "iris_lightmapTextureMatrix")) {
   declarations += GlslSnippets::get("iris_lightmap_matrix");
@@ -479,6 +568,7 @@ std::string canonicalizeVertex(const std::string& programName,
  return injectChunkFadeAttribute(programName, pack, lowerVertexSource(programName, std::move(source)));
 }
 std::string canonicalizeFragment(const std::string& programName, const PackDefinition& pack, std::string source) {
+ if(isDistantProgramName(programName)) lowerDistantNonVertexSource(source);
  const bool legacyOutput = referencesToken(source, "gl_FragData") || referencesToken(source, "gl_FragColor");
  replaceAllToken(source, "subgroupAll(will_discard)", "will_discard");
  if(referencesToken(source, "gl_FogFragCoord")) {
@@ -546,7 +636,10 @@ std::string canonicalizeCoreSource(const std::string& programName,
   patchEntityInputs(source, stage, context);
   return canonicalizeFragment(programName, pack, std::move(source));
  }
- if(stage != ShaderStage::Compute) patchEntityInputs(source, stage, context);
+ if(stage != ShaderStage::Compute) {
+  if(isDistantProgramName(programName)) lowerDistantNonVertexSource(source);
+  patchEntityInputs(source, stage, context);
+ }
  return source;
 }
 } // namespace net::minecraft::client::render

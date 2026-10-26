@@ -17,6 +17,11 @@ function settings_screen.register(spec)
       toggle.kind = "toggle"
       all[#all + 1] = toggle
     end
+    local cycles = type(spec.cycles) == "function" and spec.cycles() or spec.cycles
+    for _, cycle in ipairs(cycles or {}) do
+      cycle.kind = "cycle"
+      all[#all + 1] = cycle
+    end
     ui.width, ui.height = width, height
     local y0 = 44
     local rows = math.max(1, math.floor((height - y0 - 64) / 24))
@@ -91,17 +96,20 @@ function settings_screen.register(spec)
     elseif event.phase == "render" then
       if ui.drag then set_slider(ui.drag, event.mouse_x) end
       if ui.pages > 1 then
-        minecraft.gui.draw_centered_text(event.width / 2, 32,
+        minecraft.gui.draw_centered_text(0, 32, event.width,
           "Page " .. tostring(ui.page) .. " / " .. tostring(ui.pages), 0xFFA0A0A0)
       end
       local current = values()
       for _, control in ipairs(ui.controls) do
-        local value = current[control.key]
+        local value = control.key and current[control.key]
         if control.kind == "slider" then
           local normalized = (value - control.min) / (control.max - control.min)
           local label = control.format and control.format(value) or ((control.label or control.key) .. ": " .. tostring(value))
           minecraft.gui.draw_slider({ x = control.x, y = control.y, width = control.w, height = control.h,
             value = normalized, text = label, mouse_x = event.mouse_x, mouse_y = event.mouse_y })
+        elseif control.kind == "cycle" then
+          minecraft.gui.draw_button({ x = control.x, y = control.y, width = control.w, height = control.h,
+            text = control.label(), mouse_x = event.mouse_x, mouse_y = event.mouse_y })
         else
           minecraft.gui.draw_toggle({ x = control.x, y = control.y, width = control.w, height = control.h,
             label = control.label, value = value, mouse_x = event.mouse_x, mouse_y = event.mouse_y })
@@ -116,6 +124,9 @@ function settings_screen.register(spec)
           if control.kind == "slider" then
             ui.drag = control
             set_slider(control, event.x)
+          elseif control.kind == "cycle" then
+            control.click()
+            apply_change()
           else
             values()[control.key] = not values()[control.key]
             apply_change()

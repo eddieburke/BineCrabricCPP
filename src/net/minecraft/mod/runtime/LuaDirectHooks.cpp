@@ -635,7 +635,7 @@ void luaHookChatSend(ChatEvent& e) {
      LuaEventId::ChatSend,
      e,
      [](lua_State* state, ChatEvent& ev) {
-      setFields(state, "message", ev.message, "canceled", ev.canceled);
+      setFields(state, "message", ev.message, "canceled", ev.canceled, "remote", ev.remote);
       setWorldContextFields(state, ev.world);
      },
      [](lua_State* state, ChatEvent& ev) { readFields(state, "message", ev.message, "canceled", ev.canceled); });
@@ -645,7 +645,7 @@ void luaHookChatReceive(ChatEvent& e) {
      LuaEventId::ChatReceive,
      e,
      [](lua_State* state, ChatEvent& ev) {
-      setFields(state, "message", ev.message, "canceled", ev.canceled);
+      setFields(state, "message", ev.message, "canceled", ev.canceled, "remote", ev.remote);
       setWorldContextFields(state, ev.world);
      },
      [](lua_State* state, ChatEvent& ev) { readFields(state, "message", ev.message, "canceled", ev.canceled); });
@@ -1120,7 +1120,15 @@ void luaHookFogSettings(FogSettingsEvent& e) {
                 "end",
                 ev.end,
                 "density",
-                ev.density);
+                ev.density,
+                "custom_color",
+                ev.customColor,
+                "red",
+                ev.red,
+                "green",
+                ev.green,
+                "blue",
+                ev.blue);
       setWorldContextFields(state, ev.world);
      },
      [](lua_State* state, FogSettingsEvent& ev) {
@@ -1130,10 +1138,15 @@ void luaHookFogSettings(FogSettingsEvent& e) {
                  "spherical",
                  ev.spherical,
                  "exponential",
-                 ev.exponential);
+                 ev.exponential,
+                 "custom_color",
+                 ev.customColor);
       ev.start = std::clamp(luaFloatField(state, -1, "start", ev.start), 0.0f, 1.0f);
       ev.end = std::clamp(luaFloatField(state, -1, "end", ev.end), 0.0f, 1.0f);
       ev.density = std::clamp(luaFloatField(state, -1, "density", ev.density), 0.0f, 1.0f);
+      ev.red = std::clamp(luaFloatField(state, -1, "red", ev.red), 0.0f, 1.0f);
+      ev.green = std::clamp(luaFloatField(state, -1, "green", ev.green), 0.0f, 1.0f);
+      ev.blue = std::clamp(luaFloatField(state, -1, "blue", ev.blue), 0.0f, 1.0f);
      });
 }
 void luaHookEntityRender(EntityRenderEvent& e) {
@@ -1428,7 +1441,13 @@ void luaHookChunkGeneration(world::gen::ChunkGenerationEvent& e) {
                 "world_seed",
                 static_cast<std::int64_t>(e.context.worldSeed));
       setWorldContextFields(state, e.context.world);
-      setFields(state, "mod_generation", e.context.modGeneration, "is_overworld", e.context.overworld);
+      setFields(state,
+                "mod_generation",
+                e.context.modGeneration,
+                "is_overworld",
+                e.context.overworld,
+                "dimension_id",
+                e.context.dimensionId);
       setChunkContextFields(state);
       pushChunkObject(state);
       luaApi().setfield(state, -2, "chunk");

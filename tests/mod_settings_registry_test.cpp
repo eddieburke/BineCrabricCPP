@@ -47,3 +47,16 @@ TEST(ModSettingsRegistry, AppliesValuesLoadedBeforeRegistration) {
  std::error_code error;
  std::filesystem::remove(path, error);
 }
+TEST(ModSettingsRegistry, ClearPendingKeysDropsStalePresses) {
+ auto& registry = net::minecraft::mod::ModSettingsRegistry::instance();
+ net::minecraft::mod::ModKeybindDef keybind;
+ keybind.id = "settings_registry_test.stale";
+ keybind.defaultKeyCode = 77;
+ keybind.currentKeyCode = 77;
+ registry.registerKeybind("settings_registry_test", keybind);
+ registry.markKeyPressed(77);
+ registry.clearPendingKeys();
+ EXPECT_FALSE(registry.consumeKeybind("settings_registry_test.stale"));
+ registry.markKeyPressed(77);
+ EXPECT_TRUE(registry.consumeKeybind("settings_registry_test.stale"));
+}
