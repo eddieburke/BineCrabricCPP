@@ -48,9 +48,9 @@ void InventoryScreen::publishSidePanelEvent(mod::ScreenRegionEvent& event) const
  net::minecraft::mod::runtime::luaHookScreenRegion(event);
 }
 void InventoryScreen::render(int mouseX, int mouseY, float tickDelta) {
- HandledScreen::render(mouseX, mouseY, tickDelta);
  mouseX_ = static_cast<float>(mouseX);
  mouseY_ = static_cast<float>(mouseY);
+ HandledScreen::render(mouseX, mouseY, tickDelta);
  mod::ScreenRegionEvent sidePanel;
  sidePanel.screen = this;
  sidePanel.phase = mod::ScreenRegionPhase::Render;
@@ -135,7 +135,7 @@ void InventoryScreen::drawBackground(float tickDelta) {
   const core::ScopedDrawCameraState previewGuard;
   net::minecraft::util::math::MatrixStack previewPose;
   previewPose.load(core::drawPose());
-  previewPose.translate(static_cast<float>(originX + 51), static_cast<float>(originY + 75), 50.0f);
+  previewPose.translate(static_cast<float>(originX + 51), static_cast<float>(originY + 73), 50.0f);
   constexpr float scale = 30.0f;
   previewPose.scale(-scale, scale, scale);
   previewPose.rotate(180.0f, 0.0f, 0.0f, 1.0f);
@@ -143,6 +143,7 @@ void InventoryScreen::drawBackground(float tickDelta) {
   const float savedBodyYaw = player.bodyYaw;
   const float savedYaw = player.yaw;
   const float savedPitch = player.pitch;
+  const float savedMinBrightness = player.minBrightness;
   const float deltaX = static_cast<float>(originX + 51) - mouseX_;
   const float deltaY = static_cast<float>(originY + 75 - 50) - mouseY_;
   previewPose.rotate(135.0f, 0.0f, 1.0f, 0.0f);
@@ -154,7 +155,7 @@ void InventoryScreen::drawBackground(float tickDelta) {
   player.pitch = -static_cast<float>(std::atan(static_cast<double>(deltaY) / 40.0)) * 20.0f;
   player.minBrightness = 1.0f;
   previewPose.translate(0.0f, player.standingEyeHeight, 0.0f);
- core::setDrawPose(previewPose.top());
+  core::setDrawPose(previewPose.top());
   auto& dispatcher = render::entity::EntityRenderDispatcher::instance();
   dispatcher.init(minecraft()->world,
                   &minecraft()->textureManager,
@@ -165,7 +166,7 @@ void InventoryScreen::drawBackground(float tickDelta) {
   dispatcher.yaw_ = 180.0f;
   render::Tessellator::INSTANCE.light(15, 15);
   dispatcher.render(player, 0.0, 0.0, 0.0, 0.0f, 1.0f, previewPose, core::drawProjection());
-  player.minBrightness = 0.0f;
+  player.minBrightness = savedMinBrightness;
   player.bodyYaw = savedBodyYaw;
   player.yaw = savedYaw;
   player.pitch = savedPitch;

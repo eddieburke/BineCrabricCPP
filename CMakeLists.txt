@@ -314,8 +314,6 @@ list(FILTER MINECRAFT_SERVER_MOD_SOURCES EXCLUDE REGEX
     "/net/minecraft/mod/runtime/(LuaCameraBindings|LuaGuiArgs|LuaInventoryBindings|LuaModelBindings|LuaRaycastBindings|LuaRenderBindings|LuaScreenBindings|LuaSoundBindings|LuaTextureBindings|ModRenderScope)\\.cpp$"
 )
 
-add_subdirectory(mods)
-
 option(MINECRAFT_ENABLE_PROFILING "Enable runtime profiling counters and diagnostics outside Debug builds" OFF)
 
 function(minecraft_configure_target target)
