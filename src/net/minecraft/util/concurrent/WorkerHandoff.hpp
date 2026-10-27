@@ -73,7 +73,7 @@ class WorkerHandoff {
    return inFlight_.load(std::memory_order::acquire);
   }
   [[nodiscard]] unsigned workerCount() const noexcept {
-   return poolLifetime_.expired() ? 0 : pool_->threadCount();
+   return poolLifetime_.expired() ? 0 : pool_->concurrencyLimit();
   }
 
  private:

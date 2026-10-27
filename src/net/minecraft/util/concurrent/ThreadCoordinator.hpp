@@ -25,6 +25,7 @@ class ThreadCoordinator {
  [[nodiscard]] ThreadBudget budget() const noexcept;
  [[nodiscard]] std::uint64_t totalPending() const noexcept;
  void shutdown();
+ void setComputeThreadLimit(unsigned limit);
  [[nodiscard]] unsigned computeShare(unsigned owners) const noexcept;
 
  private:
@@ -33,6 +34,7 @@ class ThreadCoordinator {
  ThreadCoordinator& operator=(const ThreadCoordinator&) = delete;
  mutable std::mutex mutex_;
  ThreadBudget budget_;
+ unsigned computeThreadLimit_ = 0;
  bool configured_ = false;
  bool shutdown_ = false;
  std::unique_ptr<WorkerPool> computePool_;

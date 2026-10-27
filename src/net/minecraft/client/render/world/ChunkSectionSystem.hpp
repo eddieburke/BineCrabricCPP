@@ -143,10 +143,12 @@ class ChunkSectionSystem {
  private:
  void lightColumn(world::SectionColumn& column);
  void drainPendingColumns();
+ void drainRetiredColumns();
  void createColumn(int sectionX, int sectionZ);
  [[nodiscard]] bool columnInMeshRange(int sectionX, int sectionZ) const;
  void removeColumn(int sectionX, int sectionZ);
  void enqueueColumn(int sectionX, int sectionZ);
+ [[nodiscard]] bool pendingColumnAfter(const world::ColumnPos& a, const world::ColumnPos& b) const;
  void updateDebugCounts();
  // False when the camera section is absent, so the caller falls back to the plain
  // frustum sweep; nothing has been pushed to the visible list in that case.
@@ -163,6 +165,8 @@ class ChunkSectionSystem {
  std::vector<chunk::ChunkBuilder*> scopedVisibleSections_{};
  bool scopedCull_ = false;
  std::deque<world::ColumnPos> pendingColumns_{};
+ std::deque<world::ColumnPos> retiredColumns_{};
+ std::unordered_set<world::ColumnPos, world::ColumnPosHash> retiredSet_{};
  std::unordered_set<world::ColumnPos, world::ColumnPosHash> pendingSet_{};
  std::unordered_set<world::ColumnPos, world::ColumnPosHash> pendingBorderRefresh_{};
   std::unordered_set<world::ColumnPos, world::ColumnPosHash> pendingLit_{};
@@ -172,6 +176,7 @@ class ChunkSectionSystem {
  int meshRadius_ = -1;
  int transitionRadius_ = -1;
  std::uint64_t lodCoverageRevision_ = 0;
+ std::uint64_t lodCoverageLossRevision_ = 0;
  int meshCameraX_ = std::numeric_limits<int>::min();
  int meshCameraZ_ = std::numeric_limits<int>::min();
  int chunkCount = 0;

@@ -41,6 +41,7 @@ WorkerPool& ThreadCoordinator::pool(Domain domain) {
   if(computePool_ == nullptr) {
    computePool_ = std::make_unique<WorkerPool>(budget_.compute);
   }
+  computePool_->setConcurrencyLimit(computeThreadLimit_ == 0 ? budget_.compute : computeThreadLimit_);
   return *computePool_;
  case Domain::Io:
   if(ioPool_ == nullptr) {
@@ -78,7 +79,14 @@ std::uint64_t ThreadCoordinator::totalPending() const noexcept {
 }
 unsigned ThreadCoordinator::computeShare(unsigned owners) const noexcept {
  std::lock_guard lock(mutex_);
- return budget_.computeShare(owners);
+ ThreadBudget effective = budget_;
+ if(computeThreadLimit_ != 0) effective.compute = std::min(effective.compute, computeThreadLimit_);
+ return effective.computeShare(owners);
+}
+void ThreadCoordinator::setComputeThreadLimit(unsigned limit) {
+ std::lock_guard lock(mutex_);
+ computeThreadLimit_ = limit;
+ if(computePool_) computePool_->setConcurrencyLimit(limit == 0 ? budget_.compute : limit);
 }
 void ThreadCoordinator::shutdown() {
  std::unique_ptr<WorkerPool> compute;

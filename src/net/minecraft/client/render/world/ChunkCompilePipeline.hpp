@@ -1,6 +1,8 @@
 #pragma once
 #include <cstdint>
 #include <memory>
+#include <list>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include "net/minecraft/client/option/RenderSettings.hpp"
@@ -46,10 +48,14 @@ class ChunkCompilePipeline {
  }
  void clearDirtyTracking() {
   dirtyChunks_.clear();
+  dirtyScan_.clear();
+  captureCandidates_.clear();
   nearDirtyChunks_.clear();
  }
 
  private:
+ void eraseDirtyChunk(chunk::ChunkBuilder* section);
+ void gatherCaptureCandidates(bool force);
   static void prioritizeCaptureCandidates(std::vector<chunk::ChunkBuilder*>& candidates,
                                           int frustumStamp,
                                           int cameraSectionX,
@@ -64,7 +70,8 @@ class ChunkCompilePipeline {
          net::minecraft::util::concurrent::Domain::Compute)};
  TerrainScene& scene_;
  ChunkSectionSystem* sectionSystem_ = nullptr;
- std::unordered_set<chunk::ChunkBuilder*> dirtyChunks_{};
+ std::list<chunk::ChunkBuilder*> dirtyScan_{};
+ std::unordered_map<chunk::ChunkBuilder*, std::list<chunk::ChunkBuilder*>::iterator> dirtyChunks_{};
  std::unordered_set<chunk::ChunkBuilder*> nearDirtyChunks_{};
  // Reused so the per-frame capture pass allocates nothing.
  std::vector<chunk::ChunkBuilder*> captureCandidates_{};

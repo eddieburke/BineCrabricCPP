@@ -27,6 +27,7 @@ class WorkerPool {
   if(threadCount == 0) {
    threadCount = 1;
   }
+  concurrencyLimit_ = threadCount;
   workers_.reserve(threadCount);
   for(unsigned i = 0; i < threadCount; ++i) {
    workers_.emplace_back([this](const std::stop_token& stop) { workerLoop(stop); });
@@ -101,6 +102,19 @@ class WorkerPool {
   const std::lock_guard lock(mutex_);
   return queue_.size() + static_cast<std::size_t>(activeCount_);
  }
+ void setConcurrencyLimit(unsigned limit) {
+  {
+   const std::lock_guard lock(mutex_);
+   const auto next = std::clamp(limit, 1u, threadCount());
+   if(next == concurrencyLimit_) return;
+   concurrencyLimit_ = next;
+  }
+  wake_.notify_all();
+ }
+ [[nodiscard]] unsigned concurrencyLimit() const {
+  const std::lock_guard lock(mutex_);
+  return concurrencyLimit_;
+ }
  [[nodiscard]] unsigned threadCount() const noexcept {
   return static_cast<unsigned>(workers_.size());
  }
@@ -128,7 +142,9 @@ class WorkerPool {
    Task task;
    {
     std::unique_lock lock(mutex_);
-    wake_.wait(lock, [&] { return stop.stop_requested() || !queue_.empty(); });
+    wake_.wait(lock, [&] {
+     return stop.stop_requested() || (!queue_.empty() && activeCount_ < concurrencyLimit_);
+    });
     if(stop.stop_requested()) {
      return;
     }
@@ -143,6 +159,7 @@ class WorkerPool {
    {
     const std::lock_guard lock(mutex_);
     --activeCount_;
+    wake_.notify_one();
     if(queue_.empty() && activeCount_ == 0) {
      idle_.notify_all();
     }
@@ -154,7 +171,8 @@ class WorkerPool {
  std::condition_variable idle_;
  std::priority_queue<Task> queue_;
  std::uint64_t nextSequence_ = 0;
- int activeCount_ = 0;
+ unsigned activeCount_ = 0;
+ unsigned concurrencyLimit_ = 1;
  bool stopping_ = false;
  std::shared_ptr<void> lifetime_ = std::make_shared<int>(0);
  std::vector<std::jthread> workers_;

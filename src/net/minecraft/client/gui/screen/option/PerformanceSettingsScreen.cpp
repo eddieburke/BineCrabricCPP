@@ -5,6 +5,7 @@
 #include "net/minecraft/client/gui/screen/option/OptionGui.hpp"
 #include "net/minecraft/client/gui/screen/option/SettingsScreen.hpp"
 #include "net/minecraft/client/option/OptionSpec.hpp"
+#include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 namespace net::minecraft::client::gui::screen::option {
 namespace performance_screen {
@@ -17,7 +18,17 @@ void cyclePreloadedChunks(GameOptions& o, int delta) {
  o.preloadedChunks =
      d::cycleDiscrete(o.preloadedChunks, delta, kPreloadedChunks.data(), static_cast<int>(kPreloadedChunks.size()));
 }
-std::array<OptionSpec, 9> kSpecs{{
+void cycleBackgroundThreads(GameOptions& o, int delta) {
+ const int maximum = static_cast<int>(net::minecraft::util::concurrent::ThreadCoordinator::instance().budget().compute);
+ o.backgroundThreads = (std::clamp(o.backgroundThreads, 0, maximum) + delta + maximum + 1) % (maximum + 1);
+}
+std::array<OptionSpec, 10> kSpecs{{
+    d::makeCycle("backgroundThreads",
+                 28,
+                 ApplyFlags::ApplyDerived,
+                 cycleBackgroundThreads,
+                 d::loadIntMember<&GameOptions::backgroundThreads>,
+                 d::saveIntMember<&GameOptions::backgroundThreads>),
     d::makeCycle("fpsLimit",
                  9,
                  ApplyFlags::None,
@@ -104,12 +115,12 @@ class PerformanceSettingsScreen : public SettingsScreen {
   gui.toggle(x2, y0, "smoothFps", "Smooth FPS");
   gui.toggle(x1, y0 + dy, "smoothInput", "Smooth Input");
   gui.toggle(x2, y0 + dy, "entityShadows", "Entity Shadows");
-  gui.slider(x1, y0 + dy * 2, "chunkUpdates", "Chunk Updates", [](const GameOptions& o) {
+  gui.slider(x1, y0 + dy * 2, "chunkUpdates", "Chunk Work Limit", [](const GameOptions& o) {
    const float value = std::isfinite(o.chunkUpdates) ? std::clamp(o.chunkUpdates, 0.0f, 1.0f) : 0.5f;
    const int updates = 1 + static_cast<int>(std::lround(value * 15.0f));
-   return optionLabel("Chunk Updates", std::to_string(updates) + "/frame");
+   return optionLabel("Chunk Work Limit", std::to_string(updates) + "/frame");
   });
-  gui.toggle(x2, y0 + dy * 2, "chunkUpdatesDynamic", "Dynamic Updates");
+  gui.toggle(x2, y0 + dy * 2, "chunkUpdatesDynamic", "Adaptive Chunk Work");
   gui.customCycle(x1, y0 + dy * 3, "preloadedChunks", [](const GameOptions& o) {
    return optionLabel("Preloaded Chunks",
                       o.preloadedChunks == 0 ? resource::language::I18n::getTranslation("options.off")
@@ -120,6 +131,11 @@ class PerformanceSettingsScreen : public SettingsScreen {
    return optionLabel("Entity Distance", std::to_string(static_cast<int>(pct)) + "%");
   });
   gui.toggle(x1, y0 + dy * 4, "frustumCulling", "Frustum Culling");
+  gui.customCycle(x2, y0 + dy * 4, "backgroundThreads", [](const GameOptions& o) {
+   const unsigned maximum = net::minecraft::util::concurrent::ThreadCoordinator::instance().budget().compute;
+   const unsigned active = o.backgroundThreads == 0 ? maximum : std::min(maximum, static_cast<unsigned>(o.backgroundThreads));
+   return optionLabel("Background Threads", o.backgroundThreads == 0 ? "Auto (" + std::to_string(active) + ")" : std::to_string(active));
+  });
  }
 };
 } // namespace performance_screen

@@ -16,14 +16,10 @@ class FrameBudget {
   }
   // Slice bounded by the shared frame deadline: at least minItems, then stop at
   // the earlier of now + ms and the frame deadline. If no frame deadline is
-  // armed or it has already expired (this frame ran over budget), use a fresh
-  // now + ms slice so work keeps making progress instead of stalling at zero.
+  // armed, use a local slice.
   [[nodiscard]] static FrameBudget fromSharedMs(int ms, int minItems) noexcept {
    const FrameBudget& frame = frameDeadline();
    if(!frame.active()) {
-    return fromMs(ms, minItems);
-   }
-   if(frame.expired()) {
     return fromMs(ms, minItems);
    }
    const auto local = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);

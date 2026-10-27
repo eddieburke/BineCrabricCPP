@@ -66,13 +66,40 @@ void ChunkCompilePipeline::enqueueDirtyChunk(chunk::ChunkBuilder* chunk) {
    nearDirtyChunks_.insert(chunk);
   }
  }
- dirtyChunks_.insert(chunk);
+ if(!dirtyChunks_.contains(chunk)) {
+  dirtyScan_.push_back(chunk);
+  dirtyChunks_.emplace(chunk, std::prev(dirtyScan_.end()));
+ }
+}
+void ChunkCompilePipeline::eraseDirtyChunk(chunk::ChunkBuilder* section) {
+ const auto it = dirtyChunks_.find(section);
+ if(it == dirtyChunks_.end()) return;
+ dirtyScan_.erase(it->second);
+ dirtyChunks_.erase(it);
+}
+void ChunkCompilePipeline::gatherCaptureCandidates(bool force) {
+ captureCandidates_.clear();
+ const auto count = std::min<std::size_t>(dirtyScan_.size(), 512);
+ captureCandidates_.reserve(count);
+ const int stamp = sectionSystem_->frustumStamp();
+ for(std::size_t i = 0; i < count; ++i) {
+  auto it = dirtyScan_.begin();
+  chunk::ChunkBuilder* section = *it;
+  if(section == nullptr || !section->dirty) {
+   eraseDirtyChunk(section);
+   continue;
+  }
+  dirtyScan_.splice(dirtyScan_.end(), dirtyScan_, it);
+  if(section->readyForMeshCapture() && (!force || section->visibleIn(stamp))) {
+   captureCandidates_.push_back(section);
+  }
+ }
 }
 void ChunkCompilePipeline::releaseSection(chunk::ChunkBuilder& section) {
  // No deferred-retirement queue: jobs hold a weak_ptr, so the section can be
  // torn down here and now. Freeing the GL buffers on the main thread at the
  // moment of eviction is the whole point — it is the only thread that may.
- dirtyChunks_.erase(&section);
+ eraseDirtyChunk(&section);
  nearDirtyChunks_.erase(&section);
  section.freeGpuBuffers();
 }
@@ -88,7 +115,7 @@ bool ChunkCompilePipeline::startMeshJob(chunk::ChunkBuilder* chunk,
   return false;
  }
  chunk->meshJobInFlight = true;
- dirtyChunks_.erase(chunk);
+ eraseDirtyChunk(chunk);
  const auto enqueue = [&](std::shared_ptr<chunk::ChunkMeshJob> job, int jobPriority) {
   meshHandoff_.enqueue(
       std::move(job),
@@ -125,11 +152,10 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
  }
  const client::option::RenderSettings& resolvedOpts = *scene_.settings;
  const std::size_t workerCount = meshHandoff_.workerCount();
- const std::size_t backlog = dirtyChunks_.size() + pendingMeshUploads_.size() + meshHandoff_.pendingJobs();
- const bool loadingBacklog = backlog > 512u;
- const int minUploadsPerFrame = loadingBacklog ? std::clamp(static_cast<int>(workerCount * 2u), 4, 16) : 1;
+ const int requestedWork = client::option::chunkUpdatesPerPass(resolvedOpts, static_cast<int>(dirtyChunks_.size()));
+ const int minUploadsPerFrame = 1;
  const net::minecraft::util::concurrent::FrameBudget uploadBudget =
-     net::minecraft::util::concurrent::FrameBudget::fromSharedMs(loadingBacklog ? 6 : 3, minUploadsPerFrame);
+     net::minecraft::util::concurrent::FrameBudget::fromSharedMs(2, minUploadsPerFrame);
  // Near-camera edits get a dedicated slice (QD-21): they are uploaded before
  // the loading backlog so a block edit next to the player lands the frame its
  // mesh finishes, not when background work's budget allows (HZ-31).
@@ -155,13 +181,13 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
    return;
   }
   const net::minecraft::util::concurrent::FrameBudget& budget = nearLane ? nearBudget : uploadBudget;
-  const int budgetCount = nearLane ? nearUploadCount : uploadCount;
+  const int budgetCount = nearUploadCount + uploadCount;
   std::size_t bytes = 0;
   for(int layer = 0; layer < chunk::terrain_layer::Count; ++layer) {
    bytes += job->result.layers[layer].vertices.size() * sizeof(TerrainVertex);
    for(const auto& mesh : job->result.modLayers[layer]) bytes += mesh.mesh.vertices.size() * sizeof(TessellatorVertex);
   }
-  if(!budget.hasRemaining(budgetCount) || !byteBudget.tryConsume(bytes)) {
+  if(budgetCount >= requestedWork || !budget.hasRemaining(budgetCount) || !byteBudget.tryConsume(bytes)) {
    deferredMeshUploadQueue_.push_back(std::move(job));
    return;
   }
@@ -174,7 +200,7 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
    return;
   }
   builder->dirty = false;
-  dirtyChunks_.erase(builder);
+  eraseDirtyChunk(builder);
  };
  nearMeshUploads_.clear();
  backgroundMeshUploads_.clear();
@@ -217,21 +243,19 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
  }
  if(inFlight < targetInFlight && pendingMeshUploads_.size() < targetInFlight * 2u &&
     pendingCpuBytes < 64u * 1024u * 1024u) {
-  const int requestedCaptures =
-      client::option::chunkUpdatesPerPass(resolvedOpts, static_cast<int>(dirtyChunks_.size()));
-  const int minCapturesPerFrame = force ? static_cast<int>(workerCount * 2u)
-                                        : std::clamp(requestedCaptures, 1, static_cast<int>(workerCount));
+  const int maxCaptures = force ? std::max(requestedWork, static_cast<int>(workerCount)) : requestedWork;
   const net::minecraft::util::concurrent::FrameBudget captureBudget =
-      net::minecraft::util::concurrent::FrameBudget::fromSharedMs((force || loadingBacklog) ? 2 : 1,
-                                                                  minCapturesPerFrame);
+      net::minecraft::util::concurrent::FrameBudget::fromSharedMs(force ? 2 : 1, 1);
   int captures = 0;
-  const auto canCapture = [&] { return inFlight < targetInFlight && captureBudget.hasRemaining(captures); };
+  int attempts = 0;
+  const auto canCapture = [&] { return captures < maxCaptures && inFlight < targetInFlight && captureBudget.hasRemaining(attempts); };
   for(auto it = nearDirtyChunks_.begin(); it != nearDirtyChunks_.end() && canCapture();) {
    chunk::ChunkBuilder* section = *it;
    if(section == nullptr || !section->dirty || section->meshJobInFlight) {
     it = nearDirtyChunks_.erase(it);
     continue;
    }
+   ++attempts;
    if(startMeshJob(section, true, 0, resolvedOpts)) {
     it = nearDirtyChunks_.erase(it);
     ++inFlight;
@@ -256,24 +280,7 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
     return std::abs((section->x >> 4) - camSectionX) + std::abs((section->y >> 4) - camSectionY) +
            std::abs((section->z >> 4) - camSectionZ);
    };
-   captureCandidates_.clear();
-   captureCandidates_.reserve(dirtyChunks_.size());
-   for(auto it = dirtyChunks_.begin(); it != dirtyChunks_.end();) {
-    chunk::ChunkBuilder* section = *it;
-    if(section == nullptr) {
-     it = dirtyChunks_.erase(it);
-     continue;
-    }
-    if(!section->dirty) {
-     it = dirtyChunks_.erase(it);
-     continue;
-    }
-    ++it;
-    if(!section->readyForMeshCapture() || (force && !section->visibleIn(frustumStamp))) {
-     continue;
-    }
-    captureCandidates_.push_back(section);
-   }
+   gatherCaptureCandidates(force);
    // Only the few we can actually start this frame need to be in priority order,
    // so the nearest dirty sections are tried first.
    const std::size_t wanted =
@@ -288,6 +295,7 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& /
     if(!canCapture()) {
      break;
     }
+    ++attempts;
     if(startMeshJob(section, false, meshPriority(section), resolvedOpts)) {
      ++inFlight;
      ++captures;

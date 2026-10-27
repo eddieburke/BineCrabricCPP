@@ -43,6 +43,7 @@ class GameOptions {
  bool smoothFps = false;
  bool smoothInput = false;
  bool entityShadows = true;
+ int backgroundThreads = 0;
  float chunkUpdates = 0.5f;
  bool chunkUpdatesDynamic = false;
  bool distantTerrain = true;

@@ -46,6 +46,7 @@ class DistantRenderer {
  [[nodiscard]] std::string debugInfo() const;
  [[nodiscard]] bool coversColumn(int chunkX, int chunkZ) const noexcept;
  std::uint64_t coverageRevision = 0;
+ std::uint64_t coverageLossRevision = 0;
 
  private:
  struct TileKey {
@@ -102,7 +103,8 @@ class DistantRenderer {
  void draw(Pipeline& pipeline, const option::RenderSettings& settings, const Frustum* culler, bool water);
  void ensureDepthTextures(int width, int height);
  void updateNativeRadius(const ChunkSectionSystem& sections, int requestedRadius);
- void collectBuildCandidates();
+ void collectBuildCandidates(std::size_t wanted = 4);
+ bool updateWanted(const option::RenderSettings& settings, double eyeX, double eyeZ);
  [[nodiscard]] static int meshPriority(int distance, bool replacement);
  DistantSlab slab_;
  bool slabReady_ = false;
@@ -119,6 +121,14 @@ class DistantRenderer {
  int inFlight_ = 0;
  int memoryStride_ = 1;
  int nativeRadius_ = -1;
+ bool wantedValid_ = false;
+ int wantedCellX_ = 0;
+ int wantedCellZ_ = 0;
+ int wantedNativeRadius_ = -1;
+ int wantedRequestedRadius_ = -1;
+ float wantedViewBlocks_ = 0;
+ int wantedQuality_ = -1;
+ int wantedMemoryStride_ = 0;
  std::uint64_t nextJobId_ = 0;
  double eyeX_ = 0.0;
  double eyeY_ = 0.0;

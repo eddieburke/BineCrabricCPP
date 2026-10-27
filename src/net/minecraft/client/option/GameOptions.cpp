@@ -11,6 +11,7 @@
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/util/concurrent/ThreadCoordinator.hpp"
 namespace net::minecraft::client::option {
 void reloadWorldRenderer(Minecraft* minecraft) {
  if(minecraft != nullptr && minecraft->worldRenderer != nullptr) {
@@ -127,6 +128,8 @@ void GameOptions::applyToWorld(World* world) const {
  world->setChunkResidentRadius(renderSettings(*this).residentChunkRadius);
 }
 void GameOptions::applyDerivedSettings() {
+ backgroundThreads = std::clamp(backgroundThreads, 0, 16);
+ net::minecraft::util::concurrent::ThreadCoordinator::instance().setComputeThreadLimit(static_cast<unsigned>(backgroundThreads));
  lodNativeRadius = std::clamp(lodNativeRadius, 8, 32);
  lodQuality = std::clamp(lodQuality, 0, 2);
  lodMemoryMiB = std::clamp(lodMemoryMiB, 64, 512);

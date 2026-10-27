@@ -1,4 +1,5 @@
 #include "net/minecraft/client/render/world/ChunkSectionSystem.hpp"
+#include "net/minecraft/client/render/world/ColumnRange.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -54,6 +55,14 @@ chunk::ChunkBuilder* ChunkSectionSystem::sectionAt(int sectionX, int sectionY, i
  const auto it = columns_.find(world::ColumnPos{sectionX, sectionZ});
  return it == columns_.end() ? nullptr : it->second[static_cast<std::size_t>(sectionY)].get();
 }
+bool ChunkSectionSystem::pendingColumnAfter(const world::ColumnPos& a, const world::ColumnPos& b) const {
+ const auto distance = [this](const auto& p) {
+  const double dx = static_cast<double>(p.x) - meshCameraX_;
+  const double dz = static_cast<double>(p.z) - meshCameraZ_;
+  return dx * dx + dz * dz;
+ };
+ return distance(a) > distance(b);
+}
 void ChunkSectionSystem::enqueueColumn(int sectionX, int sectionZ) {
  if(!columnInMeshRange(sectionX, sectionZ) || sectionAt(sectionX, 0, sectionZ) != nullptr) {
   return;
@@ -61,6 +70,8 @@ void ChunkSectionSystem::enqueueColumn(int sectionX, int sectionZ) {
  const world::ColumnPos key{sectionX, sectionZ};
  if(pendingSet_.insert(key).second) {
   pendingColumns_.push_back(key);
+  std::push_heap(pendingColumns_.begin(), pendingColumns_.end(),
+                  [this](const auto& a, const auto& b) { return pendingColumnAfter(a, b); });
  }
 }
 bool ChunkSectionSystem::columnInMeshRange(int sectionX, int sectionZ) const {
@@ -242,6 +253,8 @@ void ChunkSectionSystem::clearSections() {
  scopedCull_ = false;
  scene_.blockEntities.clear();
  pendingColumns_.clear();
+ retiredColumns_.clear();
+ retiredSet_.clear();
  pendingSet_.clear();
   pendingBorderRefresh_.clear();
   pendingLit_.clear();
@@ -250,6 +263,7 @@ void ChunkSectionSystem::clearSections() {
  meshRadius_ = -1;
  transitionRadius_ = -1;
  lodCoverageRevision_ = 0;
+ lodCoverageLossRevision_ = 0;
  meshCameraX_ = meshCameraZ_ = std::numeric_limits<int>::min();
 }
 void ChunkSectionSystem::drainPendingColumns() {
@@ -257,11 +271,13 @@ void ChunkSectionSystem::drainPendingColumns() {
   return;
  }
  const net::minecraft::util::concurrent::FrameBudget budget =
-     net::minecraft::util::concurrent::FrameBudget::fromSharedMs(2, pendingColumns_.size() > 64 ? 4 : 1);
+     net::minecraft::util::concurrent::FrameBudget::fromSharedMs(1, 1);
  std::size_t inspected = 0;
  while(!pendingColumns_.empty() && budget.hasRemaining(static_cast<int>(inspected))) {
-  const world::ColumnPos col = pendingColumns_.front();
-  pendingColumns_.pop_front();
+  std::pop_heap(pendingColumns_.begin(), pendingColumns_.end(),
+                 [this](const auto& a, const auto& b) { return pendingColumnAfter(a, b); });
+  const world::ColumnPos col = pendingColumns_.back();
+  pendingColumns_.pop_back();
   pendingSet_.erase(col);
   ++inspected;
   if(sectionAt(col.x, 0, col.z) != nullptr) {
@@ -271,6 +287,21 @@ void ChunkSectionSystem::drainPendingColumns() {
   if(scene_.world->getChunkSource() != nullptr && scene_.world->getChunkSource()->isChunkDataReady(col.x, col.z)) {
    createColumn(col.x, col.z);
   }
+ }
+}
+void ChunkSectionSystem::drainRetiredColumns() {
+ const auto budget = net::minecraft::util::concurrent::FrameBudget::fromSharedMs(1, 1);
+ int inspected = 0;
+ while(!retiredColumns_.empty() && budget.hasRemaining(inspected)) {
+  const auto key = retiredColumns_.front();
+  retiredColumns_.pop_front();
+  retiredSet_.erase(key);
+  ++inspected;
+  if(columnInMeshRange(key.x, key.z)) continue;
+  if(scene_.settings->distantTerrain && scene_.distant != nullptr &&
+     !scene_.distant->coversColumn(key.x, key.z) &&
+     world::columnInRange(key.x, key.z, meshCameraX_, meshCameraZ_, scene_.settings->renderDistance.chunks() + 1)) continue;
+  removeColumn(key.x, key.z);
  }
 }
 void ChunkSectionSystem::reloadIfViewDistanceChanged() {
@@ -286,13 +317,28 @@ void ChunkSectionSystem::reloadIfViewDistanceChanged() {
                                              scene_.settings->renderDistance.chunks() + 1) : radius;
  const std::uint64_t coverage = scene_.distant != nullptr ? scene_.distant->coverageRevision : 0;
  if(cameraX == meshCameraX_ && cameraZ == meshCameraZ_ && radius == meshRadius_ &&
-    transitionRadius == transitionRadius_ && coverage == lodCoverageRevision_) return;
+    transitionRadius == transitionRadius_ && coverage == lodCoverageRevision_) {
+  drainRetiredColumns();
+  return;
+ }
  const bool priorityChanged = cameraX != meshCameraX_ || cameraZ != meshCameraZ_ || radius != meshRadius_;
+ const int previousX = meshCameraX_;
+ const int previousZ = meshCameraZ_;
+ const int previousRadius = meshRadius_;
+ const int previousTransitionRadius = transitionRadius_;
+ const std::uint64_t coverageLoss = scene_.distant != nullptr ? scene_.distant->coverageLossRevision : 0;
+ const bool rescan = radius != meshRadius_ || transitionRadius != transitionRadius_ ||
+                     coverageLoss != lodCoverageLossRevision_;
+ lodCoverageLossRevision_ = coverageLoss;
  meshCameraX_ = cameraX;
  meshCameraZ_ = cameraZ;
  meshRadius_ = radius;
  transitionRadius_ = transitionRadius;
  lodCoverageRevision_ = coverage;
+ if(priorityChanged) {
+  std::make_heap(pendingColumns_.begin(), pendingColumns_.end(),
+                 [this](const auto& a, const auto& b) { return pendingColumnAfter(a, b); });
+ }
  for(auto it = columns_.begin(); it != columns_.end();) {
   const world::ColumnPos key = it->first;
   if(!columnInMeshRange(key.x, key.z)) {
@@ -303,24 +349,28 @@ void ChunkSectionSystem::reloadIfViewDistanceChanged() {
     continue;
    }
    ++it;
-   removeColumn(key.x, key.z);
+   if(retiredSet_.insert(key).second) retiredColumns_.push_back(key);
    continue;
   }
   ++it;
  }
  if(scene_.world->getChunkSource() != nullptr) {
-  scene_.world->getChunkSource()->forEachLoadedChunk([this](int x, int z, Chunk&) { enqueueColumn(x, z); });
- }
- if(priorityChanged) {
-  std::stable_sort(pendingColumns_.begin(), pendingColumns_.end(), [cameraX, cameraZ](const auto& a, const auto& b) {
-   const auto distance = [cameraX, cameraZ](const auto& p) {
-    const auto dx = static_cast<std::int64_t>(p.x) - cameraX;
-    const auto dz = static_cast<std::int64_t>(p.z) - cameraZ;
-    return dx * dx + dz * dz;
+  if(rescan) {
+   world::forEachEnteringColumn(cameraX, cameraZ, transitionRadius, 0, 0, -1, [this](int x, int z) {
+    if(scene_.world->getChunkSource()->isChunkDataReady(x, z)) enqueueColumn(x, z);
+   });
+  } else if(priorityChanged) {
+   const auto enqueue = [this](int x, int z) {
+    if(scene_.world->getChunkSource()->isChunkDataReady(x, z)) enqueueColumn(x, z);
    };
-   return distance(a) < distance(b);
-  });
+   world::forEachEnteringColumn(cameraX, cameraZ, radius, previousX, previousZ, previousRadius, enqueue);
+   if(transitionRadius > radius) {
+    world::forEachEnteringColumn(cameraX, cameraZ, transitionRadius,
+                                 previousX, previousZ, previousTransitionRadius, enqueue);
+   }
+  }
  }
+ drainRetiredColumns();
 }
 void ChunkSectionSystem::cullChunks(Frustum* culler, bool updateGraph) {
  const FrameRenderCamera& renderCamera = core::cameraFrame();
