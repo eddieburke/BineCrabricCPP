@@ -735,6 +735,7 @@ void Minecraft::runRenderPhase() {
    if(camera != nullptr) {
     world->setLightingCamera(camera->x, camera->y, camera->z);
    }
+   world->pumpChunkPublish();
    world->doLightingUpdates(128, kLightingUpdateBudgetNs);
   }
  gl::GLCore::setSwapPacing(
@@ -753,9 +754,6 @@ void Minecraft::runRenderPhase() {
   if(gameRenderer != nullptr) {
    gameRenderer->onFrameUpdate(timer.partialTick);
   }
- }
- if(world != nullptr) {
-  world->pumpChunkPublish();
  }
 }
 void Minecraft::runPacePhase() {
@@ -931,6 +929,7 @@ void Minecraft::startGame(const std::string& worldName,
                           const std::unordered_map<std::string, std::string>& creationOptions,
                           bool skipModCheck) {
  setWorld(nullptr);
+ if(serverProcessCoordinator_ != nullptr) serverProcessCoordinator_->shutdown();
  if(worldStorageSource == nullptr) {
   mod::WorldOpenEvent openEvent{&worldName, true, &creationOptions};
   net::minecraft::mod::runtime::luaHookWorldOpen(openEvent);

@@ -289,6 +289,7 @@ float RegionSnapshot::getLightBrightness(int x, int y, int z) const {
  return lightLevelToLuminance_[static_cast<std::size_t>(getRawBrightness(x, y, z, true))];
 }
 int RegionSnapshot::getRawBrightness(int x, int y, int z, bool useNeighborLight) const {
+ bakedAmbientBrightness_ = true;
  if(y < 0) {
   return 0;
  }

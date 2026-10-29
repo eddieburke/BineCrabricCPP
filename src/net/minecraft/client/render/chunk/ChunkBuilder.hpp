@@ -107,6 +107,7 @@ class ChunkBuilder : public std::enable_shared_from_this<ChunkBuilder> {
  int centerZ = 0;
  bool dirty = false;
  bool hasSkyLight = false;
+ bool bakedAmbientBrightness = false;
  bool lightingReady = true;
  bool built = false;
  int version = 0;

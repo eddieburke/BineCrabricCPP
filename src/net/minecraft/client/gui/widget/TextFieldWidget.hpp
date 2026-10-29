@@ -1,6 +1,7 @@
 #pragma once
 // Faithful port of gui.widget.TextFieldWidget (beta 1.7.3 MCP).
 #include <string>
+#include <string_view>
 namespace net::minecraft::client::font {
 class TextRenderer;
 }
@@ -18,6 +19,7 @@ class TextFieldWidget {
                  int height,
                  std::string text);
  void setText(const std::string& text);
+ void writeText(std::string_view text);
  [[nodiscard]] const std::string& getText() const {
   return text_;
  }

@@ -271,6 +271,7 @@ private:
  bool distantHorizons_ = false;
  bool lightmapLit_ = false;
  int lightmapAmbient_ = -1;
+ std::array<float, 16> lightmapLuminance_{};
  WorldPipelinePhase pipelinePhase_ = WorldPipelinePhase::None;
  bool packWroteToScreen_ = false;
  gl::GlFramebuffer presentReadFbo_;

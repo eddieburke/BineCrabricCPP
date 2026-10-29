@@ -9,8 +9,8 @@ constexpr float kPi = 3.1415927410125732f;
 NetherPortalSprite::NetherPortalSprite() : DynamicTexture(detail::blockTextureId(90, 14)) {
  JavaRandom random(100ULL);
  for(int frameIndex = 0; frameIndex < 32; ++frameIndex) {
-  for(int texU = 0; texU < 16; ++texU) {
-   for(int texV = 0; texV < 16; ++texV) {
+  for(int texV = 0; texV < 16; ++texV) {
+   for(int texU = 0; texU < 16; ++texU) {
     float noise = 0.0f;
     for(int octave = 0; octave < 2; ++octave) {
      const float octaveOffsetU = static_cast<float>(octave * 8);

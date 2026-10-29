@@ -80,4 +80,13 @@ void VideoOptionsScreen::render(int mouseX, int mouseY, float tickDelta) {
  }
  Screen::render(mouseX, mouseY, tickDelta);
 }
+void VideoOptionsScreen::keyPressed(char character, int keyCode) {
+ if(!escapePressed(keyCode)) {
+  Screen::keyPressed(character, keyCode);
+  return;
+ }
+ if(options_ != nullptr) options_->save();
+ if(parentFactory_) navigateTo(parentFactory_);
+ else closeScreen();
+}
 } // namespace net::minecraft::client::gui::screen::option

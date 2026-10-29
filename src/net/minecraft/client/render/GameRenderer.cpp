@@ -622,6 +622,11 @@ void GameRenderer::onFrameUpdate(float tickDelta) {
   return;
  }
  frameSettings_ = option::renderSettings(client->options, meshDefinition());
+ if(client->world != nullptr && client->world->dimension != nullptr && client->world->dimension->hasCeiling &&
+    !client->world->dimension->isNether) {
+  frameSettings_.distantTerrain = false;
+  frameSettings_.nativeChunkRadius = frameSettings_.renderDistance.chunks();
+ }
  if(!platform::glfw::Window::isActive()) {
   if(nowMillis() - lastInactiveTime > 500) {
    client->pauseGame();
@@ -808,7 +813,12 @@ void drawTranslucentTerrain(WorldRenderer& worldRenderer,
  bindTerrainTexture(terrainTextureId);
  {
   const RenderPassScope translucentScope(RenderType::translucent());
-  if(fancyGraphics) {
+  const Vec3d eye = WorldRenderer::sectionOrigin();
+  const bool insidePortal = camera.world != nullptr &&
+      &camera.world->getMaterial(MathHelper::floor(eye.x), MathHelper::floor(eye.y), MathHelper::floor(eye.z)) ==
+          &material::Material::NETHER_PORTAL;
+  const core::DepthScope translucentDepth(true, !insidePortal);
+  if(fancyGraphics && !insidePortal) {
    {
     const core::ColorMaskScope colorMaskPass(false, false, false, false);
     worldRenderer.render(camera, chunk::terrain_layer::Translucent, false);
@@ -1066,8 +1076,8 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   mod::runtime::luaHookCameraSetup(cameraEvent);
  }
  if(!renderCameraEntity) {
-  client->world->setChunkCacheCenterFromBlockPos(MathHelper::floor(frameCamera_.x),
-                                                 MathHelper::floor(frameCamera_.z));
+  client->world->setChunkCacheCenterFromBlockPos(MathHelper::floor(frameCamera_.customView ? frameCamera_.x : camera->x),
+                                                 MathHelper::floor(frameCamera_.customView ? frameCamera_.z : camera->z));
  }
  const bool fancyGraphics = client->options.fancyGraphics;
  const int terrainTextureId = client->textureManager.getTextureId("/terrain.png");
@@ -1224,9 +1234,7 @@ if(!frameCamera_.shadowPass && !renderCameraEntity) {
   core::fogApplyMode(client, false, frameSettings_);
   shaderPipeline_->refreshLightmap(client->world);
  }
- {
-  worldRenderer->sections().cullChunks(activeCuller, !renderCameraEntity);
- }
+ worldRenderer->sections().cullChunks(activeCuller, !renderCameraEntity);
  if(!renderCameraEntity) {
   worldRenderer->compiler().compileChunks(*camera, false);
  }

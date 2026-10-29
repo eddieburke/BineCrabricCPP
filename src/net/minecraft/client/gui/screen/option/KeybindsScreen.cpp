@@ -1,4 +1,5 @@
 #include "net/minecraft/client/gui/screen/option/KeybindsScreen.hpp"
+#include "net/minecraft/client/gui/screen/GuiTooltip.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/client/input/Keys.hpp"
@@ -90,6 +91,24 @@ void KeybindsScreen::render(int mouseX, int mouseY, float tickDelta) {
  scroll_.renderHeaders(textRenderer(), width());
  scroll_.renderScrollbar(width());
  Screen::render(mouseX, mouseY, tickDelta);
+ for(std::size_t i = 0; i < bindings_.size(); ++i) {
+  const int buttonIndex = bindings_[i].buttonIndex;
+  if(buttonIndex < 0 || buttonIndex >= static_cast<int>(buttons_.size())) {
+   continue;
+  }
+  const widget::ButtonWidget* button = buttons_[static_cast<std::size_t>(buttonIndex)].get();
+  if(button == nullptr || !button->visible || mouseX < button->x || mouseY < button->y ||
+     mouseX >= button->x + button->width || mouseY >= button->y + button->height) {
+   continue;
+  }
+  if(textRenderer() != nullptr) {
+   const std::string_view tooltip = static_cast<int>(i) == selectedKeyBinding_
+                                        ? "Press a key to assign it. Press Escape to cancel."
+                                        : "Click to assign a key to this action.";
+   renderGuiTooltip(*textRenderer(), width(), height(), mouseX, mouseY, tooltip);
+  }
+  break;
+ }
 }
 void KeybindsScreen::selectKeybind(int index) {
  if(index < 0 || index >= static_cast<int>(bindings_.size())) {
@@ -108,6 +127,13 @@ void KeybindsScreen::selectKeybind(int index) {
 void KeybindsScreen::keyPressed(char character, int keyCode) {
  (void)character;
  if(selectedKeyBinding_ < 0) {
+  if(escapePressed(keyCode)) {
+   if(gameOptions_ != nullptr) gameOptions_->save();
+   net::minecraft::mod::ModSettingsRegistry::instance().save();
+   if(parentFactory_) navigateTo(parentFactory_);
+   else closeScreen();
+   return;
+  }
   if(arrowUpPressed(keyCode)) {
    scroll_.scrollBy(-layout::OptionsListScroll::kScrollStep);
    updateListLayout();
@@ -126,11 +152,13 @@ void KeybindsScreen::keyPressed(char character, int keyCode) {
   return;
  }
  const BindingEntry& binding = bindings_[static_cast<std::size_t>(selectedKeyBinding_)];
- if(binding.source == BindingEntry::Source::Vanilla) {
-  gameOptions_->setKeybindKey(binding.vanillaIndex, keyCode);
- } else if(auto* keybind = net::minecraft::mod::ModSettingsRegistry::instance().findKeybind(binding.modId)) {
-  keybind->currentKeyCode = keyCode;
-  net::minecraft::mod::ModSettingsRegistry::instance().save();
+ if(!escapePressed(keyCode)) {
+  if(binding.source == BindingEntry::Source::Vanilla) {
+   gameOptions_->setKeybindKey(binding.vanillaIndex, keyCode);
+  } else if(auto* keybind = net::minecraft::mod::ModSettingsRegistry::instance().findKeybind(binding.modId)) {
+   keybind->currentKeyCode = keyCode;
+   net::minecraft::mod::ModSettingsRegistry::instance().save();
+  }
  }
  if(binding.buttonIndex >= 0 && binding.buttonIndex < static_cast<int>(buttons_.size()) &&
     buttons_[static_cast<std::size_t>(binding.buttonIndex)] != nullptr) {

@@ -215,12 +215,21 @@ void InputSystem::drainScreenEvents(gui::screen::Screen& screen) {
  if(!display::Window::isActive()) {
   return;
  }
+ const auto screenChanged = [&] {
+  if(screen.minecraft() == nullptr || screen.minecraft()->currentScreen() == &screen) return false;
+  mouseReadIndex_ = mouseEvents_.size();
+  keyboardReadIndex_ = keyboardEvents_.size();
+  return true;
+ };
+ if(screenChanged()) return;
  while(const MouseEvent* event = nextMouseEvent()) {
   screen.onMouseEvent(*event);
+  if(screenChanged()) return;
  }
  if(!screen.passEvents) {
   while(const KeyboardEvent* event = nextKeyboardEvent()) {
    screen.onKeyboardEvent(*event);
+   if(screenChanged()) return;
   }
  }
 }

@@ -1,10 +1,9 @@
 #pragma once
-#include <cstdio>
 #include <functional>
 #include <initializer_list>
-#include <iterator>
 #include <optional>
 #include <string>
+#include <vector>
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gui/layout/OptionsLayout.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
@@ -28,6 +27,16 @@ inline std::string percentLabel(const char* title, float value) {
   return optionLabel(title, resource::language::I18n::getTranslation("options.off"));
  }
  return optionLabel(title, std::to_string(static_cast<int>(value * 100.0f)) + "%");
+}
+inline widget::OptionButtonWidget::TextFormat cycleLabelFormat(
+    std::string title, std::vector<std::string> labels, int client_option::GameOptions::* member, bool translate) {
+ return [title = std::move(title), labels = std::move(labels), member, translate](const client_option::GameOptions& o) {
+  if(labels.empty()) return title;
+  const int count = static_cast<int>(labels.size());
+  const int index = ((o.*member % count) + count) % count;
+  const std::string& label = labels[static_cast<std::size_t>(index)];
+  return optionLabel(title.c_str(), translate ? resource::language::I18n::getTranslation(label) : label);
+ };
 }
 inline void refreshOptionLabels(screen::Screen& screen, const client_option::GameOptions& options) {
  for(const std::unique_ptr<widget::ButtonWidget>& btnPtr : screen.buttons()) {
@@ -70,20 +79,12 @@ class OptionGuiBuilder {
              const char* key,
              const char* title,
              bool (*isEnabled)(const client_option::GameOptions&) = nullptr) {
-  const std::optional<std::size_t> idx = client_option::OptionRegistry::indexOf(key);
-  if(!idx) {
-   return;
-  }
   auto format = [title = std::string(title), key = std::string(key)](const client_option::GameOptions& o) {
    const bool on = o.getBoolean(key);
    return optionLabel(title.c_str(),
                       resource::language::I18n::getTranslation(on ? "options.on" : "options.off"));
   };
-  widget::OptionButtonWidget& btn = screen_.addButton<widget::OptionButtonWidget>(
-      widget::ActionButtonWidget::kNoId, x, y, *idx, format(options_), std::move(format));
-  if(isEnabled != nullptr) {
-   btn.active = isEnabled(options_);
-  }
+  customCycle(x, y, key, std::move(format), isEnabled);
  }
  void boolLabels(int x,
                  int y,
@@ -92,21 +93,13 @@ class OptionGuiBuilder {
                  const char* on,
                  const char* off,
                  bool (*isEnabled)(const client_option::GameOptions&) = nullptr) {
-  const std::optional<std::size_t> idx = client_option::OptionRegistry::indexOf(key);
-  if(!idx) {
-   return;
-  }
   auto format = [title = std::string(title),
                  on = std::string(on),
                  off = std::string(off),
                  key = std::string(key)](const client_option::GameOptions& o) {
    return optionLabel(title.c_str(), o.getBoolean(key) ? on.c_str() : off.c_str());
   };
-  widget::OptionButtonWidget& btn = screen_.addButton<widget::OptionButtonWidget>(
-      widget::ActionButtonWidget::kNoId, x, y, *idx, format(options_), std::move(format));
-  if(isEnabled != nullptr) {
-   btn.active = isEnabled(options_);
-  }
+  customCycle(x, y, key, std::move(format), isEnabled);
  }
  void intCycle(int x,
                int y,
@@ -115,23 +108,8 @@ class OptionGuiBuilder {
                std::initializer_list<const char*> labels,
                int client_option::GameOptions::* member,
                bool (*isEnabled)(const client_option::GameOptions&) = nullptr) {
-  const std::optional<std::size_t> idx = client_option::OptionRegistry::indexOf(key);
-  if(!idx) {
-   return;
-  }
-  const int count = static_cast<int>(labels.size());
-  auto format = [title = std::string(title), labels, member, count](const client_option::GameOptions& o) {
-   const int value = o.*member;
-   const int i = count > 0 ? ((value % count) + count) % count : 0;
-   auto it = labels.begin();
-   std::advance(it, i);
-   return optionLabel(title.c_str(), *it);
-  };
-  widget::OptionButtonWidget& btn = screen_.addButton<widget::OptionButtonWidget>(
-      widget::ActionButtonWidget::kNoId, x, y, *idx, format(options_), std::move(format));
-  if(isEnabled != nullptr) {
-   btn.active = isEnabled(options_);
-  }
+  customCycle(x, y, key, cycleLabelFormat(title, std::vector<std::string>(labels.begin(), labels.end()),
+                                        member, false), isEnabled);
  }
  void i18nCycle(int x,
                 int y,
@@ -140,23 +118,8 @@ class OptionGuiBuilder {
                 std::initializer_list<const char*> i18nKeys,
                 int client_option::GameOptions::* member,
                 bool (*isEnabled)(const client_option::GameOptions&) = nullptr) {
-  const std::optional<std::size_t> idx = client_option::OptionRegistry::indexOf(key);
-  if(!idx) {
-   return;
-  }
-  const int count = static_cast<int>(i18nKeys.size());
-  auto format = [title = std::string(title), i18nKeys, member, count](const client_option::GameOptions& o) {
-   const int value = o.*member;
-   const int i = count > 0 ? ((value % count) + count) % count : 0;
-   auto it = i18nKeys.begin();
-   std::advance(it, i);
-   return optionLabel(title.c_str(), resource::language::I18n::getTranslation(*it));
-  };
-  widget::OptionButtonWidget& btn = screen_.addButton<widget::OptionButtonWidget>(
-      widget::ActionButtonWidget::kNoId, x, y, *idx, format(options_), std::move(format));
-  if(isEnabled != nullptr) {
-   btn.active = isEnabled(options_);
-  }
+  customCycle(x, y, key, cycleLabelFormat(title, std::vector<std::string>(i18nKeys.begin(), i18nKeys.end()),
+                                        member, true), isEnabled);
  }
  void customCycle(int x,
                   int y,
@@ -179,26 +142,13 @@ class OptionGuiBuilder {
              const char* title,
              std::function<std::string(const client_option::GameOptions&)> format = nullptr,
              bool (*isEnabled)(const client_option::GameOptions&) = nullptr) {
-  const std::optional<std::size_t> idx = client_option::OptionRegistry::indexOf(key);
-  if(!idx) {
-   return;
-  }
   if(!format) {
    format = [title = std::string(title), key = std::string(key)](const client_option::GameOptions& o) {
     return percentLabel(title.c_str(), o.getFloat(key));
    };
   }
-  widget::SliderWidget& btn = screen_.addButton<widget::SliderWidget>(widget::ActionButtonWidget::kNoId,
-                                                                      x,
-                                                                      y,
-                                                                      *idx,
-                                                                      minecraft_,
-                                                                      format(options_),
-                                                                      options_.getFloat(key),
-                                                                      std::move(format));
-  if(isEnabled != nullptr) {
-   btn.active = isEnabled(options_);
-  }
+  mappedSlider(x, y, key, [key = std::string(key)](const client_option::GameOptions& o) { return o.getFloat(key); },
+                std::move(format), isEnabled);
  }
  void mappedSlider(int x,
                    int y,

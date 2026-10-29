@@ -108,7 +108,7 @@ keybinds.register(local_id,{default=code,label=text})
 keybinds.get_code(full_id)->integer              full ID required; unknown0
 keybinds.consume(local_or_full_id)->bool         queued press once; poll client_tick
 ```
-Low-level entry key,label,kind: toggle default bool; slider min/max/step/decimals/integer/default; options/cycle/enum options strings + string/zero-based default. get option string(invalid index may number). set toggle bool,slider numeric(no assured clamp/quantization),options string/zero-based index. Prefer proxy. Native file <run>/mod_settings.txt; keybind ID mod_id.local_id.
+Low-level entry key,label,kind: toggle default bool; slider min/max/step/decimals/integer/default; options/cycle/enum options strings + string/zero-based default; optional description displays as a wrapped settings tooltip. get option string(invalid index may number). set toggle bool,slider numeric(no assured clamp/quantization),options string/zero-based index. Prefer proxy. Native file <run>/mod_settings.txt; keybind ID mod_id.local_id.
 
 ## World/generation
 

@@ -57,6 +57,20 @@ TEST(RegionSnapshotRace, ConcurrentCopySeesNoTornNibble) {
  stop.store(true, std::memory_order_relaxed);
  writer.join();
 }
+TEST(RegionSnapshotRace, OnlyLegacyBrightnessReadsRequireDaylightRemeshing) {
+ auto chunk = std::make_unique<Chunk>(nullptr, 0, 0);
+ chunk->setLight(LightType::Sky, 3, 8, 3, 15);
+ const auto sources = sourceFor(*chunk);
+ RegionSnapshot snapshot(sources, 4, flatLuminance(), nullptr, 0, 0, 0, 16, 16, 16);
+ int block = 0;
+ int sky = 0;
+ snapshot.sampleLight(3, 8, 3, block, sky);
+ EXPECT_EQ(sky, 15);
+ EXPECT_TRUE(snapshot.sawSkyLight());
+ EXPECT_FALSE(snapshot.bakedAmbientBrightness());
+ EXPECT_EQ(snapshot.getRawBrightness(3, 8, 3, true), 11);
+ EXPECT_TRUE(snapshot.bakedAmbientBrightness());
+}
 // The guard must also make the WHOLE copy atomic: a writer that updates two
 // correlated nibbles inside one lockRenderWrite section can never be split by
 // copyChunkBand, so the snapshot always sees both writes together.

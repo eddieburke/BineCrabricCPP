@@ -1,7 +1,5 @@
 #include "net/minecraft/client/core/WorldSession.hpp"
-#include <chrono>
-#include <limits>
-#include <thread>
+#include <stdexcept>
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/auth/microsoft/PlayerTextures.hpp"
 #include "net/minecraft/client/sound/WorldSoundListener.hpp"
@@ -10,7 +8,6 @@
 #include "net/minecraft/util/math/MathHelper.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
-#include "net/minecraft/world/chunk/ChunkCache.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 #include "net/minecraft/world/storage/AlphaWorldStorage.hpp"
 #include "net/minecraft/world/storage/WorldStorageSource.hpp"
@@ -22,6 +19,11 @@ void saveLocalWorld(Minecraft& client, bool saveDedicatedPlayerData) {
   return;
  }
  WorldStorage* storage = world->getDimensionData();
+ if(client.player != nullptr) {
+  NbtCompound playerNbt;
+  client.player->writeNbt(playerNbt);
+  world->getProperties().setPlayerNbt(std::move(playerNbt));
+ }
  if(saveDedicatedPlayerData) {
   auto* alphaStorage = dynamic_cast<AlphaWorldStorage*>(storage);
   if(alphaStorage != nullptr && client.player != nullptr) {
@@ -29,6 +31,7 @@ void saveLocalWorld(Minecraft& client, bool saveDedicatedPlayerData) {
   }
  }
  world->save(true);
+ if(client.player != nullptr) world->getProperties().clearPlayerNbt();
  if(ChunkSource* source = world->getChunkSource(); source != nullptr) {
   source->save(true);
  }
@@ -170,49 +173,28 @@ void WorldSession::prepareWorld(Minecraft& client, const std::string& worldName)
  }
  client.progressRenderer.progressStart(worldName);
  client.progressRenderer.progressStage("Building terrain");
- constexpr int radius = 48;
  Vec3i center = client.world->getSpawnPos();
  if(client.player != nullptr) {
   center.x = MathHelper::floor(client.player->x);
   center.z = MathHelper::floor(client.player->z);
  }
- client.world->setChunkCacheCenterFromBlockPos(center.x, center.z);
- constexpr int chunkRadius = radius / 16;
- int totalChunks = 0;
- for(int dx = -chunkRadius; dx <= chunkRadius; ++dx) {
-  for(int dz = -chunkRadius; dz <= chunkRadius; ++dz) {
-   if(dx * dx + dz * dz <= chunkRadius * chunkRadius) {
-    ++totalChunks;
-   }
+ if(const auto* playerNbt = client.world->getProperties().getPlayerNbt(); playerNbt != nullptr) {
+  if(const Nbt* position = playerNbt->storage().get("Pos");
+     position != nullptr && position->isList() && position->asList().size() >= 3) {
+   const auto& values = position->asList();
+   center.x = MathHelper::floor(values[0].asDouble());
+   center.z = MathHelper::floor(values[2].asDouble());
   }
  }
  const int centerChunkX = center.x >> 4;
  const int centerChunkZ = center.z >> 4;
  if(ChunkSource* source = client.world->getChunkSource(); source != nullptr) {
-  if(auto* cache = dynamic_cast<world::chunk::ChunkCache*>(source); cache != nullptr) {
-   cache->setActiveRadius(chunkRadius);
-   cache->prefetchChunksNear(centerChunkX, centerChunkZ);
-   const auto start = std::chrono::steady_clock::now();
-   while(!cache->isChunkDataReady(centerChunkX, centerChunkZ)) {
-    cache->prefetchChunksNear(centerChunkX, centerChunkZ);
-    cache->pumpChunkPublish();
-    const std::size_t pending = cache->pendingAsyncLoadCount();
-    const int done = totalChunks > static_cast<int>(pending) ? totalChunks - static_cast<int>(pending) : 0;
-    client.progressRenderer.progressStagePercentage(done * 100 / totalChunks);
-    if(pending == 0 || std::chrono::steady_clock::now() - start > std::chrono::seconds(10)) {
-     break;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-   }
-   cache->pumpChunkPublish();
-  } else {
-   for(int dx = -chunkRadius; dx <= chunkRadius; ++dx) {
-    for(int dz = -chunkRadius; dz <= chunkRadius; ++dz) {
-     (void)client.world->getChunk(centerChunkX + dx, centerChunkZ + dz);
-    }
-   }
-   source->pumpChunkPublish();
-  }
+  source->setActiveRadius(3);
+  source->setChunkCacheCenter(centerChunkX, centerChunkZ);
+  source->loadChunk(centerChunkX, centerChunkZ);
+  if(!source->isChunkDataReady(centerChunkX, centerChunkZ))
+   throw std::runtime_error("Failed to load the player's chunk");
+  source->prefetchChunksNear(centerChunkX, centerChunkZ);
  }
  client.world->finishLightingUpdates();
  client.progressRenderer.progressStage("Simulating world for a bit");

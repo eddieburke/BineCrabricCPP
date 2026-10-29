@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <functional>
 #include <string>
@@ -26,7 +27,7 @@ class SliderWidget : public ButtonWidget {
               float valueIn,
               TextFormat format)
      : ButtonWidget(id, x, y, 150, 20, std::move(text)),
-       value(std::clamp(valueIn, 0.0f, 1.0f)),
+       value(std::isfinite(valueIn) ? std::clamp(valueIn, 0.0f, 1.0f) : 0.0f),
        registryIndex_(registryIndex),
        minecraft_(&minecraft),
        format_(std::move(format)) {
@@ -35,6 +36,10 @@ class SliderWidget : public ButtonWidget {
   return registryIndex_;
  }
  void refreshText(const option::GameOptions& options) {
+  if(!dragging) {
+   const float current = options.getFloat(option::OptionRegistry::at(registryIndex_).persistKey);
+   value = std::isfinite(current) ? std::clamp(current, 0.0f, 1.0f) : 0.0f;
+  }
   if(format_) {
    text = format_(options);
   }
@@ -60,20 +65,18 @@ class SliderWidget : public ButtonWidget {
   draw::appendAtlasQuad(tess, knobX + 4, y, 196, 66, 4, 20, 0.0f);
   tess.draw();
  }
- [[nodiscard]] bool isMouseOver(int mouseX, int mouseY) const override {
-  return ButtonWidget::isMouseOver(mouseX, mouseY);
- }
  void onMouseDown(int mouseX, int mouseY) override {
   (void)mouseY;
   startDragging(mouseX);
  }
  void startDragging(int mouseX) {
+  if(!active || !visible) return;
   dragging = true;
   updateValue(mouseX);
  }
  void mouseReleased(int mouseX, int mouseY) override {
   (void)mouseY;
-  if(!dragging || minecraft_ == nullptr) {
+  if(!dragging || !active || !visible || minecraft_ == nullptr) {
    dragging = false;
    return;
   }
@@ -89,7 +92,7 @@ class SliderWidget : public ButtonWidget {
   if(minecraft_ == nullptr) {
    return;
   }
-  value = std::clamp(static_cast<float>(mouseX - (x + 4)) / static_cast<float>(width - 8), 0.0f, 1.0f);
+  value = std::clamp(static_cast<float>(mouseX - (x + 4)) / static_cast<float>(std::max(1, width - 8)), 0.0f, 1.0f);
  }
  std::size_t registryIndex_ = 0;
  client::Minecraft* minecraft_ = nullptr;

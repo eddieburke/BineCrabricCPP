@@ -288,7 +288,7 @@ void ServerProcessCoordinator::shutdown() {
  if(processRunning()) {
   requestStop(false);
 #ifdef _WIN32
-  if(WaitForSingleObject(process_, 10000) == WAIT_TIMEOUT) {
+  if(WaitForSingleObject(process_, 60000) == WAIT_TIMEOUT) {
    TerminateProcess(process_, 1);
    WaitForSingleObject(process_, 2000);
   }

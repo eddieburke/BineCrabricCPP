@@ -46,6 +46,7 @@ int luaSettingsRegister(lua_State* state) {
    continue;
   }
   def.label = luaStringField(state, entry, "label", def.key);
+  def.description = luaStringField(state, entry, "description", "");
   const std::string kind = luaStringField(state, entry, "kind", "slider");
   if(kind == "toggle") {
    def.kind = net::minecraft::mod::ModSettingDef::Toggle;

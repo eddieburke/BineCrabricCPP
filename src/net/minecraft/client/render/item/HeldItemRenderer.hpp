@@ -15,6 +15,7 @@ class HeldItemRenderer {
  public:
  explicit HeldItemRenderer(net::minecraft::client::Minecraft* minecraft = nullptr);
  void renderItem(const net::minecraft::entity::LivingEntity& entity, const ItemStack& stack);
+ void renderItem(const net::minecraft::entity::LivingEntity& entity, const ItemStack& stack, float brightness);
  void render(float tickDelta);
  void renderScreenOverlays(float tickDelta);
  void tick();

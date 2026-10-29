@@ -20,6 +20,7 @@ struct ChunkMeshResult {
  std::array<std::vector<ModChunkMesh>, terrain_layer::Count> modLayers{};
  std::array<bool, terrain_layer::Count> layerEmpty{true, true, true};
  bool hasSkyLight = false;
+ bool bakedAmbientBrightness = false;
  // 6x6 face-to-face connectivity through non-opaque blocks (bit a*6+b), fed
  // to the per-frame occlusion BFS. All-ones = fully see-through.
  std::uint64_t visibilityBits = ~0ULL;
@@ -59,9 +60,6 @@ struct ChunkMeshJob {
  ChunkMeshResult result{};
  // Set when the worker hit an exception; the main thread reschedules.
  bool failed = false;
- // Built on the dedicated near-camera worker; its upload skips the
- // per-frame time budget so block edits next to the player land the
- // frame their mesh finishes.
  bool nearLane = false;
  std::unordered_map<int, int> blockRenderLayers;
  [[nodiscard]] static std::shared_ptr<ChunkMeshJob> capture(ChunkBuilder& owner,

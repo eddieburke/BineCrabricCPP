@@ -33,12 +33,12 @@ void OptionsListScroll::renderScrollbar(int screenWidth) const {
  }
  const int trackX = scrollbarTrackX(screenWidth);
  const int trackHeight = listBottom_ - listTop_;
- const int thumbHeight = std::max(16, trackHeight * trackHeight / std::max(trackHeight, contentHeight_));
- const int thumbTravel = std::max(0, trackHeight - thumbHeight);
+ const int height = thumbHeight();
+ const int thumbTravel = std::max(0, trackHeight - height);
  const int thumbY = listTop_ + (maxScroll_ == 0 ? 0 : scrollOffset_ * thumbTravel / maxScroll_);
  const render::RenderPassScope passScope(render::RenderType::gui());
  draw::coloredQuad(render::Tessellator::INSTANCE, trackX + 2, listBottom_, trackX, listTop_, 0x000000, 0x60);
- draw::coloredQuad(render::Tessellator::INSTANCE, trackX + 2, thumbY + thumbHeight, trackX, thumbY, 0xC0C0C0, 0xFF);
+ draw::coloredQuad(render::Tessellator::INSTANCE, trackX + 2, thumbY + height, trackX, thumbY, 0xC0C0C0, 0xFF);
 }
 void OptionsListScroll::renderHeaders(font::TextRenderer* textRenderer, int screenWidth) const {
  if(textRenderer == nullptr) {
@@ -46,7 +46,7 @@ void OptionsListScroll::renderHeaders(font::TextRenderer* textRenderer, int scre
  }
  for(const Header& header : headers_) {
   const int y = listTop_ + header.contentY - scrollOffset_;
-  if(y + 8 > listTop_ && y < listBottom_) {
+  if(y >= listTop_ && y + 8 <= listBottom_) {
    textRenderer->drawWithShadow(header.text, twoColumnLeftX(screenWidth), y, 0xFFFFA0);
   }
  }

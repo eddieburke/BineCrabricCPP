@@ -340,6 +340,9 @@ void Pipeline::prepareFrame(net::minecraft::World* world, PackInstance* activePa
   if(basePack != nullptr && basePack != activePack) {
    basePack->colorTargets.resetFlips();
   }
+  if(!activePack->definition.images.empty() && gl::GLCore::memoryBarrier != nullptr) {
+   gl::GLCore::memoryBarrier(0x00000120u);
+  }
   for(const CustomImage& declaration : activePack->definition.images) {
    const auto found = activePack->images.find(declaration.name);
    if(!declaration.clearEachFrame || found == activePack->images.end() || !found->second.texture) {
@@ -393,7 +396,8 @@ void Pipeline::updateLightmap(const net::minecraft::World* world) {
  if(!hasGlContext()) return;
  const bool lit = world != nullptr && world->dimension != nullptr;
  const int ambient = world != nullptr ? world->ambientDarkness : 0;
- if(lightmapTexture_ && lightmapLit_ == lit && lightmapAmbient_ == ambient) {
+ const auto luminance = lit ? world->dimension->lightLevelToLuminance : std::array<float, 16>{};
+ if(lightmapTexture_ && lightmapLit_ == lit && lightmapAmbient_ == ambient && lightmapLuminance_ == luminance) {
   return;
  }
  const int previousUnit = std::max(0, core::getActiveTextureUnit());
@@ -433,6 +437,7 @@ void Pipeline::updateLightmap(const net::minecraft::World* world) {
  core::activeTexture(gl::tex::Texture0 + previousUnit);
  lightmapLit_ = lit;
  lightmapAmbient_ = ambient;
+ lightmapLuminance_ = luminance;
 }
 std::vector<ColorFormat> Pipeline::sceneColorFormats(const PackInstance* activePack) const {
  int count = activePack != nullptr && activePack->summary.valid

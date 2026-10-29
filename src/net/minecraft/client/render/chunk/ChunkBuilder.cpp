@@ -376,6 +376,7 @@ void ChunkBuilder::buildMesh(ChunkMeshJob& job) {
       !(beganCompile && drewGeometry) && result.modLayers[static_cast<std::size_t>(layer)].empty();
  }
  result.hasSkyLight = snapshot.sawSkyLight();
+ result.bakedAmbientBrightness = snapshot.bakedAmbientBrightness();
 }
 bool ChunkBuilder::uploadMesh(ChunkMeshJob& job) {
  ++chunkUpdates;
@@ -428,6 +429,7 @@ bool ChunkBuilder::uploadMesh(ChunkMeshJob& job) {
   }
  }
  hasSkyLight = job.result.hasSkyLight;
+ bakedAmbientBrightness = job.result.bakedAmbientBrightness;
  occlusion.visBits = job.result.visibilityBits;
  freeModMeshGpuBuffers();
  modLayerMeshes_ = std::move(job.result.modLayers);

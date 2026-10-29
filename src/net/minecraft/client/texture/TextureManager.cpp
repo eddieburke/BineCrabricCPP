@@ -125,7 +125,7 @@ void uploadStaticMipmapLevels(int width,
  }
 }
 void uploadDynamicMipmapLevels(int sprite, std::vector<std::uint8_t>& imageBuffer) {
- for(int level = 1; level <= 4; ++level) {
+ for(int level = 1; level <= std::clamp(TextureManager::MIPMAP_LEVEL, 1, 4); ++level) {
   const int sourceSize = 16 >> (level - 1);
   const int targetSize = 16 >> level;
   downsampleRgbaMipmap(std::span<const std::uint8_t>(imageBuffer.data(),
@@ -598,7 +598,7 @@ void TextureManager::load(const RasterImage& image, int id) {
  if(MIPMAP) {
   int mipWidth = gridAtlas ? image.width / 16 : image.width;
   int mipHeight = gridAtlas ? image.height / 16 : image.height;
-  while(mipWidth > 1 && mipHeight > 1 && maxMipmapLevel < 4) {
+  while(mipWidth > 1 && mipHeight > 1 && maxMipmapLevel < std::clamp(MIPMAP_LEVEL, 1, 4)) {
    mipWidth >>= 1;
    mipHeight >>= 1;
    ++maxMipmapLevel;

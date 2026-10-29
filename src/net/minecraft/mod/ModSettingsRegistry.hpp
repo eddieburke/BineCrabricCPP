@@ -8,6 +8,7 @@ namespace net::minecraft::mod {
 struct ModSettingDef {
  std::string key;
  std::string label;
+ std::string description;
  enum Kind { Slider,
              Toggle,
              Options } kind = Slider;

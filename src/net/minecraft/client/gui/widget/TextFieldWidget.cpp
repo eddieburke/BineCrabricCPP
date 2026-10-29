@@ -1,4 +1,5 @@
 #include "net/minecraft/client/gui/widget/TextFieldWidget.hpp"
+#include <algorithm>
 #include "net/minecraft/client/font/TextRenderer.hpp"
 #include "net/minecraft/client/gui/Draw2D.hpp"
 #include "net/minecraft/client/gui/screen/Screen.hpp"
@@ -12,7 +13,15 @@ TextFieldWidget::TextFieldWidget(
  setText(std::move(text));
 }
 void TextFieldWidget::setText(const std::string& text) {
- text_ = text;
+ text_ = maxLength_ > 0 ? text.substr(0, static_cast<std::size_t>(maxLength_)) : text;
+}
+void TextFieldWidget::writeText(std::string_view text) {
+ if(!enabled || !focused) return;
+ const std::string& valid = CharacterUtils::validCharacters();
+ for(const char character : text) {
+  if(maxLength_ > 0 && text_.size() >= static_cast<std::size_t>(maxLength_)) break;
+  if(character != 0 && valid.find(character) != std::string::npos) text_.push_back(character);
+ }
 }
 void TextFieldWidget::tick() {
  ++focusedTicks_;
@@ -23,6 +32,7 @@ void TextFieldWidget::keyPressed(char character, int keyCode) {
  }
  if(character == '\t') {
   parent_->handleTab();
+  return;
  }
  bool paste = character == '\x16';
 #ifdef _WIN32
@@ -31,23 +41,13 @@ void TextFieldWidget::keyPressed(char character, int keyCode) {
  }
 #endif
  if(paste) {
-  std::string clipboard = screen::Screen::getClipboard();
-  int room = 32 - static_cast<int>(text_.size());
-  if(room > static_cast<int>(clipboard.size())) {
-   room = static_cast<int>(clipboard.size());
-  }
-  if(room > 0) {
-   text_ += clipboard.substr(0, static_cast<std::size_t>(room));
-  }
+  writeText(screen::Screen::getClipboard());
+  return;
  }
  if(screen::Screen::backspacePressed(keyCode) && !text_.empty()) {
   text_.pop_back();
  }
- const std::string& valid = CharacterUtils::validCharacters();
- if(character != 0 && valid.find(character) != std::string::npos &&
-    (maxLength_ == 0 || static_cast<int>(text_.size()) < maxLength_)) {
-  text_.push_back(character);
- }
+ writeText(std::string_view(&character, 1));
 }
 void TextFieldWidget::mouseClicked(int mouseX, int mouseY, int button) {
  if(button != 0) {
@@ -84,7 +84,9 @@ void TextFieldWidget::render() {
  }
 }
 void TextFieldWidget::setMaxLength(int maxLength) {
- maxLength_ = maxLength;
+ maxLength_ = std::max(0, maxLength);
+ if(maxLength_ > 0 && text_.size() > static_cast<std::size_t>(maxLength_))
+  text_.resize(static_cast<std::size_t>(maxLength_));
 }
 void TextFieldWidget::setBounds(int x, int y, int width, int height) {
  x_ = x;

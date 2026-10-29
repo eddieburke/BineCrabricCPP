@@ -72,6 +72,7 @@ class AmbientPacing : public ::testing::Test {
      auto section = std::make_shared<client::render::chunk::ChunkBuilder>(
          nullptr, scene_.blockEntities, x * 16, y * 16, z * 16);
      section->hasSkyLight = true;
+     section->bakedAmbientBrightness = true;
      section->built = true;
      column[static_cast<std::size_t>(y)] = section;
     }
@@ -136,6 +137,15 @@ TEST_F(AmbientPacing, ZeroBudgetDrainsNothing) {
  sections_->drainAmbientInvalidations(0);
  EXPECT_EQ(dirtySections(), 0);
  EXPECT_EQ(sections_->pendingAmbientColumns_.size(), static_cast<std::size_t>(kGrid * kGrid));
+}
+TEST_F(AmbientPacing, LightmappedTerrainDoesNotRebuildForDaylight) {
+ for(auto& entry : sections_->columns_) {
+  for(auto& section : entry.second) section->bakedAmbientBrightness = false;
+ }
+ sections_->notifyAmbientDarknessChanged();
+ sections_->drainAmbientInvalidations(1000000);
+ EXPECT_TRUE(sections_->pendingAmbientColumns_.empty());
+ EXPECT_EQ(dirtySections(), 0);
 }
 } // namespace
 } // namespace net::minecraft::test

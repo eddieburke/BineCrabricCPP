@@ -65,13 +65,11 @@ class ParticleManager {
   // already in pass-base space, exactly like terrain.
   render::core::setDrawPose(net::minecraft::util::math::Matrix4f::identityMatrix());
   const render::FrameRenderCamera& frame = render::core::cameraFrame();
-  const float billboardYaw = frame.customView ? frame.yaw : entity->yaw;
-  const float billboardPitch = frame.customView ? frame.pitch : entity->pitch;
-  const float yawCos = MathHelper::cos(billboardYaw * kPiF / 180.0f);
-  const float yawSin = MathHelper::sin(billboardYaw * kPiF / 180.0f);
-  const float widthOffset = -yawSin * MathHelper::sin(billboardPitch * kPiF / 180.0f);
-  const float heightOffset = yawCos * MathHelper::sin(billboardPitch * kPiF / 180.0f);
-  const float verticalSize = MathHelper::cos(billboardPitch * kPiF / 180.0f);
+  const float yawCos = frame.viewRightX;
+  const float yawSin = frame.viewRightZ;
+  const float widthOffset = frame.viewUpX;
+  const float heightOffset = frame.viewUpZ;
+  const float verticalSize = frame.viewUpY;
   render::Tessellator& tessellator = render::Tessellator::INSTANCE;
   for(int group = 0; group < 3; ++group) {
    const char* texture = group == 0 ? "/particles.png" : (group == 1 ? "/terrain.png" : "/gui/items.png");

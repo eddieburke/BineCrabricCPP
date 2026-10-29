@@ -19,6 +19,9 @@
 #include "net/minecraft/client/render/pipeline/Instance.hpp"
 #include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 #include "net/minecraft/client/render/uniforms/Uniforms.hpp"
+#include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/render/item/HeldItemRenderer.hpp"
+#include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/world/dimension/Dimension.hpp"
 #include "net/minecraft/world/dimension/DimensionType.hpp"
 #include "net/minecraft/world/light/UnifiedLightRegistry.hpp"
@@ -153,6 +156,38 @@ TEST_F(BlockLightShader, VertexLightPacking) {
  EXPECT_EQ(block, expectedBlock) << "block light should be 14*16=224";
  EXPECT_EQ(sky, expectedSky) << "sky light should be 0";
  EXPECT_EQ(v.light, expected);
+}
+TEST_F(BlockLightShader, HeldCubeKeepsTintSeparateFromWorldLight) {
+ auto* previousClient = client::Minecraft::INSTANCE;
+ {
+  struct TestClient : client::Minecraft {
+   TestClient() : Minecraft(64, 64, false) {}
+   void handleCrash(const util::crash::CrashReport&) override {}
+  } minecraft;
+  PlayerEntity player(nullptr);
+  player.minBrightness = 0.05f;
+  client::render::item::HeldItemRenderer renderer(&minecraft);
+  auto& tess = Tessellator::INSTANCE;
+  tess.setCaptureOnly(true);
+  for(float brightness : {1.0f, 0.25f}) {
+   tess.light(2, 6);
+   tess.beginBatch();
+   renderer.renderItem(player, ItemStack(1, 1), brightness);
+   auto mesh = tess.takeMesh();
+   tess.endBatch();
+   EXPECT_FALSE(mesh.empty());
+   for(const auto& vertex : mesh.vertices) {
+    EXPECT_EQ(vertex.light & 0xFFFF, 2 * 16);
+    EXPECT_EQ((vertex.light >> 16) & 0xFFFF, 6 * 16);
+    const int expected = static_cast<int>(brightness * 255);
+    EXPECT_NEAR(vertex.color & 0xFF, expected, 1);
+    EXPECT_NEAR((vertex.color >> 8) & 0xFF, expected, 1);
+    EXPECT_NEAR((vertex.color >> 16) & 0xFF, expected, 1);
+   }
+  }
+  tess.setCaptureOnly(false);
+ }
+ client::Minecraft::INSTANCE = previousClient;
 }
 TEST_F(BlockLightShader, VertexLightPackingMaxValues) {
  Tessellator tess;

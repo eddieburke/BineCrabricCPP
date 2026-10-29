@@ -81,6 +81,7 @@ class RegionSnapshot final : public net::minecraft::BlockView {
   }
  }
  [[nodiscard]] bool sawSkyLight() const noexcept { return sawSkyLight_; }
+ [[nodiscard]] bool bakedAmbientBrightness() const noexcept { return bakedAmbientBrightness_; }
  [[nodiscard]] bool columnHasBlocks(int blockX, int blockZ, int minY, int maxY) const;
  // Captures that had to fall back to the chunk write lock. Per-cell writers are
  // outside the version protocol, so light traffic alone must never move this; the
@@ -154,5 +155,6 @@ class RegionSnapshot final : public net::minecraft::BlockView {
  std::array<float, 16> lightLevelToLuminance_{};
  std::unique_ptr<net::minecraft::BiomeSource> biomeSource_;
  mutable bool sawSkyLight_ = false;
+ mutable bool bakedAmbientBrightness_ = false;
 };
 } // namespace net::minecraft::client::render::chunk

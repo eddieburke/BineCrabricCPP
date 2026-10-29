@@ -167,8 +167,7 @@ TEST(LodRegression, InvalidSettingsAreBoundedAndUnsupportedPacksRetainNativeCove
  EXPECT_TRUE(option::supportsDistantTerrain(pack));
  pack.voxelizeLightBlocks = true;
  settings = option::renderSettings(options, pack);
- EXPECT_FALSE(settings.distantTerrain);
- EXPECT_EQ(settings.nativeChunkRadius, 80);
+ EXPECT_EQ(settings.distantTerrain, options.distantTerrain);
 }
 TEST(LodRegression, ProviderFlagOverridesCachedProgramAvailability) {
  client::render::PackDefinition pack;

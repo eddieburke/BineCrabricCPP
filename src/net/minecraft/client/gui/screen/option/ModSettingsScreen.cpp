@@ -1,4 +1,5 @@
 #include "net/minecraft/client/gui/screen/option/ModSettingsScreen.hpp"
+#include "net/minecraft/client/gui/screen/GuiTooltip.hpp"
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -352,6 +353,36 @@ void ModSettingsScreen::render(int mouseX, int mouseY, float tickDelta) {
  scroll_.renderHeaders(textRenderer(), width());
  scroll_.renderScrollbar(width());
  Screen::render(mouseX, mouseY, tickDelta);
+ if(textRenderer() == nullptr) {
+  return;
+ }
+ for(const SettingWidget& entry : settingWidgets_) {
+  if(entry.widgetIndex < 0 || entry.widgetIndex >= static_cast<int>(buttons_.size())) {
+   continue;
+  }
+  const widget::ButtonWidget* button = buttons_[static_cast<std::size_t>(entry.widgetIndex)].get();
+  if(button == nullptr || !button->visible || mouseX < button->x || mouseY < button->y ||
+     mouseX >= button->x + button->width || mouseY >= button->y + button->height) {
+   continue;
+  }
+  const auto* setting = net::minecraft::mod::ModSettingsRegistry::instance().findSetting(entry.modId, entry.key);
+  if(setting == nullptr) {
+   break;
+  }
+  std::string description = setting->description;
+  if(description.empty()) {
+   if(setting->kind == net::minecraft::mod::ModSettingDef::Slider) {
+    description = "Adjusts " + setting->label + " from " + std::to_string(setting->sliderMin) + " to " +
+                  std::to_string(setting->sliderMax) + ".";
+   } else if(setting->kind == net::minecraft::mod::ModSettingDef::Options) {
+    description = "Cycles through the available choices for " + setting->label + ".";
+   } else {
+    description = "Enables or disables " + setting->label + ".";
+   }
+  }
+  renderGuiTooltip(*textRenderer(), width(), height(), mouseX, mouseY, description);
+  break;
+ }
 }
 void ModSettingsScreen::mouseReleased(int mouseX, int mouseY, int button) {
  scroll_.mouseReleased();

@@ -73,8 +73,9 @@ TEST(LightingMeshGate, BorderRefreshWaitsForArrivingColumnLighting) {
  fixture.sections.drainPendingColumns();
  fixture.sections.drainBorderRefresh();
  EXPECT_FALSE(neighbor->dirty);
- EXPECT_TRUE(fixture.sections.pendingBorderRefresh_.contains(client::render::world::ColumnPos{1, 0}));
+ EXPECT_FALSE(fixture.sections.pendingBorderRefresh_.contains(client::render::world::ColumnPos{1, 0}));
  fixture.sections.markChunkColumnLit(1, 0);
+ EXPECT_TRUE(fixture.sections.pendingBorderRefresh_.contains(client::render::world::ColumnPos{1, 0}));
  fixture.sections.drainBorderRefresh();
  EXPECT_TRUE(neighbor->dirty);
  EXPECT_FALSE(fixture.sections.pendingBorderRefresh_.contains(client::render::world::ColumnPos{1, 0}));

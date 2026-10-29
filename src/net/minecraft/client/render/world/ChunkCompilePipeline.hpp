@@ -1,8 +1,6 @@
 #pragma once
 #include <cstdint>
 #include <memory>
-#include <list>
-#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include "net/minecraft/client/option/RenderSettings.hpp"
@@ -16,9 +14,6 @@ class LivingEntity;
 }
 namespace net::minecraft::client::render {
 class ChunkSectionSystem;
-// Owns the mesh build/upload pipeline of the world renderer: the dirty-section
-// sets, the shared mesh handoff and the per-frame upload/capture FrameBudget
-// slicing in compileChunks.
 class ChunkCompilePipeline {
  public:
  explicit ChunkCompilePipeline(TerrainScene& scene) : scene_(scene) {
@@ -41,14 +36,10 @@ class ChunkCompilePipeline {
  void cancelAll() {
   meshHandoff_.cancelAll();
   pendingMeshUploads_.clear();
-  deferredMeshUploadQueue_.clear();
-  nearMeshUploads_.clear();
-  backgroundMeshUploads_.clear();
   completedMeshUploads_.clear();
  }
  void clearDirtyTracking() {
   dirtyChunks_.clear();
-  dirtyScan_.clear();
   captureCandidates_.clear();
   nearDirtyChunks_.clear();
  }
@@ -70,15 +61,11 @@ class ChunkCompilePipeline {
          net::minecraft::util::concurrent::Domain::Compute)};
  TerrainScene& scene_;
  ChunkSectionSystem* sectionSystem_ = nullptr;
- std::list<chunk::ChunkBuilder*> dirtyScan_{};
- std::unordered_map<chunk::ChunkBuilder*, std::list<chunk::ChunkBuilder*>::iterator> dirtyChunks_{};
+ std::unordered_set<chunk::ChunkBuilder*> dirtyChunks_{};
  std::unordered_set<chunk::ChunkBuilder*> nearDirtyChunks_{};
  // Reused so the per-frame capture pass allocates nothing.
  std::vector<chunk::ChunkBuilder*> captureCandidates_{};
  std::vector<std::shared_ptr<chunk::ChunkMeshJob>> pendingMeshUploads_{};
- std::vector<std::shared_ptr<chunk::ChunkMeshJob>> deferredMeshUploadQueue_{};
- std::vector<std::shared_ptr<chunk::ChunkMeshJob>> nearMeshUploads_{};
- std::vector<std::shared_ptr<chunk::ChunkMeshJob>> backgroundMeshUploads_{};
  std::vector<std::shared_ptr<chunk::ChunkMeshJob>> completedMeshUploads_{};
 };
 } // namespace net::minecraft::client::render

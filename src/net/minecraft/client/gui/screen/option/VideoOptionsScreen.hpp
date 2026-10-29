@@ -12,6 +12,7 @@ class VideoOptionsScreen : public screen::Screen {
  VideoOptionsScreen(ParentFactory parentFactory, client_option::GameOptions* options);
  void init() override;
  void render(int mouseX, int mouseY, float tickDelta) override;
+ void keyPressed(char character, int keyCode) override;
  [[nodiscard]] std::string_view getScreenUiId() const override {
   return net::minecraft::mod::screen_ids::kVideoOptions;
  }

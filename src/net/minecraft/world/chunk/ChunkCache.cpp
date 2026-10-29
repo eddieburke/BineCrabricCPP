@@ -174,24 +174,16 @@ Chunk& ChunkCache::loadChunk(int chunkX, int chunkZ) {
  return adoptChunk(chunkX, chunkZ, produceChunk(chunkX, chunkZ));
 }
 Chunk& ChunkCache::adoptChunk(int chunkX, int chunkZ, std::unique_ptr<Chunk> owned) {
+ if(owned == nullptr) return empty_;
  const ChunkPos pos{chunkX, chunkZ};
- Chunk* chunk = nullptr;
- if(owned != nullptr) {
-  owned->world = world_;
-  if(world_ != nullptr) {
-   owned->lastSaveTime = static_cast<long long>(world_->getTime());
-  }
-  chunk = owned.get();
-  chunk->dataReady = true;
-  ownedChunks_.emplace(chunk, std::move(owned));
- } else {
-  chunk = &empty_;
- }
+ owned->world = world_;
+ if(world_ != nullptr) owned->lastSaveTime = static_cast<long long>(world_->getTime());
+ Chunk* chunk = owned.get();
+ chunk->dataReady = true;
+ ownedChunks_.emplace(chunk, std::move(owned));
  chunksByPos_[pos] = chunk;
  chunks_.push_back(chunk);
- if(chunk != &empty_) {
-  chunk->load();
- }
+ chunk->load();
  if(generator_ != nullptr) {
   if(chunk != nullptr && !chunk->terrainPopulated && isChunkLoaded(chunkX + 1, chunkZ + 1) &&
      isChunkLoaded(chunkX, chunkZ + 1) && isChunkLoaded(chunkX + 1, chunkZ)) {
@@ -213,7 +205,7 @@ Chunk& ChunkCache::adoptChunk(int chunkX, int chunkZ, std::unique_ptr<Chunk> own
    decorate(this, chunkX - 1, chunkZ - 1);
   }
  }
- if(world_ != nullptr && chunk != &empty_) {
+ if(world_ != nullptr) {
   world_->chunkAvailable(chunkX, chunkZ);
  }
  return *chunk;
@@ -578,19 +570,13 @@ void ChunkCache::rebuildResidencyPlan() {
  for(int dx = -activeRadius_; dx <= activeRadius_; ++dx) {
   for(int dz = -activeRadius_; dz <= activeRadius_; ++dz) {
    const std::int64_t distanceSq = static_cast<std::int64_t>(dx) * dx + static_cast<std::int64_t>(dz) * dz;
-   if(distanceSq > radiusSq) {
-    continue;
-   }
+   if(distanceSq > radiusSq) continue;
    order.push_back({ChunkPos{centerChunkX_ + dx, centerChunkZ_ + dz}, distanceSq});
   }
  }
  std::sort(order.begin(), order.end(), [](const Candidate& a, const Candidate& b) {
-  if(a.distanceSq != b.distanceSq) {
-   return a.distanceSq < b.distanceSq;
-  }
-  if(a.position.x != b.position.x) {
-   return a.position.x < b.position.x;
-  }
+  if(a.distanceSq != b.distanceSq) return a.distanceSq < b.distanceSq;
+  if(a.position.x != b.position.x) return a.position.x < b.position.x;
   return a.position.z < b.position.z;
  });
  for(const Candidate& candidate : order) {
@@ -643,7 +629,6 @@ void ChunkCache::prefetchChunksNear(int centerChunkX, int centerChunkZ) {
  if(world_ == nullptr || (storage_ == nullptr && generator_ == nullptr)) {
   return;
  }
- integrateFinishedLoads(4);
  refillAsyncLoads();
 }
 void ChunkCache::refillAsyncLoads() {
@@ -653,7 +638,7 @@ void ChunkCache::refillAsyncLoads() {
  const unsigned workerCount =
      net::minecraft::util::concurrent::ThreadCoordinator::instance()
          .pool(net::minecraft::util::concurrent::Domain::Compute)
-         .threadCount();
+         .concurrencyLimit();
  const std::size_t targetPending = asyncLoadWindow(workerCount);
  if(pendingLoads_.size() >= targetPending) {
   return;

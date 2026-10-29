@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 #include "net/minecraft/client/gui/widget/ButtonWidget.hpp"
@@ -28,12 +29,12 @@ class OptionsListScroll {
  static constexpr int kSectionLabelHeight = 14;
  static constexpr int kSectionGap = 8;
  void clear() {
+  rebuildOffset_ = scrollOffset_;
   entries_.clear();
   headers_.clear();
   contentHeight_ = 0;
   maxScroll_ = 0;
   draggingThumb_ = false;
-  // Keep scrollOffset_ so rebuilds (resize / pack toggle) stay put.
  }
  void setViewport(int listTop, int listBottom) noexcept {
   listTop_ = listTop;
@@ -43,6 +44,10 @@ class OptionsListScroll {
  void setContentHeight(int contentHeight) noexcept {
   contentHeight_ = std::max(0, contentHeight);
   recomputeMaxScroll();
+  if(rebuildOffset_) {
+   scrollOffset_ = std::clamp(*rebuildOffset_, 0, maxScroll_);
+   rebuildOffset_.reset();
+  }
  }
  void addEntry(int widgetIndex, int contentY) {
   entries_.push_back({widgetIndex, contentY});
@@ -81,8 +86,7 @@ class OptionsListScroll {
     continue;
    }
    button->y = listTop_ + entry.contentY - scrollOffset_;
-   // Soft clip: keep partially visible rows interactive.
-   button->visible = button->y + button->height > listTop_ && button->y < listBottom_;
+   button->visible = button->y >= listTop_ && button->y + button->height <= listBottom_;
   }
  }
  void scrollBy(int amount) {
@@ -100,7 +104,7 @@ class OptionsListScroll {
  }
  // Returns true when the click started a scrollbar drag (caller should skip other handling).
  [[nodiscard]] bool mouseClicked(int mouseX, int mouseY, int screenWidth) {
-  if(maxScroll_ <= 0 || mouseY < listTop_ || mouseY > listBottom_) {
+  if(maxScroll_ <= 0 || listBottom_ <= listTop_ || mouseY < listTop_ || mouseY >= listBottom_) {
    draggingThumb_ = false;
    return false;
   }
@@ -110,7 +114,12 @@ class OptionsListScroll {
    return false;
   }
   draggingThumb_ = true;
-  jumpThumbToMouse(mouseY);
+  const int height = thumbHeight();
+  const int travel = listBottom_ - listTop_ - height;
+  const int top = listTop_ + scrollOffset_ * travel / maxScroll_;
+  if(mouseY < top || mouseY >= top + height) jumpThumbToMouse(mouseY);
+  dragStartY_ = mouseY;
+  dragStartOffset_ = scrollOffset_;
   return true;
  }
  void mouseReleased() noexcept {
@@ -118,7 +127,8 @@ class OptionsListScroll {
  }
  void mouseDragged(int mouseY) {
   if(draggingThumb_) {
-   jumpThumbToMouse(mouseY);
+   const int travel = std::max(1, listBottom_ - listTop_ - thumbHeight());
+   scrollOffset_ = std::clamp(dragStartOffset_ + (mouseY - dragStartY_) * maxScroll_ / travel, 0, maxScroll_);
   }
  }
  void renderFooterDim(int screenWidth, int screenHeight) const;
@@ -155,13 +165,17 @@ class OptionsListScroll {
   scrollOffset_ = std::clamp(scrollOffset_, 0, maxScroll_);
  }
  [[nodiscard]] static int scrollbarTrackX(int screenWidth) noexcept {
-  return screenWidth / 2 + 164;
+  return std::clamp(screenWidth / 2 + 164, 0, std::max(0, screenWidth - 6));
+ }
+ [[nodiscard]] int thumbHeight() const noexcept {
+  const int trackHeight = std::max(0, listBottom_ - listTop_);
+  if(trackHeight == 0) return 0;
+  return std::clamp(trackHeight * trackHeight / std::max(trackHeight, contentHeight_),
+                     std::min(16, trackHeight), trackHeight);
  }
  void jumpThumbToMouse(int mouseY) {
-  const int trackHeight = std::max(1, listBottom_ - listTop_);
-  const int thumbHeight = std::max(16, trackHeight * trackHeight / std::max(trackHeight, contentHeight_));
-  const int thumbTravel = std::max(1, trackHeight - thumbHeight);
-  const int relative = std::clamp(mouseY - listTop_ - thumbHeight / 2, 0, thumbTravel);
+  const int thumbTravel = std::max(1, listBottom_ - listTop_ - thumbHeight());
+  const int relative = std::clamp(mouseY - listTop_ - thumbHeight() / 2, 0, thumbTravel);
   scrollOffset_ = maxScroll_ * relative / thumbTravel;
  }
  int listTop_ = kDefaultListTop;
@@ -170,6 +184,9 @@ class OptionsListScroll {
  int scrollOffset_ = 0;
  int maxScroll_ = 0;
  bool draggingThumb_ = false;
+ int dragStartY_ = 0;
+ int dragStartOffset_ = 0;
+ std::optional<int> rebuildOffset_;
  std::vector<Entry> entries_;
  std::vector<Header> headers_;
 };

@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <limits>
+#include <memory>
 #include <string>
 #include "net/minecraft/server/MinecraftServer.hpp"
 #include "net/minecraft/world/chunk/ChunkCache.hpp"
@@ -17,6 +18,20 @@ struct ServerChunkCacheFixture {
   world.setSpawnPos(net::minecraft::Vec3i{0, 64, 0});
   cache = world.chunkCache;
  }
+};
+class RetryChunkStorage final : public net::minecraft::ChunkStorage {
+ public:
+ net::minecraft::Chunk loadChunk(net::minecraft::World* world, int x, int z) override {
+  net::minecraft::Chunk chunk(world, x, z);
+  chunk.empty = ++calls_ == 1;
+  return chunk;
+ }
+ void saveChunk(net::minecraft::World*, net::minecraft::Chunk&) override {}
+ void saveEntities(net::minecraft::World*, net::minecraft::Chunk&) override {}
+ void tick() override {}
+ void flush() override {}
+ private:
+ int calls_ = 0;
 };
 } // namespace
 namespace net::minecraft::test {
@@ -93,5 +108,14 @@ TEST(ServerChunkCache, AsyncLoadWindowScalesWithComputeWorkers) {
  EXPECT_EQ(world::chunk::ChunkCache::asyncLoadWindow(3), 96U);
  EXPECT_EQ(world::chunk::ChunkCache::asyncLoadWindow(8), 256U);
  EXPECT_EQ(world::chunk::ChunkCache::asyncLoadWindow(64), 256U);
+}
+TEST(ServerChunkCache, FailedSynchronousLoadDoesNotPermanentlyCacheTheEmptyChunk) {
+ ServerChunkCacheFixture fixture;
+ world::chunk::ChunkCache cache(&fixture.world, std::make_unique<RetryChunkStorage>(), nullptr);
+ EXPECT_TRUE(cache.loadChunk(37, -21).isEmpty());
+ EXPECT_FALSE(cache.isChunkLoaded(37, -21));
+ EXPECT_FALSE(cache.loadChunk(37, -21).isEmpty());
+ EXPECT_TRUE(cache.isChunkDataReady(37, -21));
+ cache.unloadChunk(37, -21);
 }
 } // namespace net::minecraft::test

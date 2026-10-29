@@ -299,12 +299,8 @@ void LightingEngine::runScheduledWork() {
    const std::lock_guard lock(queueMutex_);
    if(stopping_ || capped || !tryClaimBox(box)) {
     --scheduledWorkers_;
-    if(!stopping_ && capped) {
-     scheduleWorkersLocked();
-    }
-    if(scheduledWorkers_ == 0) {
-     idleCv_.notify_all();
-    }
+    if(!stopping_ && capped) scheduleWorkersLocked();
+    if(scheduledWorkers_ == 0) idleCv_.notify_all();
     break;
    }
   }

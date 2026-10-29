@@ -85,6 +85,7 @@ TileCells flatCells(int stride, int top, int block) {
 }
 } // namespace
 
+
 TEST(DistantTile, FlatPlaneWithWaterPatch) {
  ChunkGrid grid;
  grid.fillTile(0, 0, 64);

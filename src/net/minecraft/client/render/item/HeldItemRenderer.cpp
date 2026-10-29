@@ -160,6 +160,10 @@ int HeldItemRenderer::skinTexture(const net::minecraft::entity::player::ClientPl
  return minecraft->textureManager.downloadTexture(player.skinUrl, player.getTexture());
 }
 void HeldItemRenderer::renderItem(const net::minecraft::entity::LivingEntity& entity, const ItemStack& itemStack) {
+ renderItem(entity, itemStack, entity.getBrightnessAtEyes(1.0f));
+}
+void HeldItemRenderer::renderItem(const net::minecraft::entity::LivingEntity&, const ItemStack& itemStack,
+                                  float brightness) {
  if(minecraft == nullptr || itemStack.empty()) {
   return;
  }
@@ -178,7 +182,7 @@ void HeldItemRenderer::renderItem(const net::minecraft::entity::LivingEntity& en
    pose.translate(-0.5f, -0.5f, -0.5f);
    core::setDrawPose(pose.top());
    net::minecraft::mod::model::drawLuaItemModel(
-       Tessellator::INSTANCE, itemStack, entity.getBrightnessAtEyes(1.0f));
+       Tessellator::INSTANCE, itemStack, brightness);
    return;
   }
  if(ItemModelRenderer::rendersAsBlockModel(itemStack)) {
@@ -188,7 +192,7 @@ void HeldItemRenderer::renderItem(const net::minecraft::entity::LivingEntity& en
   const bool cullWasEnabled = core::cullEnabled();
   core::disableCull();
   const core::ScopedDrawCameraState itemGuard;
-  blockRenderManager.render(*block, itemStack.getDamage(), entity.getBrightnessAtEyes(1.0f));
+  blockRenderManager.render(*block, itemStack.getDamage(), brightness);
   if(cullWasEnabled) {
    core::enableCull();
   }
@@ -342,7 +346,7 @@ void HeldItemRenderer::render(float tickDelta) {
    pose.rotate(180.0f, 0.0f, 1.0f, 0.0f);
   }
   core::setDrawPose(pose.top());
-  renderItem(*clientPlayer, *selectedItem);
+  renderItem(*clientPlayer, *selectedItem, colorMult);
  } else if(playerRenderer != nullptr) {
   const core::ScopedDrawCameraState handGuard;
   net::minecraft::util::math::MatrixStack pose;
@@ -428,7 +432,9 @@ void HeldItemRenderer::tick() {
   return;
  }
  ItemStack* selectedItem = clientPlayer->inventory.getSelectedItem();
- bool sameSelection = slot == clientPlayer->inventory.selectedSlot && selectedItem == stackSource_;
+ bool sameSelection = slot == clientPlayer->inventory.selectedSlot &&
+                      selectedItem != nullptr && !stack.empty() &&
+                      selectedItem->itemId == stack.itemId && selectedItem->getDamage() == stack.getDamage();
  if(stackSource_ == nullptr && selectedItem == nullptr) {
   sameSelection = true;
  }
@@ -437,6 +443,11 @@ void HeldItemRenderer::tick() {
   stack = *selectedItem;
   stackSource_ = selectedItem;
   sameSelection = true;
+ }
+ if(sameSelection && selectedItem != nullptr) {
+  stack = *selectedItem;
+  stackSource_ = selectedItem;
+  slot = clientPlayer->inventory.selectedSlot;
  }
  const float target = sameSelection ? 1.0f : 0.0f;
  float delta = target - height;

@@ -8,6 +8,7 @@
 #include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/client/render/pipeline/Pipeline.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
+#include "net/minecraft/client/render/RenderType.hpp"
 #include "net/minecraft/client/render/Tessellator.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -123,6 +124,21 @@ void InventoryScreen::drawBackground(float tickDelta) {
   return;
  }
  const core::DepthScope previewCaps(true, true);
+ const render::RenderPassScope previewPass(render::RenderType::entityCutout());
+ const bool savedFogEnabled = core::fog().enabled;
+ core::setFogEnabled(false);
+ auto previewLight = core::worldLight();
+ constexpr float lightLength = 1.2369317f;
+ previewLight.sunDirView[0] = 0.2f / lightLength;
+ previewLight.sunDirView[1] = 1.0f / lightLength;
+ previewLight.sunDirView[2] = -0.7f / lightLength;
+ previewLight.fillDirView[0] = -0.2f / lightLength;
+ previewLight.fillDirView[1] = 1.0f / lightLength;
+ previewLight.fillDirView[2] = 0.7f / lightLength;
+ previewLight.sunColor[0] = previewLight.sunColor[1] = previewLight.sunColor[2] = 1.0f;
+ previewLight.ambient[0] = previewLight.ambient[1] = previewLight.ambient[2] = 0.4f;
+ previewLight.sunIntensity = previewLight.fillIntensity = 0.6f;
+ core::setWorldLight(previewLight);
  core::setEntityColor(0.0f, 0.0f, 0.0f, 0.0f);
  core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
  if(minecraft()->gameRenderer != nullptr) {
@@ -172,5 +188,6 @@ void InventoryScreen::drawBackground(float tickDelta) {
   player.pitch = savedPitch;
   core::setLightingEnabled(false);
  }
+ core::setFogEnabled(savedFogEnabled);
 }
 } // namespace net::minecraft::client::gui::screen::ingame

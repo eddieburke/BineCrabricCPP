@@ -56,8 +56,7 @@ RenderSettings renderSettings(const GameOptions& options) {
  return r;
 }
 bool supportsDistantTerrain(const render::PackDefinition& pack) {
- return !pack.voxelizeLightBlocks && pack.effectiveVoxelDistance() <= 0.0f &&
-        (pack.programs.empty() || pack.programs.contains("dh_terrain"));
+ return pack.programs.empty() || pack.programs.contains("dh_terrain");
 }
 void applyShaderPack(RenderSettings& settings, const render::PackDefinition& pack) {
  settings.distantTerrain = settings.distantTerrain && supportsDistantTerrain(pack);

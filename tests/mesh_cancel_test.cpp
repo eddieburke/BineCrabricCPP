@@ -23,6 +23,15 @@ struct TestJob {
   }
  }
 };
+TEST(MeshCancel, ExpiredPoolDoesNotLeaveAnInflightJob) {
+ auto pool = std::make_unique<WorkerPool>(1);
+ WorkerHandoff<TestJob> handoff(*pool);
+ pool.reset();
+ handoff.enqueue(std::make_shared<TestJob>(), [](TestJob&) {});
+ EXPECT_EQ(handoff.pendingJobs(), 0u);
+ EXPECT_EQ(handoff.drainCompleted().size(), 1u);
+ EXPECT_TRUE(handoff.idle());
+}
 // cancelAll() must be non-blocking (no pool_.drain()), drop queued work via the
 // epoch token, and hand every affected job back so the main thread clears its
 // owner's meshJobInFlight-equivalent flag.

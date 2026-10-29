@@ -9,6 +9,9 @@
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/client/gui/screen/TitleScreen.hpp"
 #include "net/minecraft/client/gui/screen/option/OptionGui.hpp"
+#include "net/minecraft/client/gui/screen/option/OptionTooltips.hpp"
+#include "net/minecraft/client/gui/screen/GuiTooltip.hpp"
+#include "net/minecraft/client/option/OptionRegistry.hpp"
 #include "net/minecraft/client/gui/widget/ActionButtonWidget.hpp"
 #include "net/minecraft/client/gui/widget/TextFieldWidget.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
@@ -58,6 +61,19 @@ void Screen::render(int mouseX, int mouseY, float tickDelta) {
    continue;
   }
   button->render(*minecraft_, *textRenderer_, mouseX, mouseY);
+ }
+ for(const std::unique_ptr<widget::ButtonWidget>& button : buttons_) {
+  if(button == nullptr || !button->visible || !button->getRegistryIndex() ||
+     mouseX < button->x || mouseY < button->y || mouseX >= button->x + button->width ||
+     mouseY >= button->y + button->height) {
+   continue;
+  }
+  const std::string_view key = client::option::OptionRegistry::at(*button->getRegistryIndex()).persistKey;
+  const std::string_view description = option::optionTooltip(key);
+  if(!description.empty()) {
+   renderGuiTooltip(*textRenderer_, width_, height_, mouseX, mouseY, description);
+   break;
+  }
  }
 }
 void Screen::tickInput() {
@@ -248,8 +264,13 @@ void Screen::quitGame() {
 }
 void Screen::mouseReleased(int mouseX, int mouseY, int button) {
  if(selectedButton_ != nullptr && button == 0) {
-  selectedButton_->mouseReleased(mouseX, mouseY);
-  selectedButton_ = nullptr;
+  widget::ButtonWidget* released = std::exchange(selectedButton_, nullptr);
+  const bool optionChanged = released->getRegistryIndex().has_value();
+  released->mouseReleased(mouseX, mouseY);
+  if(optionChanged && minecraft_ != nullptr) {
+   layout::refreshOptionStates(buttons_, minecraft_->options);
+   option::refreshOptionLabels(*this, minecraft_->options);
+  }
  }
 }
 void Screen::renderBackground() {

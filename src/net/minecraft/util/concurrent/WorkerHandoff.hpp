@@ -33,7 +33,7 @@ class WorkerHandoff {
    const std::uint64_t epoch = epoch_.load(std::memory_order::acquire);
    inFlight_.fetch_add(1, std::memory_order::release);
    if(poolLifetime_.expired()) {
-    finish(std::move(job), false);
+    finish(std::move(job));
     return;
    }
    auto canceledJob = job;
@@ -42,11 +42,11 @@ class WorkerHandoff {
         if(epoch_.load(std::memory_order::acquire) == epoch) {
          work(*job);
         }
-        finish(std::move(job), true);
+        finish(std::move(job));
        },
        priority,
        this,
-       [this, job = std::move(canceledJob)]() mutable { finish(std::move(job), true); });
+       [this, job = std::move(canceledJob)]() mutable { finish(std::move(job)); });
   }
   [[nodiscard]] std::vector<std::shared_ptr<Job>> drainCompleted() {
    const std::lock_guard lock(completedMutex_);
@@ -77,12 +77,12 @@ class WorkerHandoff {
   }
 
  private:
-  void finish(std::shared_ptr<Job> job, bool counted) {
+  void finish(std::shared_ptr<Job> job) {
    {
     const std::lock_guard lock(completedMutex_);
     completed_.push_back(std::move(job));
    }
-   if(counted) inFlight_.fetch_sub(1, std::memory_order::release);
+   inFlight_.fetch_sub(1, std::memory_order::release);
   }
   WorkerPool* pool_ = nullptr;
   std::weak_ptr<void> poolLifetime_;
