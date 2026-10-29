@@ -80,6 +80,14 @@ void Entity::changeLookDirection(float cursorDeltaX, float cursorDeltaY) {
  prevYaw += yaw - oldYaw;
 }
 void Entity::fall(double heightDifference, bool onGroundIn) {
+ // Java: Entity.fall checks isInWater() first — while the entity overlaps a
+ // water block, fallDistance resets to 0 every tick, so landing in water never
+ // triggers onLanding/fall damage. Without this check, jumping into water from
+ // height still damaged players and mobs.
+ if(world != nullptr && isInFluid(block::material::Material::WATER)) {
+  fallDistance = 0.0f;
+  return;
+ }
  if(onGroundIn) {
   if(fallDistance > 0.0f) {
    onLanding(fallDistance);
