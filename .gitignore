@@ -1,7 +1,7 @@
 build*/
 *.log
-third_party/mcp/
-third_party/iris/
+third_party/mcp/*
+third_party/iris/*
 resources/
 toolchain/*
 !toolchain/manifest.json
