@@ -11,6 +11,7 @@ namespace net::minecraft::item {
 FishingRodItem::FishingRodItem(int rawId) : Item(rawId) {
  setMaxCount(1);
  setMaxDamage(64);
+ setHandheld();
 }
 bool FishingRodItem::isHandheldRod() const {
  return true;

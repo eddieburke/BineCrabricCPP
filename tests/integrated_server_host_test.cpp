@@ -12,6 +12,7 @@
 #include "net/minecraft/entity/player/ServerPlayerEntity.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/world/ServerWorld.hpp"
+#include "net/minecraft/server/world/ReadOnlyServerWorld.hpp"
 #include "net/minecraft/world/storage/AlphaWorldStorage.hpp"
 namespace {
 std::filesystem::path makeTempWorldRoot(const std::string& name) {
@@ -202,5 +203,50 @@ TEST(IntegratedServerHost, OwnerInventorySurvivesHostingAndReturningToSinglePlay
  ASSERT_NE(saved->getPlayerNbt(), nullptr);
  reloaded.readNbt(*saved->getPlayerNbt());
  EXPECT_TRUE(reloaded.inventory.main[0].empty());
+}
+TEST(IntegratedServerHost, ServerWorldAutosaveWritesLiveOwnerInventoryInsteadOfStaleStartupNbt) {
+ const auto root = makeTempWorldRoot("host_autosave_live_owner");
+ initializeEmptyServerModHost(root / "runtime");
+ server::host::ServerLaunchConfig config;
+ config.ownerName = "WorldHost";
+ server::MinecraftServer server(config);
+ AlphaWorldStorage storage(root, "World", true);
+ ServerWorld overworld(&server, &storage, "World", 0, 42);
+ server::world::ReadOnlyServerWorld nether(&server, &storage, "World", -1, 42, &overworld);
+ server.worlds[0] = &overworld;
+ server.worlds[1] = &nether;
+ server.playerManager.configureFromProperties();
+ server.playerManager.saveAllPlayers(server.worlds);
+ entity::player::ServerPlayerEntity owner(&server, &overworld, "WorldHost", nullptr);
+ owner.inventory.main[0] = ItemStack(264, 7);
+ NbtCompound startupPlayerNbt;
+ owner.writeNbt(startupPlayerNbt);
+ overworld.getProperties().setPlayerNbt(startupPlayerNbt);
+ server.playerManager.loadPlayerData(&owner);
+ server.playerManager.players.push_back(&owner);
+ owner.inventory.main[0] = ItemStack(264, 19);
+ overworld.save(true);
+ auto saved = storage.loadProperties();
+ ASSERT_TRUE(saved.has_value());
+ ASSERT_NE(saved->getPlayerNbt(), nullptr);
+ entity::player::ServerPlayerEntity reloaded(&server, &overworld, "WorldHost", nullptr);
+ reloaded.readNbt(*saved->getPlayerNbt());
+ EXPECT_EQ(reloaded.inventory.main[0].itemId, 264);
+ EXPECT_EQ(reloaded.inventory.main[0].count, 19);
+}
+TEST(IntegratedServerHost, AddPlayerRecoversFromDedicatedPlayerDatWhenLevelDatPlayerMissing) {
+ const auto root = makeTempWorldRoot("host_recover_from_player_dat");
+ initializeEmptyServerModHost(root / "runtime");
+ server::MinecraftServer server;
+ AlphaWorldStorage storage(root, "World", true);
+ ServerWorld overworld(&server, &storage, "World", 0, 42);
+ entity::player::ServerPlayerEntity savedPlayer(&server, &overworld, "WorldHost", nullptr);
+ savedPlayer.inventory.main[0] = ItemStack(264, 15);
+ storage.savePlayerData(savedPlayer);
+ overworld.getProperties().clearPlayerNbt();
+ entity::player::ServerPlayerEntity joiningPlayer(&server, &overworld, "WorldHost", nullptr);
+ overworld.addPlayer(&joiningPlayer);
+ EXPECT_EQ(joiningPlayer.inventory.main[0].itemId, 264);
+ EXPECT_EQ(joiningPlayer.inventory.main[0].count, 15);
 }
 } // namespace net::minecraft::test

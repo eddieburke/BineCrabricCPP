@@ -26,6 +26,7 @@
 namespace net::minecraft::client::render::distant {
 namespace {
 constexpr int kRetryFrames = 30;
+constexpr std::size_t kSpareMeshes = 8;
 void normalMatrix(const util::math::Matrix4f& modelView, float out[9]) {
  util::math::Matrix4f inverse = modelView;
  inverse.invert();
@@ -44,7 +45,7 @@ void DistantRenderer::PinnedChunks::release() noexcept {
   }
  }
 }
-DistantRenderer::DistantRenderer() : palette_(defaultPalette()) {
+DistantRenderer::DistantRenderer() : palette_(std::make_shared<const BlockPalette>(defaultPalette())) {
 }
 DistantRenderer::~DistantRenderer() {
  reset();
@@ -197,10 +198,24 @@ void DistantRenderer::drainCompleted(std::size_t uploadBudget) {
   tile.builtGeneration = result.generation;
   uploaded += bytes;
  }
- if(memoryPressure) memoryStride_ = std::min(kMaxStride, memoryStride_ * 2);
- if(!deferred.empty()) {
-  const std::lock_guard lock(shared_->mutex);
-  for(Completed& result : deferred) shared_->completed.push_back(std::move(result));
+ const bool reclaiming = memoryPressure && std::any_of(tiles_.begin(), tiles_.end(), [](const auto& entry) {
+  return entry.second.stride != 0 && entry.second.wantedStride > entry.second.stride;
+ });
+ if(memoryPressure && !reclaiming) {
+  memoryStride_ = std::min(kMaxStride, memoryStride_ * 2);
+ } else if(!memoryPressure && memoryStride_ > 1 && inFlight_ == 0 && buildCandidates_.empty() &&
+           slab_.usedBytes() * 4 < slab_.capacityBytes()) {
+  memoryStride_ /= 2;
+ }
+ if(completed.empty()) return;
+ const std::lock_guard lock(shared_->mutex);
+ for(Completed& result : deferred) shared_->completed.push_back(std::move(result));
+ for(Completed& result : completed) {
+  if(shared_->spareMeshes.size() >= kSpareMeshes) break;
+  if(result.mesh.opaque.capacity() == 0 && result.mesh.water.capacity() == 0) continue;
+  result.mesh.opaque.clear();
+  result.mesh.water.clear();
+  shared_->spareMeshes.push_back(std::move(result.mesh));
  }
 }
 void DistantRenderer::update(World& world, client::texture::TextureManager& textures,
@@ -236,22 +251,23 @@ void DistantRenderer::update(World& world, client::texture::TextureManager& text
  if(resourceGeneration_ != textures.resourceGeneration()) {
   const int atlasId = textures.getTextureId("/terrain.png");
   if(const client::texture::RasterImage* atlas = textures.getRasterImage(atlasId)) {
-   palette_ = defaultPalette();
-   updatePaletteFromAtlas(palette_, *atlas);
+   auto updated = std::make_shared<BlockPalette>(defaultPalette());
+   updatePaletteFromAtlas(*updated, *atlas);
    for(const int id : {8, 9, 10, 11}) {
     const auto* block = net::minecraft::block::Block::BLOCKS[static_cast<std::size_t>(id)];
     if(block == nullptr) continue;
-    auto& entry = palette_.entries[static_cast<std::size_t>(id)];
+    auto& entry = updated->entries[static_cast<std::size_t>(id)];
     if(const auto color = textures.terrainTileColor(block->getTexture(1, 0)))
      std::copy(color->begin(), color->end(), entry.top);
     if(const auto color = textures.terrainTileColor(block->getTexture(2, 0)))
      std::copy(color->begin(), color->end(), entry.side);
    }
+   palette_ = updated;
    resourceGeneration_ = textures.resourceGeneration();
    for(auto& [key, tile] : tiles_) tile.minimumGeneration = ++tile.generation;
   }
  }
- drainCompleted(8u * 1024u * 1024u);
+ drainCompleted(4u * 1024u * 1024u);
  updateNativeRadius(sections, settings.nativeChunkRadius);
  ChunkSource* source = world.getChunkSource();
  if(source == nullptr) return;
@@ -339,7 +355,7 @@ void DistantRenderer::update(World& world, client::texture::TextureManager& text
   ++inFlight_;
   const std::shared_ptr<Shared> shared = shared_;
   const std::shared_ptr<const BiomeSource> biomes = biomes_;
-  const BlockPalette palette = palette_;
+  const std::shared_ptr<const BlockPalette> palette = palette_;
   const std::uint64_t generation = tile.generation;
   const int stride = tile.wantedStride;
   pool.submit(
@@ -355,17 +371,24 @@ void DistantRenderer::update(World& world, client::texture::TextureManager& text
         if(cx < 0 || cz < 0 || cx >= kPinSide || cz >= kPinSide) return nullptr;
         return pins->chunks[static_cast<std::size_t>(cz * kPinSide + cx)];
        };
+       {
+        const std::lock_guard lock(shared->mutex);
+        if(!shared->spareMeshes.empty()) {
+         result.mesh = std::move(shared->spareMeshes.back());
+         shared->spareMeshes.pop_back();
+        }
+       }
        try {
         if(netherGeometry) {
-         NetherTileCells cells;
+         static thread_local NetherTileCells cells;
          if(extractNetherTile(lookup, key.x, key.z, stride, cells, true)) {
-          meshNetherTile(cells, palette, result.mesh);
+          meshNetherTile(cells, *palette, result.mesh);
           result.chunkMask = cells.chunkMask;
          }
         } else {
-         TileCells cells;
+         static thread_local TileCells cells;
          if(extractTile(lookup, key.x, key.z, stride, cells, biomes.get(), true)) {
-          meshTile(cells, palette, result.mesh);
+          meshTile(cells, *palette, result.mesh);
           result.chunkMask = cells.chunkMask;
          }
         }

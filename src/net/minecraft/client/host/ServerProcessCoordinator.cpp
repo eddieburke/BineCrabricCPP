@@ -15,6 +15,7 @@
 #include "net/minecraft/client/core/WorldSession.hpp"
 #include "net/minecraft/client/host/ServerProcessCoordinator.hpp"
 #include "net/minecraft/client/session/OfflineIdentity.hpp"
+#include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/storage/WorldStorage.hpp"
 namespace net::minecraft::client::host {
@@ -172,6 +173,13 @@ bool ServerProcessCoordinator::start(const ServerProcessSettings& settings, std:
  readyFile_ = storageRoot_ / (".minecraft-server-ready-" + std::to_string(settings_.port));
  std::error_code readyFileError;
  std::filesystem::remove(readyFile_, readyFileError);
+ std::filesystem::remove(readyFile_, readyFileError);
+ if(minecraft_->player != nullptr) {
+  const std::string ownerUsername = session::resolveJoinUsername(minecraft_->session);
+  if(!ownerUsername.empty()) {
+   minecraft_->player->name = ownerUsername;
+  }
+ }
  if(!minecraft_->worldSession().parkLocalWorldForRemoteHandoff(*minecraft_)) {
   return fail("Could not save and release the world for dedicated-server transfer.", errorOut);
  }

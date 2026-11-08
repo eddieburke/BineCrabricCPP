@@ -6,6 +6,7 @@
 #include "net/minecraft/block/entity/FurnaceBlockEntity.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/auth/microsoft/PlayerTextures.hpp"
+#include "net/minecraft/client/session/OfflineIdentity.hpp"
 #include "net/minecraft/client/gui/screen/ingame/CraftingScreen.hpp"
 #include "net/minecraft/client/gui/screen/ingame/DispenserScreen.hpp"
 #include "net/minecraft/client/gui/screen/ingame/DoubleChestScreen.hpp"
@@ -26,7 +27,8 @@ ClientPlayerEntity::ClientPlayerEntity(client::Minecraft* minecraft,
     : PlayerEntity(world), minecraft_(minecraft) {
  dimensionId = dimensionIdIn;
  msauth::applySessionTextures(*this, session);
- name = session.username.empty() ? "Player" : session.username;
+ const std::string effectiveUsername = client::session::resolveJoinUsername(session);
+ name = effectiveUsername.empty() ? "Player" : effectiveUsername;
 }
 void ClientPlayerEntity::move(double dx, double dy, double dz) {
  PlayerEntity::move(dx, dy, dz);

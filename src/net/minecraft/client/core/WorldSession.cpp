@@ -1,6 +1,8 @@
 #include "net/minecraft/client/core/WorldSession.hpp"
+#include <filesystem>
 #include <stdexcept>
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/SingleplayerInteractionManager.hpp"
 #include "net/minecraft/client/auth/microsoft/PlayerTextures.hpp"
 #include "net/minecraft/client/sound/WorldSoundListener.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
@@ -24,9 +26,10 @@ void saveLocalWorld(Minecraft& client, bool saveDedicatedPlayerData) {
   client.player->writeNbt(playerNbt);
   world->getProperties().setPlayerNbt(std::move(playerNbt));
  }
- if(saveDedicatedPlayerData) {
-  auto* alphaStorage = dynamic_cast<AlphaWorldStorage*>(storage);
-  if(alphaStorage != nullptr && client.player != nullptr) {
+ if(auto* alphaStorage = dynamic_cast<AlphaWorldStorage*>(storage);
+    alphaStorage != nullptr && client.player != nullptr) {
+  if(saveDedicatedPlayerData ||
+     std::filesystem::exists(alphaStorage->worldDirectory() / "players" / (client.player->name + ".dat"))) {
    alphaStorage->savePlayerData(*client.player);
   }
  }
@@ -103,6 +106,10 @@ void WorldSession::setWorld(Minecraft& client,
  client.world = worldIn;
  client.particleManager.setWorld(worldIn);
  if(worldIn != nullptr) {
+  if(!worldIn->isRemote() &&
+     dynamic_cast<SingleplayerInteractionManager*>(client.interactionManager.get()) == nullptr) {
+   client.interactionManager = std::make_unique<SingleplayerInteractionManager>(&client);
+  }
   if(client.interactionManager != nullptr) {
    client.interactionManager->setWorld(worldIn);
   }
@@ -145,9 +152,6 @@ void WorldSession::setWorld(Minecraft& client,
   if(client.interactionManager != nullptr && client.player != nullptr) {
    client.interactionManager->preparePlayerRespawn(client.player);
   }
-  if(existingPlayer != nullptr) {
-   worldIn->saveLevelProperties();
-  }
   if(!worldIn->isRemote()) {
    if(!skipTerrainPrepare) {
     prepareWorld(client, message);
@@ -159,9 +163,13 @@ void WorldSession::setWorld(Minecraft& client,
   } else if(client.player != nullptr) {
    worldIn->addPlayer(client.player);
   }
+  if(existingPlayer != nullptr) {
+   worldIn->saveLevelProperties();
+  }
   msauth::refreshPlayerTextures(client);
   client.options.applyToWorld(worldIn);
   if(worldIn->isNewWorld()) {
+   worldIn->saveLevelProperties();
    worldIn->savingProgress(0);
   }
  }
@@ -199,9 +207,6 @@ void WorldSession::prepareWorld(Minecraft& client, const std::string& worldName)
  client.world->finishLightingUpdates();
  client.progressRenderer.progressStage("Simulating world for a bit");
  client.world->tickChunks();
- if(client.world->isNewWorld()) {
-  client.world->saveLevelProperties();
- }
 }
 void WorldSession::convertAndSaveWorld(Minecraft& client, const std::string& worldName, const std::string& name) {
  if(client.worldStorageSource != nullptr) {
@@ -254,8 +259,16 @@ bool WorldSession::restoreParkedLocalWorld(Minecraft& client) {
  }
  ownedWorldStorage_ = std::move(parkedHandoffWorldStorage_);
  ownedWorld_ = std::move(parkedHandoffWorld_);
- if(WorldStorage* storage = ownedWorldStorage_.get()) {
+ if(WorldStorage* storage = ownedWorldStorage_.get(); storage != nullptr && ownedWorld_ != nullptr) {
   storage->refreshSessionLock();
+  // parkLocalWorldForRemoteHandoff froze this world's in-memory properties at host-start,
+  // but the dedicated server process kept writing the same save (level.dat Player compound,
+  // players/<owner>.dat) for its whole session. Reload disk before the world wakes up, or
+  // the restored SP state rolls back to pre-hosting inventory and the next local save
+  // propagates the stale Player compound back into level.dat.
+  if(std::optional<WorldProperties> propertiesOnDisk = storage->loadProperties(); propertiesOnDisk.has_value()) {
+   ownedWorld_->getProperties() = std::move(*propertiesOnDisk);
+  }
  }
  setWorld(client, ownedWorld_.get(), "Loading level", nullptr, true);
  return true;

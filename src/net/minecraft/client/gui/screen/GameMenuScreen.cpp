@@ -90,6 +90,7 @@ void GameMenuScreen::saveAndQuit() {
   }
  }
  quitToTitle();
+ minecraft()->serverProcessCoordinator().shutdown();
 }
 void GameMenuScreen::resumeGame() {
  closeScreen();

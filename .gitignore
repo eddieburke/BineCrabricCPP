@@ -1,13 +1,16 @@
 build*/
+Testing/
 *.log
 third_party/mcp/*
+third_party/mcp/
 third_party/iris/*
+third_party/iris/
 resources/
 toolchain/*
 !toolchain/manifest.json
 .claude/
 **/handoff*.md
-/docs/agent-notes/
+docs/
 
 # Agent/IDE directories
 .cursor/

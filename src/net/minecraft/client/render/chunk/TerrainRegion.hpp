@@ -12,6 +12,7 @@ struct TerrainAllocation {
  std::size_t firstVertex = 0;
  std::size_t capacityVertices = 0;
  int vertexCount = 0;
+ std::size_t block = 0;
  [[nodiscard]] bool valid() const noexcept {
   return capacityVertices != 0 && vertexCount != 0;
  }
@@ -38,19 +39,22 @@ class TerrainRegion {
  static constexpr std::size_t kGranuleVertices = 64;
 
  private:
- struct LayerArena {
+ struct ArenaBlock {
   unsigned handle = 0;
   unsigned vao = 0;
   std::size_t capacityVertices = 0;
   std::size_t liveVertices = 0;
   std::map<std::size_t, std::size_t> freeRanges{};
+ };
+ struct LayerArena {
+  std::vector<ArenaBlock> blocks{};
   std::vector<int> indexCounts{};
   std::vector<int> baseVertices{};
  };
- bool rebuild(int layer, std::size_t capacityVertices);
+ [[nodiscard]] bool createBlock(LayerArena& arena, std::size_t capacityVertices);
+ static void destroyBlock(ArenaBlock& block) noexcept;
  bool acquire(int layer, std::size_t vertices, TerrainAllocation& allocation);
  static void releaseRange(LayerArena& arena, TerrainAllocation& allocation) noexcept;
- void shrinkIfSparse(int layer);
  int originX_ = 0;
  int originY_ = 0;
  int originZ_ = 0;

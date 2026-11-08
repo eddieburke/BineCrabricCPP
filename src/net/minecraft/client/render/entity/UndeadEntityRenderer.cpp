@@ -3,6 +3,7 @@
 #include "net/minecraft/client/render/block/BlockRenderManager.hpp"
 #include "net/minecraft/client/render/entity/EntityRenderDispatcher.hpp"
 #include "net/minecraft/client/render/item/HeldItemRenderer.hpp"
+#include "net/minecraft/client/render/item/ItemModelRenderer.hpp"
 #include "net/minecraft/entity/LivingEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
@@ -23,32 +24,19 @@ void UndeadEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity
  matrices.push();
  entityModel_->rightArm.transform(0.0625f, matrices);
  matrices.translate(-0.0625f, 0.4375f, 0.0625f);
- if(itemStack.itemId < 256) {
-  net::minecraft::block::Block* block =
-      net::minecraft::block::Block::BLOCKS[static_cast<std::size_t>(itemStack.itemId)];
-  if(block != nullptr && block::BlockRenderManager::isSideLit(block->getRenderType())) {
-   float scale = 0.5f;
-   matrices.translate(0.0f, 0.1875f, -0.3125f);
-   matrices.rotate(20.0f, 1.0f, 0.0f, 0.0f);
-   matrices.rotate(45.0f, 0.0f, 1.0f, 0.0f);
-   scale *= 0.75f;
-   matrices.scale(scale, -scale, scale);
-  } else if(Item* item = itemStack.getItem(); item != nullptr && item->isHandheld()) {
-   float scale = 0.625f;
-   matrices.translate(0.0f, 0.1875f, 0.0f);
-   matrices.scale(scale, -scale, scale);
-   matrices.rotate(-100.0f, 1.0f, 0.0f, 0.0f);
-   matrices.rotate(45.0f, 0.0f, 1.0f, 0.0f);
-  } else {
-   const float scale = 0.375f;
-   matrices.translate(0.25f, 0.1875f, -0.1875f);
-   matrices.scale(scale, scale, scale);
-   matrices.rotate(60.0f, 0.0f, 0.0f, 1.0f);
-   matrices.rotate(-90.0f, 1.0f, 0.0f, 0.0f);
-   matrices.rotate(20.0f, 0.0f, 0.0f, 1.0f);
-  }
+ if(item::ItemModelRenderer::rendersAsBlockModel(itemStack)) {
+  float scale = 0.5f;
+  matrices.translate(0.0f, 0.1875f, -0.3125f);
+  matrices.rotate(20.0f, 1.0f, 0.0f, 0.0f);
+  matrices.rotate(45.0f, 0.0f, 1.0f, 0.0f);
+  scale *= 0.75f;
+  matrices.scale(scale, -scale, scale);
  } else if(Item* item = itemStack.getItem(); item != nullptr && item->isHandheld()) {
   float scale = 0.625f;
+  if(item->isHandheldRod()) {
+   matrices.rotate(180.0f, 0.0f, 0.0f, 1.0f);
+   matrices.translate(0.0f, -0.125f, 0.0f);
+  }
   matrices.translate(0.0f, 0.1875f, 0.0f);
   matrices.scale(scale, -scale, scale);
   matrices.rotate(-100.0f, 1.0f, 0.0f, 0.0f);

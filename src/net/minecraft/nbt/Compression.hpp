@@ -42,24 +42,34 @@ class ZlibStream final {
  zlibshim::z_stream stream_{};
 };
 #endif
+inline constexpr std::size_t kRetainedScratchBytes = 1024U * 1024U;
 inline std::vector<std::uint8_t> compressZlib(const std::vector<std::uint8_t>& input, bool gzip) {
 #ifdef MINECRAFT_DISABLE_ZLIB
  (void)gzip;
  return input;
 #else
- ZlibStream ownedStream(ZlibStream::Mode::Deflate, gzip ? 31 : 15);
- zlibshim::z_stream& stream = ownedStream.get();
- std::vector<std::uint8_t> output;
- output.resize(4096);
+ static thread_local std::optional<ZlibStream> streams[2];
+ static thread_local std::vector<std::uint8_t> scratch;
+ std::optional<ZlibStream>& slot = streams[gzip ? 1 : 0];
+ if(slot.has_value()) {
+  zlibshim::deflateReset(&slot->get());
+ } else {
+  slot.emplace(ZlibStream::Mode::Deflate, gzip ? 31 : 15);
+ }
+ zlibshim::z_stream& stream = slot->get();
+ const std::size_t initial = std::max<std::size_t>(4096, input.size() / 2);
+ if(scratch.size() < initial) {
+  scratch.resize(initial);
+ }
  stream.next_in = const_cast<zlibshim::Bytef*>(reinterpret_cast<const zlibshim::Bytef*>(input.data()));
  stream.avail_in = static_cast<zlibshim::uInt>(input.size());
  int status = zlibshim::Z_OK;
  while(status != zlibshim::Z_STREAM_END) {
-  if(stream.total_out >= output.size()) {
-   output.resize(output.size() * 2U);
+  if(stream.total_out >= scratch.size()) {
+   scratch.resize(scratch.size() * 2U);
   }
-  stream.next_out = reinterpret_cast<zlibshim::Bytef*>(output.data() + stream.total_out);
-  stream.avail_out = static_cast<zlibshim::uInt>(output.size() - stream.total_out);
+  stream.next_out = reinterpret_cast<zlibshim::Bytef*>(scratch.data() + stream.total_out);
+  stream.avail_out = static_cast<zlibshim::uInt>(scratch.size() - stream.total_out);
   status = zlibshim::deflate(&stream, stream.avail_in == 0 ? zlibshim::Z_FINISH : zlibshim::Z_NO_FLUSH);
   if(status != zlibshim::Z_OK && status != zlibshim::Z_STREAM_END && status != zlibshim::Z_BUF_ERROR) {
    throw std::runtime_error("Failed to compress buffer");
@@ -68,8 +78,11 @@ inline std::vector<std::uint8_t> compressZlib(const std::vector<std::uint8_t>& i
    break;
   }
  }
- const std::size_t produced = static_cast<std::size_t>(stream.total_out);
- output.resize(produced);
+ const auto produced = static_cast<std::ptrdiff_t>(stream.total_out);
+ std::vector<std::uint8_t> output(scratch.begin(), scratch.begin() + produced);
+ if(scratch.size() > kRetainedScratchBytes) {
+  std::vector<std::uint8_t>().swap(scratch);
+ }
  return output;
 #endif
 }
@@ -82,30 +95,46 @@ inline std::vector<std::uint8_t> decompressZlib(const std::vector<std::uint8_t>&
  (void)maxOutput;
  return input;
 #else
- const int windowBits = gzip ? (15 + 16) : 15;
- ZlibStream ownedStream(ZlibStream::Mode::Inflate, windowBits);
- zlibshim::z_stream& stream = ownedStream.get();
- std::vector<std::uint8_t> output;
- output.resize(std::min<std::size_t>(4096, maxOutput));
+ static thread_local std::optional<ZlibStream> streams[2];
+ static thread_local std::vector<std::uint8_t> scratch;
+ std::optional<ZlibStream>& slot = streams[gzip ? 1 : 0];
+ if(slot.has_value()) {
+  zlibshim::inflateReset(&slot->get());
+ } else {
+  slot.emplace(ZlibStream::Mode::Inflate, gzip ? (15 + 16) : 15);
+ }
+ zlibshim::z_stream& stream = slot->get();
+ std::size_t capacity = std::min(scratch.size(), maxOutput);
+ const std::size_t initial = std::min(std::max<std::size_t>(4096, input.size() * 4U), maxOutput);
+ if(capacity < initial) {
+  scratch.resize(initial);
+  capacity = initial;
+ }
  stream.next_in = const_cast<zlibshim::Bytef*>(reinterpret_cast<const zlibshim::Bytef*>(input.data()));
  stream.avail_in = static_cast<zlibshim::uInt>(input.size());
  int status = zlibshim::Z_OK;
  while(status != zlibshim::Z_STREAM_END) {
-  if(stream.total_out >= output.size()) {
-   if(output.size() >= maxOutput) {
+  if(stream.total_out >= capacity) {
+   if(capacity >= maxOutput) {
     throw std::runtime_error("Decompressed data exceeds limit");
    }
-   output.resize(std::min(output.size() * 2U, maxOutput));
+   capacity = std::min(capacity * 2U, maxOutput);
+   if(scratch.size() < capacity) {
+    scratch.resize(capacity);
+   }
   }
-  stream.next_out = reinterpret_cast<zlibshim::Bytef*>(output.data() + stream.total_out);
-  stream.avail_out = static_cast<zlibshim::uInt>(output.size() - stream.total_out);
+  stream.next_out = reinterpret_cast<zlibshim::Bytef*>(scratch.data() + stream.total_out);
+  stream.avail_out = static_cast<zlibshim::uInt>(capacity - stream.total_out);
   status = zlibshim::inflate(&stream, zlibshim::Z_NO_FLUSH);
   if(status != zlibshim::Z_OK && status != zlibshim::Z_STREAM_END) {
    throw std::runtime_error("Failed to decompress buffer");
   }
  }
- const std::size_t produced = static_cast<std::size_t>(stream.total_out);
- output.resize(produced);
+ const auto produced = static_cast<std::ptrdiff_t>(stream.total_out);
+ std::vector<std::uint8_t> output(scratch.begin(), scratch.begin() + produced);
+ if(scratch.size() > kRetainedScratchBytes) {
+  std::vector<std::uint8_t>().swap(scratch);
+ }
  return output;
 #endif
 }

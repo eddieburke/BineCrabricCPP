@@ -1,5 +1,6 @@
 #include "net/minecraft/client/render/world/ChunkCompilePipeline.hpp"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <memory>
@@ -17,7 +18,8 @@ namespace net::minecraft::client::render {
 namespace {
 constexpr int kMeshBias = 4;
 constexpr int kAmbientBacklogCeiling = 448;
-constexpr int kAmbientDrainPerFrame = 256;
+constexpr int kAmbientDrainPerFrame = 64;
+constexpr auto kCompileBudget = std::chrono::milliseconds(4);
 } // namespace
 void ChunkCompilePipeline::prioritizeCaptureCandidates(std::vector<chunk::ChunkBuilder*>& candidates,
                                                        int frustumStamp,
@@ -131,10 +133,12 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& c
   }
  }
  const client::option::RenderSettings& resolvedOpts = *scene_.settings;
+ const auto compileStart = std::chrono::steady_clock::now();
+ const auto budgetSpent = [&] { return !force && std::chrono::steady_clock::now() - compileStart >= kCompileBudget; };
  const std::size_t workerCount = meshHandoff_.workerCount();
  const int requestedWork = client::option::chunkUpdatesPerPass(resolvedOpts, static_cast<int>(dirtyChunks_.size()));
  int uploadCount = 0;
- chunk::MeshUploadBudget byteBudget;
+ chunk::MeshUploadBudget byteBudget{4u * 1024u * 1024u};
  const auto processUpload = [&](const std::shared_ptr<chunk::ChunkMeshJob>& job) {
   // Evicted while the job was in flight: the section and its buffers are
   // already gone, and this result has nowhere to land.
@@ -154,7 +158,7 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& c
    bytes += job->result.layers[layer].vertices.size() * sizeof(TerrainVertex);
    for(const auto& mesh : job->result.modLayers[layer]) bytes += mesh.mesh.vertices.size() * sizeof(TessellatorVertex);
   }
-  if(uploadCount >= requestedWork || !byteBudget.tryConsume(bytes)) return false;
+  if(uploadCount >= requestedWork || (uploadCount > 0 && budgetSpent()) || !byteBudget.tryConsume(bytes)) return false;
   builder->meshJobInFlight = false;
   ++uploadCount;
   if(!builder->uploadMesh(*job)) {
@@ -191,7 +195,9 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& c
     pendingCpuBytes < 64u * 1024u * 1024u) {
   const int maxCaptures = force ? std::max(requestedWork, static_cast<int>(workerCount)) : requestedWork;
   int captures = 0;
-  const auto canCapture = [&] { return captures < maxCaptures && inFlight < targetInFlight; };
+  const auto canCapture = [&] {
+   return captures < maxCaptures && inFlight < targetInFlight && (captures == 0 || !budgetSpent());
+  };
   for(auto it = nearDirtyChunks_.begin(); it != nearDirtyChunks_.end() && canCapture();) {
    chunk::ChunkBuilder* section = *it;
    if(section == nullptr || !section->dirty || section->meshJobInFlight) {

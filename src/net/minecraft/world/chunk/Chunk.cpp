@@ -19,6 +19,14 @@ namespace {
 std::mutex gPinMutex;
 std::condition_variable gPinCv;
 } // namespace
+[[nodiscard]] bool changesLight(int previousId, int rawId) noexcept {
+ const auto before = static_cast<std::size_t>(previousId & 0xFF);
+ const auto after = static_cast<std::size_t>(rawId & 0xFF);
+ if(Block::BLOCKS_LIGHT_OPACITY[before] != Block::BLOCKS_LIGHT_OPACITY[after]) return true;
+ const Block* previous = Block::BLOCKS[before];
+ const Block* placed = Block::BLOCKS[after];
+ return (previous != nullptr ? previous->emission() : 0) != (placed != nullptr ? placed->emission() : 0);
+}
 bool Chunk::tryAcquireRenderPin() noexcept {
  renderPins_.fetch_add(1, std::memory_order_acq_rel);
  if(evicted_.load(std::memory_order_acquire)) {
@@ -86,7 +94,7 @@ bool Chunk::setBlock(int localX, int yPos, int localZ, int rawId, int metadataVa
    previousBlock->onBreak(world, blockX, yPos, blockZ);
   }
  }
- if(world != nullptr) {
+ if(world != nullptr && changesLight(previousId, rawId)) {
   const bool hasSkyLight = world->dimension == nullptr || !world->dimension->hasCeiling;
   if(hasSkyLight) {
    if(Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(rawId & 0xFF)] != 0) {
@@ -136,16 +144,18 @@ bool Chunk::setBlock(int localX, int yPos, int localZ, int rawId) {
   }
  }
  if(world != nullptr) {
-  if(Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(rawId & 0xFF)] != 0) {
-   if(yPos >= topHeight) {
-    updateHeightMap(localX, yPos + 1, localZ);
+  if(changesLight(previousId, rawId)) {
+   if(Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(rawId & 0xFF)] != 0) {
+    if(yPos >= topHeight) {
+     updateHeightMap(localX, yPos + 1, localZ);
+    }
+   } else if(yPos == topHeight - 1) {
+    updateHeightMap(localX, yPos, localZ);
    }
-  } else if(yPos == topHeight - 1) {
-   updateHeightMap(localX, yPos, localZ);
+   world->queueLightUpdate(LightType::Sky, blockX, yPos, blockZ, blockX, yPos, blockZ);
+   world->queueLightUpdate(LightType::Block, blockX, yPos, blockZ, blockX, yPos, blockZ);
+   lightGaps(localX, localZ);
   }
-  world->queueLightUpdate(LightType::Sky, blockX, yPos, blockZ, blockX, yPos, blockZ);
-  world->queueLightUpdate(LightType::Block, blockX, yPos, blockZ, blockX, yPos, blockZ);
-  lightGaps(localX, localZ);
   if(rawId != 0 && !world->isRemote()) {
    Block* placedBlock = Block::BLOCKS[static_cast<std::size_t>(rawId)];
    if(placedBlock != nullptr) {

@@ -290,7 +290,11 @@ void LightingEngine::runScheduledWork() {
  // miss takes registryMutex_, so a fresh one per box re-pinned the same chunks and
  // re-locked the registry for each of the many small boxes one tick produces. The
  // box cap bounds how long this run holds its pins against chunk eviction.
+ static thread_local std::vector<std::uint32_t> ringScratch;
+ static thread_local std::vector<std::uint8_t> queuedScratch;
  WorkerState state;
+ state.ring.swap(ringScratch);
+ state.queued.swap(queuedScratch);
  std::size_t handled = 0;
  for(;;) {
   Box box{LightType::Block, 0, 0, 0, 0, 0, 0};
@@ -317,6 +321,8 @@ void LightingEngine::runScheduledWork() {
   ++handled;
  }
  releasePins(state);
+ ringScratch.swap(state.ring);
+ queuedScratch.swap(state.queued);
 }
 Chunk* LightingEngine::chunkAt(int chunkX, int chunkZ, WorkerState& state) {
  const std::uint64_t key = chunkKey(chunkX, chunkZ);

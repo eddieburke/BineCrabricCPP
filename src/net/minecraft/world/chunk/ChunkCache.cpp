@@ -16,6 +16,7 @@
 #endif
 namespace net::minecraft::world::chunk {
 namespace {
+constexpr std::int64_t kDecorationBudgetNs = 4'000'000;
 void setIoThreadPriority() {
 #ifdef _WIN32
  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
@@ -173,7 +174,32 @@ Chunk& ChunkCache::loadChunk(int chunkX, int chunkZ) {
  }
  return adoptChunk(chunkX, chunkZ, produceChunk(chunkX, chunkZ));
 }
-Chunk& ChunkCache::adoptChunk(int chunkX, int chunkZ, std::unique_ptr<Chunk> owned) {
+bool ChunkCache::canDecorate(int chunkX, int chunkZ) const {
+ const auto it = chunksByPos_.find(ChunkPos{chunkX, chunkZ});
+ return it != chunksByPos_.end() && !it->second->terrainPopulated && isChunkLoaded(chunkX + 1, chunkZ) &&
+        isChunkLoaded(chunkX, chunkZ + 1) && isChunkLoaded(chunkX + 1, chunkZ + 1);
+}
+void ChunkCache::drainDecorations(std::int64_t timeBudgetNs) {
+ const auto start = std::chrono::steady_clock::now();
+ const auto distanceSq = [this](const ChunkPos& position) {
+  const std::int64_t dx = static_cast<std::int64_t>(position.x) - centerChunkX_;
+  const std::int64_t dz = static_cast<std::int64_t>(position.z) - centerChunkZ_;
+  return dx * dx + dz * dz;
+ };
+ std::stable_sort(pendingDecorations_.begin(), pendingDecorations_.end(),
+                  [&distanceSq](const ChunkPos& a, const ChunkPos& b) { return distanceSq(a) < distanceSq(b); });
+ std::size_t done = 0;
+ for(; done < pendingDecorations_.size(); ++done) {
+  if(done > 0 && std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count() >= timeBudgetNs) {
+   break;
+  }
+  const ChunkPos position = pendingDecorations_[done];
+  if(!canDecorate(position.x, position.z)) continue;
+  decorate(this, position.x, position.z);
+ }
+ pendingDecorations_.erase(pendingDecorations_.begin(), pendingDecorations_.begin() + static_cast<std::ptrdiff_t>(done));
+}
+Chunk& ChunkCache::adoptChunk(int chunkX, int chunkZ, std::unique_ptr<Chunk> owned, bool deferDecoration) {
  if(owned == nullptr) return empty_;
  const ChunkPos pos{chunkX, chunkZ};
  owned->world = world_;
@@ -185,24 +211,14 @@ Chunk& ChunkCache::adoptChunk(int chunkX, int chunkZ, std::unique_ptr<Chunk> own
  chunks_.push_back(chunk);
  chunk->load();
  if(generator_ != nullptr) {
-  if(chunk != nullptr && !chunk->terrainPopulated && isChunkLoaded(chunkX + 1, chunkZ + 1) &&
-     isChunkLoaded(chunkX, chunkZ + 1) && isChunkLoaded(chunkX + 1, chunkZ)) {
-   decorate(this, chunkX, chunkZ);
-  }
-  if(isChunkLoaded(chunkX - 1, chunkZ) && !getChunk(chunkX - 1, chunkZ).terrainPopulated &&
-     isChunkLoaded(chunkX - 1, chunkZ + 1) && isChunkLoaded(chunkX, chunkZ + 1) &&
-     isChunkLoaded(chunkX - 1, chunkZ)) {
-   decorate(this, chunkX - 1, chunkZ);
-  }
-  if(isChunkLoaded(chunkX, chunkZ - 1) && !getChunk(chunkX, chunkZ - 1).terrainPopulated &&
-     isChunkLoaded(chunkX + 1, chunkZ - 1) && isChunkLoaded(chunkX, chunkZ - 1) &&
-     isChunkLoaded(chunkX + 1, chunkZ)) {
-   decorate(this, chunkX, chunkZ - 1);
-  }
-  if(isChunkLoaded(chunkX - 1, chunkZ - 1) && !getChunk(chunkX - 1, chunkZ - 1).terrainPopulated &&
-     isChunkLoaded(chunkX - 1, chunkZ - 1) && isChunkLoaded(chunkX, chunkZ - 1) &&
-     isChunkLoaded(chunkX - 1, chunkZ)) {
-   decorate(this, chunkX - 1, chunkZ - 1);
+  for(const ChunkPos candidate : {ChunkPos{chunkX, chunkZ}, ChunkPos{chunkX - 1, chunkZ}, ChunkPos{chunkX, chunkZ - 1},
+                                  ChunkPos{chunkX - 1, chunkZ - 1}}) {
+   if(!canDecorate(candidate.x, candidate.z)) continue;
+   if(deferDecoration || decorating_) {
+    pendingDecorations_.push_back(candidate);
+   } else {
+    decorate(this, candidate.x, candidate.z);
+   }
   }
  }
  if(world_ != nullptr) {
@@ -304,7 +320,7 @@ void ChunkCache::integrateFinishedLoads(int budget, std::int64_t timeBudgetNs) {
   }
   pendingLoads_.erase(pos);
   chunksToUnload_.erase(pos);
-  adoptChunk(chunkX, chunkZ, std::move(pending.chunk));
+  adoptChunk(chunkX, chunkZ, std::move(pending.chunk), true);
   ++adopted;
   --budget;
  }
@@ -420,7 +436,10 @@ void ChunkCache::decorate(ChunkSource* source, int chunkX, int chunkZ) {
  if(generator_ != nullptr) {
   // Decoration is main-thread-only (adoptChunk is the sole caller) and touches
   // only main-thread state, so it needs no mutual exclusion of its own.
+  const bool outer = decorating_;
+  decorating_ = true;
   generator_->decorate(source, chunkX, chunkZ);
+  decorating_ = outer;
   chunk.markDirty();
  }
 }
@@ -471,6 +490,7 @@ void ChunkCache::prepareForSave() {
  waitForPendingWrites();
 }
 void ChunkCache::drainChunksToUnload(int maxChunks) {
+ bool evictedAny = false;
  for(int i = 0; i < maxChunks; ++i) {
   if(chunksToUnload_.empty()) {
    break;
@@ -490,7 +510,7 @@ void ChunkCache::drainChunksToUnload(int maxChunks) {
   chunk->markEvicted();
   chunk->unload();
   chunksByPos_.erase(mapIt);
-  chunks_.erase(std::remove(chunks_.begin(), chunks_.end(), chunk), chunks_.end());
+  evictedAny = true;
   const auto ownedIt = ownedChunks_.find(chunk);
   if(ownedIt != ownedChunks_.end()) {
    graveyard_.push_back(std::move(ownedIt->second));
@@ -500,9 +520,13 @@ void ChunkCache::drainChunksToUnload(int maxChunks) {
    world_->chunkUnloaded(pos.x, pos.z);
   }
  }
+ if(evictedAny) {
+  std::erase_if(chunks_, [](const Chunk* chunk) { return chunk != nullptr && chunk->isEvicted(); });
+ }
 }
 bool ChunkCache::tick() {
  integrateFinishedLoads(2);
+ drainDecorations(kDecorationBudgetNs);
  if(pendingIncrementalSave_ && world_ != nullptr && !world_->isSavingDisabled()) {
   save(false, nullptr);
  }
@@ -540,10 +564,6 @@ void ChunkCache::setChunkCacheCenter(int chunkX, int chunkZ) {
  rebuildResidencyPlan();
 }
 bool ChunkCache::isDesired(const ChunkPos& position) const noexcept {
- if(plannedRadius_ == activeRadius_ && plannedCenterChunkX_ == centerChunkX_ &&
-    plannedCenterChunkZ_ == centerChunkZ_) {
-  return desiredChunks_.contains(position);
- }
  const std::int64_t dx = static_cast<std::int64_t>(position.x) - centerChunkX_;
  const std::int64_t dz = static_cast<std::int64_t>(position.z) - centerChunkZ_;
  const std::int64_t radius = activeRadius_;
@@ -561,16 +581,41 @@ void ChunkCache::rebuildResidencyPlan() {
   ChunkPos position{};
   std::int64_t distanceSq = 0;
  };
+ const int side = activeRadius_ * 2 + 1;
+ std::vector<std::uint8_t> resident(static_cast<std::size_t>(side) * static_cast<std::size_t>(side), 0);
+ const auto markResident = [&](const ChunkPos& position) {
+  const std::int64_t x = static_cast<std::int64_t>(position.x) - centerChunkX_ + activeRadius_;
+  const std::int64_t z = static_cast<std::int64_t>(position.z) - centerChunkZ_ + activeRadius_;
+  if(x >= 0 && z >= 0 && x < side && z < side) resident[static_cast<std::size_t>(z * side + x)] = 1;
+ };
+ for(auto it = pendingLoads_.begin(); it != pendingLoads_.end();) {
+  if(isDesired(it->first)) {
+   markResident(it->first);
+   ++it;
+   continue;
+  }
+  it->second->cancelledGeneration.store(it->second->generation, std::memory_order_release);
+  it = pendingLoads_.erase(it);
+ }
+ std::erase_if(chunksToUnload_, [this](const ChunkPos& position) { return isDesired(position); });
+ for(const auto& [pos, chunk] : chunksByPos_) {
+  (void)chunk;
+  if(isDesired(pos)) {
+   markResident(pos);
+  } else {
+   chunksToUnload_.insert(pos);
+  }
+ }
  std::vector<Candidate> order;
- const int diameter = activeRadius_ * 2 + 1;
- order.reserve(static_cast<std::size_t>(diameter * diameter));
- desiredChunks_.clear();
+ desiredChunkCount_ = 0;
  residencyQueue_.clear();
  const std::int64_t radiusSq = static_cast<std::int64_t>(activeRadius_) * activeRadius_;
  for(int dx = -activeRadius_; dx <= activeRadius_; ++dx) {
   for(int dz = -activeRadius_; dz <= activeRadius_; ++dz) {
    const std::int64_t distanceSq = static_cast<std::int64_t>(dx) * dx + static_cast<std::int64_t>(dz) * dz;
    if(distanceSq > radiusSq) continue;
+   ++desiredChunkCount_;
+   if(resident[static_cast<std::size_t>((dz + activeRadius_) * side + dx + activeRadius_)] != 0) continue;
    order.push_back({ChunkPos{centerChunkX_ + dx, centerChunkZ_ + dz}, distanceSq});
   }
  }
@@ -579,45 +624,19 @@ void ChunkCache::rebuildResidencyPlan() {
   if(a.position.x != b.position.x) return a.position.x < b.position.x;
   return a.position.z < b.position.z;
  });
- for(const Candidate& candidate : order) {
-  desiredChunks_.insert(candidate.position);
-  if(!chunksByPos_.contains(candidate.position) && !pendingLoads_.contains(candidate.position)) {
-   residencyQueue_.push_back(candidate.position);
-  }
- }
- for(auto it = pendingLoads_.begin(); it != pendingLoads_.end();) {
-  const ChunkPos position = it->first;
-  if(desiredChunks_.contains(position)) {
-   ++it;
-   continue;
-  }
-  it->second->cancelledGeneration.store(it->second->generation, std::memory_order_release);
-  it = pendingLoads_.erase(it);
- }
- for(const auto& [pos, chunk] : chunksByPos_) {
-  (void)chunk;
-  if(!desiredChunks_.contains(pos)) {
-   chunksToUnload_.insert(pos);
-  } else {
-   chunksToUnload_.erase(pos);
-  }
- }
+ for(const Candidate& candidate : order) residencyQueue_.push_back(candidate.position);
 }
 void ChunkCache::sweepGraveyard() {
- auto it = graveyard_.begin();
- while(it != graveyard_.end()) {
-  if(*it == nullptr || (*it)->renderPinCount() == 0) {
-   // Leases drained (or never taken): no worker can acquire a new one after
-   // the eviction tombstone was set, so destruction is safe.
-   it = graveyard_.erase(it);
-  } else {
-   ++it;
-  }
- }
+ // Leases drained (or never taken): no worker can acquire a new one after
+ // the eviction tombstone was set, so destruction is safe.
+ std::erase_if(graveyard_, [](const std::unique_ptr<Chunk>& entry) {
+  return entry == nullptr || entry->renderPinCount() == 0;
+ });
 }
 void ChunkCache::pumpChunkPublish() {
  constexpr std::int64_t kPublishBudgetNs = 4'000'000;
  integrateFinishedLoads(256, kPublishBudgetNs);
+ drainDecorations(kDecorationBudgetNs);
  refillAsyncLoads();
  if(world_ != nullptr && !world_->isSavingDisabled()) {
   drainChunksToUnload(100);

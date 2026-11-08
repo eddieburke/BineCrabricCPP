@@ -1,6 +1,7 @@
 #include "net/minecraft/client/auth/microsoft/PlayerTextures.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/auth/microsoft/MicrosoftAuth.hpp"
+#include "net/minecraft/client/session/OfflineIdentity.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
 #include "net/minecraft/entity/player/ClientPlayerEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
@@ -18,13 +19,14 @@ void queueTextureDownloads(net::minecraft::client::texture::TextureManager& text
 } // namespace
 void applySessionTextures(net::minecraft::entity::player::PlayerEntity& player,
                           const net::minecraft::client::util::Session& session) {
- const std::string resolvedSkinUrl = !session.skinUrl.empty() ? session.skinUrl : legacySkinUrl(session.username);
+ const std::string effectiveUsername = net::minecraft::client::session::resolveJoinUsername(session);
+ const std::string resolvedSkinUrl = !session.skinUrl.empty() ? session.skinUrl : legacySkinUrl(effectiveUsername);
  if(!resolvedSkinUrl.empty()) {
   player.skinUrl = resolvedSkinUrl;
  }
  player.profileCapeUrl = session.capeUrl;
- if(!session.username.empty()) {
-  player.name = session.username;
+ if(!effectiveUsername.empty()) {
+  player.name = effectiveUsername;
  }
  player.updateCapeUrl();
 }

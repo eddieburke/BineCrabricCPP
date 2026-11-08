@@ -98,7 +98,7 @@ class Item {
  [[nodiscard]] virtual bool isSuitableFor(Block* /*block*/) const {
   return false;
  }
- [[nodiscard]] bool isHandheld() const {
+ [[nodiscard]] virtual bool isHandheld() const {
   return handheld_;
  }
  [[nodiscard]] virtual bool isHandheldRod() const {

@@ -19,6 +19,13 @@ class RecordingLivingEntity : public entity::LivingEntity {
   lastLandingDistance = fallDistanceIn;
   LivingEntity::onLanding(fallDistanceIn);
  }
+ bool damage(Entity* damageSource, int amount) override {
+  if(world != nullptr && world->isRemote()) {
+   applyDamage(amount);
+   return true;
+  }
+  return LivingEntity::damage(damageSource, amount);
+ }
  int landingCount = 0;
  float lastLandingDistance = -1.0f;
 };
@@ -37,10 +44,10 @@ struct WaterFallDamage : testing::Test {
 } // namespace
 
 TEST_F(WaterFallDamage, LandingInWaterDealsNoDamage) {
- entity::RecordingLivingEntity entity{&world};
+ RecordingLivingEntity entity{&world};
  entity.setBoundingBoxSpacing(0.6f, 1.8f);
  // Feet at 63.0, eyes (~y + eyeHeight) inside the water column at block y 63/64.
- entity.setPosition(8.5, 64.8, 8.5);
+ entity.setPosition(8.5, 63.0, 8.5);
  ASSERT_TRUE(entity.isInFluid(block::material::Material::WATER));
  const int healthBefore = entity.health;
  entity.fallDistance = 20.0f;
@@ -51,18 +58,18 @@ TEST_F(WaterFallDamage, LandingInWaterDealsNoDamage) {
 }
 
 TEST_F(WaterFallDamage, AccumulatesNoFallDistanceWhileFallingThroughWater) {
- entity::RecordingLivingEntity entity{&world};
+ RecordingLivingEntity entity{&world};
  entity.setBoundingBoxSpacing(0.6f, 1.8f);
- entity.setPosition(8.5, 64.8, 8.5);
+ entity.setPosition(8.5, 63.0, 8.5);
  ASSERT_TRUE(entity.isInFluid(block::material::Material::WATER));
  entity.fall(-1.0, false);
  EXPECT_FLOAT_EQ(entity.fallDistance, 0.0f);
 }
 
 TEST_F(WaterFallDamage, LandingOnDryGroundStillDamages) {
- entity::RecordingLivingEntity entity{&world};
+ RecordingLivingEntity entity{&world};
  entity.setBoundingBoxSpacing(0.6f, 1.8f);
- entity.setPosition(8.5, 64.8, 8.5);
+ entity.setPosition(8.5, 63.0, 8.5);
  // Remove the water so the entity lands on dry ground.
  for(int y = 62; y <= 64; ++y) {
   chunk->blocks[(8 << 11) | (8 << 7) | y] = 0;

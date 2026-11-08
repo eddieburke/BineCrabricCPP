@@ -9,6 +9,7 @@ ReadOnlyServerWorld::ReadOnlyServerWorld(MinecraftServer* server,
                                          std::uint64_t seed,
                                          ServerWorld* delegate)
     : ServerWorld(server, storage, saveName, dimension, seed) {
+ hasStorageBackedProperties_ = false;
  if(delegate != nullptr) {
   persistentStateManager.shareWith(delegate->persistentStateManager);
  }

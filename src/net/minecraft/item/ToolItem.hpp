@@ -15,6 +15,7 @@ class ToolItem : public Item {
        damage_(damageBoost + toolMaterialAttackDamage(material)) {
   setMaxCount(1);
   setMaxDamage(toolMaterialDurability(material));
+  setHandheld();
   for(int i = 0; effectiveOn != nullptr && i < effectiveCount; ++i) {
    effectiveOnBlocks_.push_back(effectiveOn[i]);
   }
@@ -31,6 +32,9 @@ class ToolItem : public Item {
  bool postMine(ItemStack* stack, int blockId, int x, int y, int z, LivingEntity* miner) override;
  [[nodiscard]] int getAttackDamage(Entity* /*attacked*/) const override {
   return damage_;
+ }
+ [[nodiscard]] bool isHandheld() const override {
+  return true;
  }
 
  protected:

@@ -96,6 +96,7 @@ class DistantRenderer {
  struct Shared {
   std::mutex mutex;
   std::vector<Completed> completed;
+  std::vector<TileMesh> spareMeshes;
  };
  void releaseTile(Tile& tile);
  void drainCompleted(std::size_t uploadBudget);
@@ -106,7 +107,7 @@ class DistantRenderer {
  [[nodiscard]] static int meshPriority(int distance, bool replacement);
  DistantSlab slab_;
  bool slabReady_ = false;
- BlockPalette palette_;
+ std::shared_ptr<const BlockPalette> palette_;
  std::optional<std::uint64_t> resourceGeneration_;
  std::unordered_map<TileKey, Tile, TileKeyHash> tiles_;
  std::shared_ptr<Shared> shared_ = std::make_shared<Shared>();

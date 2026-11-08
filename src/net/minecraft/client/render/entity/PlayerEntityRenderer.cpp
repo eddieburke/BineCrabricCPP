@@ -19,14 +19,6 @@
 namespace net::minecraft::client::render::entity {
 namespace {
 constexpr const char* kArmorTextureNames[] = {"cloth", "chain", "iron", "diamond", "gold"};
-void configureArmShape(model::BipedEntityModel* body,
-                       model::BipedEntityModel* armorOuter,
-                       model::BipedEntityModel* armorInner,
-                       bool slimArms) {
- body->configureArms(slimArms);
- armorOuter->configureArms(slimArms);
- armorInner->configureArms(slimArms);
-}
 bool resolveSlimArms(const net::minecraft::PlayerEntity& player, EntityRenderDispatcher* dispatcher) {
  if(dispatcher == nullptr || dispatcher->textureManager() == nullptr || player.skinUrl.empty()) {
   return player.slimArms;
@@ -52,7 +44,7 @@ void PlayerEntityRenderer::render(
   return;
  }
  const ItemStack* handStack = player->inventory.getSelectedItem();
- configureArmShape(bipedModel, armor1.get(), armor2.get(), resolveSlimArms(*player, dispatcher));
+ bipedModel->configureArms(resolveSlimArms(*player, dispatcher));
  bipedModel->rightArmPose = handStack != nullptr && !handStack->empty();
  armor2->rightArmPose = bipedModel->rightArmPose;
  armor1->rightArmPose = bipedModel->rightArmPose;
@@ -77,7 +69,7 @@ void PlayerEntityRenderer::renderHand() {
  }
  if(const auto* player = dynamic_cast<const net::minecraft::PlayerEntity*>(
         dispatcher != nullptr ? dispatcher->cameraEntity() : nullptr)) {
-  configureArmShape(bipedModel, armor1.get(), armor2.get(), resolveSlimArms(*player, dispatcher));
+  bipedModel->configureArms(resolveSlimArms(*player, dispatcher));
  }
  bipedModel->handSwingProgress = 0.0f;
  bipedModel->setAngles(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0625f);
@@ -299,33 +291,13 @@ void PlayerEntityRenderer::renderMore(const net::minecraft::LivingEntity& entity
   matrices.push();
   bipedModel->rightArm.transform(0.0625f, matrices);
   matrices.translate(-0.0625f, 0.4375f, 0.0625f);
-  if(handStack.itemId < 256) {
-   Block* block = Block::BLOCKS[static_cast<std::size_t>(handStack.itemId)];
-   if(block != nullptr && block::BlockRenderManager::isSideLit(block->getRenderType())) {
-    float scale = 0.5f;
-    matrices.translate(0.0f, 0.1875f, -0.3125f);
-    matrices.rotate(20.0f, 1.0f, 0.0f, 0.0f);
-    matrices.rotate(45.0f, 0.0f, 1.0f, 0.0f);
-    scale *= 0.75f;
-    matrices.scale(scale, -scale, scale);
-   } else if(Item* item = handStack.getItem(); item != nullptr && item->isHandheld()) {
-    float scale = 0.625f;
-    if(item->isHandheldRod()) {
-     matrices.rotate(180.0f, 0.0f, 0.0f, 1.0f);
-     matrices.translate(0.0f, -0.125f, 0.0f);
-    }
-    matrices.translate(0.0f, 0.1875f, 0.0f);
-    matrices.scale(scale, -scale, scale);
-    matrices.rotate(-100.0f, 1.0f, 0.0f, 0.0f);
-    matrices.rotate(45.0f, 0.0f, 1.0f, 0.0f);
-   } else {
-    const float scale = 0.375f;
-    matrices.translate(0.25f, 0.1875f, -0.1875f);
-    matrices.scale(scale, scale, scale);
-    matrices.rotate(60.0f, 0.0f, 0.0f, 1.0f);
-    matrices.rotate(-90.0f, 1.0f, 0.0f, 0.0f);
-    matrices.rotate(20.0f, 0.0f, 0.0f, 1.0f);
-   }
+  if(item::ItemModelRenderer::rendersAsBlockModel(handStack)) {
+   float scale = 0.5f;
+   matrices.translate(0.0f, 0.1875f, -0.3125f);
+   matrices.rotate(20.0f, 1.0f, 0.0f, 0.0f);
+   matrices.rotate(45.0f, 0.0f, 1.0f, 0.0f);
+   scale *= 0.75f;
+   matrices.scale(scale, -scale, scale);
   } else if(Item* item = handStack.getItem(); item != nullptr && item->isHandheld()) {
    float scale = 0.625f;
    if(item->isHandheldRod()) {

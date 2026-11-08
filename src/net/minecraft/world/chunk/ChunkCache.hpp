@@ -53,7 +53,7 @@ class ChunkCache : public ChunkSource {
   return pendingLoads_.size();
  }
  [[nodiscard]] std::size_t desiredChunkCount() const noexcept {
-  return desiredChunks_.size();
+  return desiredChunkCount_;
  }
  [[nodiscard]] std::size_t queuedResidencyCount() const noexcept {
   return residencyQueue_.size();
@@ -88,7 +88,9 @@ class ChunkCache : public ChunkSource {
  // Worker-local terrain generator clone (seed-deterministic, local BiomeSource).
  ChunkSource* workerGenerator();
  // Main-thread integration: ownership, maps, light population, load, decorate.
- Chunk& adoptChunk(int chunkX, int chunkZ, std::unique_ptr<Chunk> owned);
+ Chunk& adoptChunk(int chunkX, int chunkZ, std::unique_ptr<Chunk> owned, bool deferDecoration = false);
+ [[nodiscard]] bool canDecorate(int chunkX, int chunkZ) const;
+ void drainDecorations(std::int64_t timeBudgetNs);
  void integrateFinishedLoads(int budget, std::int64_t timeBudgetNs = -1);
  void drainChunksToUnload(int maxChunks);
  void saveEntities(Chunk& chunk);
@@ -122,7 +124,9 @@ class ChunkCache : public ChunkSource {
  int plannedCenterChunkZ_ = std::numeric_limits<int>::min();
  int plannedRadius_ = -1;
  std::deque<ChunkPos> residencyQueue_{};
- std::unordered_set<ChunkPos, ChunkPosHash> desiredChunks_{};
+ std::vector<ChunkPos> pendingDecorations_{};
+ bool decorating_ = false;
+ std::size_t desiredChunkCount_ = 0;
  std::unordered_map<ChunkPos, std::shared_ptr<PendingLoad>, ChunkPosHash> pendingLoads_{};
  std::uint64_t nextLoadGeneration_ = 1;
  std::atomic<int> pendingLoadTasks_{0};

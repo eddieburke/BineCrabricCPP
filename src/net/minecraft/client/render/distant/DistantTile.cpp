@@ -24,6 +24,8 @@ constexpr std::uint8_t kWaterStill = 9;
 constexpr std::uint8_t kWaterFlowing = 8;
 constexpr int kLog = 17;
 constexpr int kLeaves = 18;
+constexpr int kSnowLayer = 78;
+constexpr float kContactShade = 0.7f;
 
 constexpr std::array<bool, 256> makeSkipTable() {
  std::array<bool, 256> skip{};
@@ -104,6 +106,11 @@ void sampleColumn(const Chunk& chunk, int lx, int lz, int startY, ColumnSample& 
    run = ColumnRun{};
    run.top = static_cast<std::uint8_t>(y + 1);
    run.topLight = packedLight(chunk, lx, y + 1, lz);
+  }
+  if(id == kSnowLayer && run.block == 0) {
+   run.block = kSnowLayer;
+   run.top = static_cast<std::uint8_t>(y);
+   continue;
   }
   if(solid && run.block == 0) {
    run.block = static_cast<std::uint8_t>(id);
@@ -206,7 +213,7 @@ constexpr SideDir kSideDirs[4] = {{0, -1, DhNormal::NegZ, 0.8f},
                                   {1, 0, DhNormal::PosX, 0.6f}};
 
 void pushSide(std::vector<DhVertex>& out, const SideDir& dir, int x0, int x1, int z0, int z1, int yLow, int yHigh,
-              const Face& face) {
+              const Face& face, float baseShade = 1.0f) {
  const std::uint16_t ys[4] = {u16(yLow), u16(yHigh), u16(yHigh), u16(yLow)};
  std::uint16_t xs[4];
  std::uint16_t zs[4];
@@ -228,6 +235,12 @@ void pushSide(std::vector<DhVertex>& out, const SideDir& dir, int x0, int x1, in
   xs[0] = xs[1] = xs[2] = xs[3] = u16(x1);
  }
  pushQuad(out, xs, ys, zs, face, dir.shade, dir.normal);
+ if(baseShade == 1.0f) return;
+ for(const std::size_t corner : {out.size() - 4, out.size() - 1}) {
+  for(int channel = 0; channel < 3; ++channel) {
+   out[corner].color[channel] = static_cast<std::uint8_t>(static_cast<float>(out[corner].color[channel]) * baseShade + 0.5f);
+  }
+ }
 }
 
 [[nodiscard]] const std::uint8_t* tintFor(const PaletteEntry& entry, const ColumnCell& cell, const ColumnRun& run,
@@ -443,6 +456,14 @@ bool extractTile(const ChunkLookup& chunks, int tileX, int tileZ, int stride, Ti
    std::uint8_t waterLight = 0;
    bool haveCanopy = false;
    bool haveGround = false;
+   int canopyX = 0;
+   int canopyZ = 0;
+   int groundX = 0;
+   int groundZ = 0;
+   const auto replaces = [](const ColumnSample& candidate, const ColumnSample& best) {
+    return candidate.runs[0].top > best.runs[0].top ||
+           (candidate.runs[0].top == best.runs[0].top && candidate.runs[0].topLight > best.runs[0].topLight);
+   };
    for(int dz = 0; dz < stride; ++dz) {
     for(int dx = 0; dx < stride; ++dx) {
      sampleColumn(*chunk, localX0 + dx, localZ0 + dz, startY, sample);
@@ -458,26 +479,36 @@ bool extractTile(const ChunkLookup& chunks, int tileX, int tileZ, int stride, Ti
      }
      if(canopyTop(sample)) {
       ++canopyCount;
-      if(!haveCanopy || sample.runs[0].top > bestCanopy.runs[0].top) {
+      if(!haveCanopy || replaces(sample, bestCanopy)) {
        bestCanopy = sample;
+       canopyX = dx;
+       canopyZ = dz;
        haveCanopy = true;
       }
-     } else if(!haveGround || sample.runs[0].top > bestGround.runs[0].top) {
+     } else if(!haveGround || replaces(sample, bestGround)) {
       bestGround = sample;
+      groundX = dx;
+      groundZ = dz;
       haveGround = true;
      }
     }
    }
    ColumnCell& cell = out.at(cellX, cellZ);
    cell.present = true;
-   for(int y = 0; y < Chunk::height; ++y)
-    cell.light[static_cast<std::size_t>(y)] = packedLight(*chunk, localX0 + stride / 2, y, localZ0 + stride / 2);
    const ColumnSample* chosen = nullptr;
+   int lightX = stride / 2;
+   int lightZ = stride / 2;
    if(haveCanopy && (canopyCount * 2 >= columns || !haveGround)) {
     chosen = &bestCanopy;
+    lightX = canopyX;
+    lightZ = canopyZ;
    } else if(haveGround) {
     chosen = &bestGround;
+    lightX = groundX;
+    lightZ = groundZ;
    }
+   for(int y = 0; y < Chunk::height; ++y)
+    cell.light[static_cast<std::size_t>(y)] = packedLight(*chunk, localX0 + lightX, y, localZ0 + lightZ);
    if(chosen != nullptr) {
     cell.runCount = static_cast<std::uint8_t>(chosen->runCount);
     cell.runs = chosen->runs;
@@ -551,13 +582,14 @@ void meshTile(const TileCells& cells, const BlockPalette& palette, TileMesh& out
     const std::uint8_t* sideTint = tintFor(entry, c, r, false, scratch);
     const auto emitSide = [&](const SideDir& dir, int low, int high) {
      const auto& neighbor = cells.at(cx + dir.dx, cz + dir.dz);
+     const float contact = neighbor.present && high - low <= 2 * stride ? kContactShade : 1.0f;
      const auto emit = [&](int bottom, int top, const PaletteEntry& material, const std::uint8_t* tint) {
       while(bottom < top) {
        const std::uint8_t light = neighbor.present ? neighbor.light[static_cast<std::size_t>(bottom)] : r.topLight;
        int end = bottom + 1;
        while(end < top && (!neighbor.present || neighbor.light[static_cast<std::size_t>(end)] == light)) ++end;
        pushSide(out.opaque, dir, x0, x0 + stride, z0, z0 + stride, bottom, end,
-                Face{material.side, tint, material.material, light});
+                Face{material.side, tint, material.material, light}, bottom == low ? contact : 1.0f);
        bottom = end;
       }
      };
@@ -568,7 +600,8 @@ void meshTile(const TileCells& cells, const BlockPalette& palette, TileMesh& out
      int layerTop = r.top;
      for(int layerIndex = 0; layerIndex < r.layerCount; ++layerIndex) {
       const ColumnMaterialLayer& layer = r.layers[static_cast<std::size_t>(layerIndex)];
-      const int layerBottom = layerIndex + 1 == r.layerCount ? r.bottom : layer.bottom;
+      const int layerBottom = layerIndex + 1 == r.layerCount ? r.bottom :
+          layerIndex == 0 ? std::min<int>(layer.bottom, r.top - stride) : layer.bottom;
       const int clippedLow = std::max(low, layerBottom);
       const int clippedHigh = std::min(high, layerTop);
       if(clippedHigh > clippedLow) {

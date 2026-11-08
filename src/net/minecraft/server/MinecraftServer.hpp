@@ -76,6 +76,7 @@ class MinecraftServer : public command::CommandOutput {
 
  private:
  friend class PlayerManager;
+ friend class ::net::minecraft::ServerWorld;
  bool init();
  void loadWorld(const std::filesystem::path& storageRoot, const std::string& worldDir, std::uint64_t seed);
  void shutdown();

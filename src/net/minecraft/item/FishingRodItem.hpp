@@ -14,6 +14,9 @@ class FishingRodItem : public Item {
  static void registerClass();
  static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
  explicit FishingRodItem(int rawId);
+ [[nodiscard]] bool isHandheld() const override {
+  return true;
+ }
  [[nodiscard]] bool isHandheldRod() const override;
  ItemStack* use(ItemStack* stack, World* world, PlayerEntity* user) override;
 };

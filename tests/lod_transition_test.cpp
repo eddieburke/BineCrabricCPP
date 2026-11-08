@@ -65,6 +65,61 @@ TEST(LodTransition, NativeBoundarySurvivesUntilItsDistantColumnIsUploaded) {
  EXPECT_EQ(sections.sectionAt(18, 0, 0), nullptr);
  sections.clearSections();
 }
+TEST(LodTransition, LostCoverageRequeuesTheTransitionColumnWithoutCameraMovement) {
+ ClientWorld world{nullptr, 12345ULL, 0};
+ world.updateChunk(18, 0, true);
+ world.getChunkSource()->markChunkDataReady(18, 0);
+ client::option::GameOptions options;
+ options.renderScale = 2.0f;
+ auto settings = client::option::renderSettings(options);
+ entity::LivingEntity camera(&world);
+ distant::DistantRenderer renderer;
+ TerrainScene scene;
+ scene.world = &world;
+ scene.camera = &camera;
+ scene.settings = &settings;
+ scene.options = &options;
+ scene.distant = &renderer;
+ ChunkCompilePipeline pipeline(scene);
+ ChunkSectionSystem sections(scene);
+ sections.setCompilePipeline(pipeline);
+ pipeline.setSectionSystem(sections);
+ auto& tile = renderer.tiles_[{4, 0}];
+ tile.stride = 1;
+ tile.chunkMask = 1u << 2;
+ ASSERT_TRUE(renderer.coversColumn(18, 0));
+ sections.reloadIfViewDistanceChanged();
+ sections.drainPendingColumns();
+ ASSERT_EQ(sections.sectionAt(18, 0, 0), nullptr);
+ renderer.tiles_.erase({4, 0});
+ ++renderer.coverageRevision;
+ sections.reloadIfViewDistanceChanged();
+ sections.drainPendingColumns();
+ EXPECT_NE(sections.sectionAt(18, 0, 0), nullptr);
+ sections.clearSections();
+}
+TEST(LodTransition, CompletedMeshBuffersAreRecycledForTheNextJob) {
+ distant::DistantRenderer renderer;
+ auto& tile = renderer.tiles_[{4, 0}];
+ tile.inFlight = true;
+ tile.jobId = 1;
+ renderer.inFlight_ = 1;
+ distant::DistantRenderer::Completed result;
+ result.key = {4, 0};
+ result.jobId = 1;
+ result.mesh.opaque.reserve(4096);
+ result.mesh.water.resize(8);
+ renderer.shared_->completed.push_back(std::move(result));
+ renderer.drainCompleted(1024);
+ EXPECT_EQ(renderer.inFlight_, 0);
+ ASSERT_EQ(renderer.shared_->spareMeshes.size(), 1u);
+ const distant::TileMesh& spare = renderer.shared_->spareMeshes.front();
+ EXPECT_TRUE(spare.opaque.empty());
+ EXPECT_TRUE(spare.water.empty());
+ EXPECT_GE(spare.opaque.capacity(), 4096u);
+ EXPECT_GE(spare.water.capacity(), 8u);
+ EXPECT_TRUE(renderer.shared_->completed.empty());
+}
 TEST(LodTransition, OldTileCompletionDoesNotClearReplacementJob) {
  distant::DistantRenderer renderer;
  const distant::DistantRenderer::TileKey key{-1, -1};
@@ -432,7 +487,21 @@ TEST(LodTransition, FullSlabCanShrinkAReplacementInPlaceAndRecoverFromPressure) 
  auto& replacementTile = renderer.tiles_.at(key);
  replacementTile.jobId = 2;
  replacementTile.inFlight = true;
+ replacementTile.stride = 1;
  replacementTile.wantedStride = 2;
+ const distant::DistantRenderer::TileKey thirdBlockedKey{7, 0};
+ auto& thirdBlocked = renderer.tiles_[thirdBlockedKey];
+ thirdBlocked.jobId = 4;
+ thirdBlocked.inFlight = true;
+ distant::DistantRenderer::Completed thirdFailure;
+ thirdFailure.key = thirdBlockedKey;
+ thirdFailure.jobId = 4;
+ thirdFailure.chunkMask = 0xFFFFu;
+ thirdFailure.mesh.opaque.resize(4);
+ renderer.shared_->completed.push_back(std::move(thirdFailure));
+ renderer.inFlight_ = 1;
+ renderer.drainCompleted(1024);
+ EXPECT_EQ(renderer.memoryStride_, 2);
  renderer.inFlight_ = 1;
  distant::DistantRenderer::Completed replacement;
  replacement.key = key;

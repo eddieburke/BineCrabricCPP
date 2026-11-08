@@ -219,6 +219,15 @@ void beginRestoreSavedAccount(net::minecraft::client::Minecraft& client) {
  if(!saved.has_value() || !saved->restorable()) {
   return;
  }
+ if(!saved.has_value() || !saved->restorable()) {
+  return;
+ }
+ if(saved->hasProfile()) {
+  client.session.username = saved->profileName;
+  client.session.skinUrl = saved->skinUrl;
+  client.session.capeUrl = saved->capeUrl;
+  refreshPlayerTextures(client, saved->slimArms);
+ }
  startSavedAccountRestoreWorker(*saved);
 }
 void tickRestoreSavedAccount(net::minecraft::client::Minecraft& client) {

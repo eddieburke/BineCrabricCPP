@@ -5,6 +5,7 @@
 #include <sstream>
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/SingleplayerInteractionManager.hpp"
+#include "net/minecraft/client/host/ServerProcessCoordinator.hpp"
 #include "net/minecraft/client/gui/layout/ScreenLayout.hpp"
 #include "net/minecraft/client/gui/screen/ConfirmScreen.hpp"
 #include "net/minecraft/client/gui/screen/TitleScreen.hpp"
@@ -107,6 +108,7 @@ void SelectWorldScreen::getSaves() {
   selectedWorldId_ = -1;
   return;
  }
+ minecraft()->serverProcessCoordinator().shutdown();
  WorldStorageSource* storage = minecraft()->getWorldStorageSource();
  if(storage == nullptr) {
   selectedWorldId_ = -1;

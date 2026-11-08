@@ -9,6 +9,7 @@ namespace net::minecraft::item {
 ShearsItem::ShearsItem(int rawId) : Item(rawId) {
  setMaxCount(1);
  setMaxDamage(238);
+ setHandheld();
 }
 bool ShearsItem::postMine(ItemStack* stack, int blockId, int x, int y, int z, LivingEntity* miner) {
  (void)x;

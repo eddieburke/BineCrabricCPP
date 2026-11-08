@@ -284,6 +284,65 @@ TEST(DistantMesher, CliffLightFollowsAdjacentHeightInsteadOfNeighborTop) {
  EXPECT_EQ(litArea, 4);
 }
 
+TEST(DistantTile, StrideWallLightFollowsTheChosenColumn) {
+ ChunkGrid grid;
+ grid.fillTile(0, 0, 64);
+ Chunk& chunk = *grid.chunks[{0, 0}];
+ for(int z = 4; z < 8; ++z) {
+  for(int x = 4; x < 8; ++x) {
+   for(int y = 64; y < 70; ++y) chunk.setLight(LightType::Sky, x, y, z, 15);
+  }
+ }
+ for(int y = 64; y < 70; ++y) {
+  chunk.blocks[(6 << 11) | (6 << 7) | y] = 17;
+  chunk.setLight(LightType::Sky, 6, y, 6, 0);
+ }
+ chunk.heightmap[(6 << 4) | 6] = 70;
+ TileCells cells;
+ ASSERT_TRUE(extractTile(grid.lookup(), 0, 0, 4, cells));
+ EXPECT_EQ(cells.at(1, 1).runs[0].top, 64);
+ EXPECT_EQ(cells.at(1, 1).light[66], 0x0F);
+}
+
+TEST(DistantTile, SnowLayerCapsTheTopWithoutPaintingWalls) {
+ ChunkGrid grid;
+ grid.fillTile(0, 0, 64);
+ Chunk& chunk = *grid.chunks[{1, 1}];
+ chunk.blocks[(4 << 11) | (4 << 7) | 64] = 78;
+ chunk.heightmap[(4 << 4) | 4] = 65;
+ TileCells cells;
+ ASSERT_TRUE(extractTile(grid.lookup(), 0, 0, 1, cells));
+ const ColumnRun& run = cells.at(20, 20).runs[0];
+ EXPECT_EQ(run.top, 64);
+ EXPECT_EQ(run.block, 78);
+ ASSERT_GT(run.layerCount, 0);
+ EXPECT_EQ(run.layers[0].block, kGrass);
+}
+
+TEST(DistantMesher, CoarseWallKeepsSurfaceMaterialAndContactShade) {
+ TileCells cells = flatCells(4, 64, kStone);
+ ColumnRun& run = cells.at(5, 5).runs[0];
+ run.top = 68;
+ run.block = kGrass;
+ run.layerCount = 2;
+ run.layers[0] = ColumnMaterialLayer{67, kGrass, 0};
+ run.layers[1] = ColumnMaterialLayer{0, kStone, 0};
+ const BlockPalette palette = defaultPalette();
+ TileMesh mesh;
+ meshTile(cells, palette, mesh);
+ int walls = 0;
+ for(std::size_t i = 0; i < mesh.opaque.size(); i += 4) {
+  const auto* quad = &mesh.opaque[i];
+  if(quad[0].normal != DhNormal::NegX || quad[0].x != 20) continue;
+  ++walls;
+  const int lit = static_cast<int>(palette.entries[kGrass].side[0] * 0.6f + 0.5f);
+  EXPECT_EQ(quad[1].color[0], lit);
+  EXPECT_EQ(quad[0].y, 64);
+  EXPECT_EQ(quad[0].color[0], static_cast<int>(lit * 0.7f + 0.5f));
+ }
+ EXPECT_EQ(walls, 1);
+}
+
 TEST(DistantMesher, VertexLayoutAndWater) {
  TileCells cells = flatCells(1, 64, kStone);
  cells.at(10, 10).runs[0].top = 70;

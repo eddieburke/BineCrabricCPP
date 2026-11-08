@@ -101,9 +101,9 @@ void PlayerManager::savePlayerData(::net::minecraft::entity::player::ServerPlaye
    for(ServerWorld* dimensionWorld : server_->worlds) {
     if(dimensionWorld != nullptr) {
      dimensionWorld->getProperties().setPlayerNbt(nbt);
-     dimensionWorld->save(true);
     }
    }
+   world->save(true);
   }
  }
 }

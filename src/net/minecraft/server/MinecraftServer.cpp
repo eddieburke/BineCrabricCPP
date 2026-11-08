@@ -512,7 +512,9 @@ void MinecraftServer::tick() {
  Vec3d::resetCacheCount();
  ++ticks;
  const int saveInterval = properties != nullptr ? std::max(40, properties->getProperty("auto-save-ticks", 4000)) : 4000;
- if(ticks % saveInterval == 0) {
+ const bool worldAutosaveDue =
+     worlds[0] != nullptr && (worlds[0]->getTime() + 1) % static_cast<std::uint64_t>(saveInterval) == 0;
+ if(ticks % saveInterval == 0 || worldAutosaveDue) {
   playerManager.savePlayers();
  }
  for(int i = 0; i < 2; ++i) {

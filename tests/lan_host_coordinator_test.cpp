@@ -2,6 +2,7 @@
 #include <atomic>
 #include <filesystem>
 #include "net/minecraft/client/Minecraft.hpp"
+#include "net/minecraft/client/SingleplayerInteractionManager.hpp"
 #include "net/minecraft/client/host/ServerProcessCoordinator.hpp"
 #include "net/minecraft/util/crash/CrashReport.hpp"
 #include "net/minecraft/world/ClientWorld.hpp"
@@ -59,5 +60,39 @@ TEST(ServerProcessCoordinator, FailedHandoffRetainsPlayerPayloadAndRemovesOldEnt
  EXPECT_EQ(restored.inventory.main[0].itemId, 264);
  EXPECT_EQ(restored.inventory.main[0].count, 7);
  session.commitRemoteHandoff();
+}
+TEST(ServerProcessCoordinator, StopHostedServerRestoresServerSessionPlayerInventory) {
+ const auto root = makeTempWorldRoot("host_stop_restore_inventory");
+ TestMinecraft client(854, 480, false);
+ client.interactionManager = std::make_unique<client::SingleplayerInteractionManager>(&client);
+ auto& session = client.worldSession();
+ session.ownedWorldStorageMut() = std::make_unique<AlphaWorldStorage>(root, "World", true);
+ AlphaWorldStorage* storage = static_cast<AlphaWorldStorage*>(session.ownedWorldStorage());
+ session.ownedWorldMut() = std::make_unique<World>(session.ownedWorldStorage(), "World", 42, true);
+ client.world = session.ownedWorld();
+ session.ownedPlayerMut() = std::make_unique<entity::player::ClientPlayerEntity>(
+     &client, client.world, net::minecraft::client::util::Session("WorldHost", ""), client.options, 0);
+ client.player = session.ownedPlayer();
+ client.player->inventory.main[0] = ItemStack(264, 7);
+ client.world->players.push_back(client.player);
+ World* parked = client.world;
+ ASSERT_TRUE(session.parkLocalWorldForRemoteHandoff(client));
+ EXPECT_TRUE(parked->players.empty());
+
+ WorldProperties serverProps = *storage->loadProperties();
+ ASSERT_NE(serverProps.getPlayerNbt(), nullptr);
+ entity::player::PlayerEntity serverPlayer(parked);
+ serverPlayer.readNbt(*serverProps.getPlayerNbt());
+ serverPlayer.inventory.main[0] = ItemStack(331, 2);
+ NbtCompound serverNbt;
+ serverPlayer.writeNbt(serverNbt);
+ serverProps.setPlayerNbt(serverNbt);
+ storage->save(serverProps);
+ storage->savePlayerData(serverPlayer);
+
+ ASSERT_TRUE(session.restoreParkedLocalWorld(client));
+ ASSERT_NE(client.player, nullptr);
+ EXPECT_EQ(client.player->inventory.main[0].itemId, 331);
+ EXPECT_EQ(client.player->inventory.main[0].count, 2);
 }
 } // namespace net::minecraft::test

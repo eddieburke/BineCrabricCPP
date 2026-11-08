@@ -1,4 +1,4 @@
-﻿#include "net/minecraft/world/ServerWorld.hpp"
+#include "net/minecraft/world/ServerWorld.hpp"
 #include <algorithm>
 #include <cmath>
 #include "net/minecraft/block/entity/BlockEntity.hpp"
@@ -6,6 +6,7 @@
 #include "net/minecraft/entity/WaterCreatureEntity.hpp"
 #include "net/minecraft/entity/passive/AnimalEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
+#include "net/minecraft/entity/player/ServerPlayerEntity.hpp"
 #include "net/minecraft/network/packet/BlockPackets.hpp"
 #include "net/minecraft/network/packet/EntityPackets.hpp"
 #include "net/minecraft/network/packet/WorldPackets.hpp"
@@ -185,5 +186,38 @@ void ServerWorld::saveWithProgress(bool saveEntities, ChunkSource::SaveProgressC
   getChunkSource()->save(saveEntities, std::move(progress));
  }
  forceSave();
+}
+WorldProperties ServerWorld::propertiesWithPlayer() const {
+ const WorldProperties& baseProperties =
+     (server_ != nullptr && server_->getWorld(0) != nullptr) ? server_->getWorld(0)->getProperties() : properties_;
+ WorldProperties snapshot = baseProperties;
+ if(server_ != nullptr) {
+  entity::player::ServerPlayerEntity* liveOwner = nullptr;
+  const bool hasConfiguredOwner =
+      server_->launchConfig_.has_value() && !server_->launchConfig_->ownerName.empty();
+  if(hasConfiguredOwner) {
+   for(entity::player::ServerPlayerEntity* candidate : server_->playerManager.players) {
+    if(candidate != nullptr && candidate->name == server_->launchConfig_->ownerName) {
+     liveOwner = candidate;
+     break;
+    }
+   }
+  } else if(!server_->playerManager.players.empty()) {
+   liveOwner = server_->playerManager.players.front();
+  }
+  if(liveOwner != nullptr) {
+   NbtCompound playerNbt;
+   liveOwner->writeNbt(playerNbt);
+   snapshot.setPlayerNbt(std::move(playerNbt));
+   return snapshot;
+  }
+  if(snapshot.getPlayerNbt() == nullptr && !hasConfiguredOwner && !players.empty() && players.front() != nullptr) {
+   NbtCompound playerNbt;
+   players.front()->writeNbt(playerNbt);
+   snapshot.setPlayerNbt(std::move(playerNbt));
+  }
+  return snapshot;
+ }
+ return World::propertiesWithPlayer();
 }
 } // namespace net::minecraft

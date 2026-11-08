@@ -287,7 +287,8 @@ void ChunkSectionSystem::reloadIfViewDistanceChanged() {
  const std::uint64_t coverage = scene_.distant != nullptr ? scene_.distant->coverageRevision : 0;
  if(cameraX == meshCameraX_ && cameraZ == meshCameraZ_ && radius == meshRadius_ &&
     transitionRadius == transitionRadius_ && coverage == lodCoverageRevision_) return;
- const bool priorityChanged = cameraX != meshCameraX_ || cameraZ != meshCameraZ_ || radius != meshRadius_;
+ const bool priorityChanged = cameraX != meshCameraX_ || cameraZ != meshCameraZ_ || radius != meshRadius_ ||
+                              transitionRadius != transitionRadius_;
  meshCameraX_ = cameraX;
  meshCameraZ_ = cameraZ;
  meshRadius_ = radius;
@@ -308,10 +309,17 @@ void ChunkSectionSystem::reloadIfViewDistanceChanged() {
   }
   ++it;
  }
- if(scene_.world->getChunkSource() != nullptr) {
-  scene_.world->getChunkSource()->forEachLoadedChunk([this](int x, int z, Chunk&) { enqueueColumn(x, z); });
+ const std::size_t queuedBefore = pendingColumns_.size();
+ if(ChunkSource* source = scene_.world->getChunkSource(); source != nullptr) {
+  const int reach = std::max(radius, transitionRadius);
+  for(int z = cameraZ - reach; z <= cameraZ + reach; ++z) {
+   for(int x = cameraX - reach; x <= cameraX + reach; ++x) {
+    if(!priorityChanged && world::columnInRange(x, z, cameraX, cameraZ, radius)) continue;
+    if(source->isChunkDataReady(x, z)) enqueueColumn(x, z);
+   }
+  }
  }
- if(priorityChanged) {
+ if(priorityChanged || pendingColumns_.size() != queuedBefore) {
   std::stable_sort(pendingColumns_.begin(), pendingColumns_.end(), [cameraX, cameraZ](const auto& a, const auto& b) {
    const auto distance = [cameraX, cameraZ](const auto& p) {
     const auto dx = static_cast<std::int64_t>(p.x) - cameraX;
@@ -492,9 +500,11 @@ void ChunkSectionSystem::drainBorderRefresh() {
  if(pendingBorderRefresh_.empty()) {
   return;
  }
+ constexpr int kMaxColumnsPerFrame = 32;
+ int processed = 0;
  static constexpr int kNeighborX[8] = {-1, 1, 0, 0, -1, -1, 1, 1};
  static constexpr int kNeighborZ[8] = {0, 0, -1, 1, -1, 1, -1, 1};
- for(auto columnIt = pendingBorderRefresh_.begin(); columnIt != pendingBorderRefresh_.end();) {
+ for(auto columnIt = pendingBorderRefresh_.begin(); columnIt != pendingBorderRefresh_.end() && processed < kMaxColumnsPerFrame;) {
   const world::ColumnPos column = *columnIt;
   if(pendingLit_.contains(column)) {
    ++columnIt;
@@ -504,7 +514,7 @@ void ChunkSectionSystem::drainBorderRefresh() {
    const int neighborX = column.x + kNeighborX[dir];
    const int neighborZ = column.z + kNeighborZ[dir];
    for(int sectionY = 0; sectionY < kChunkSectionCountY; ++sectionY) {
-   chunk::ChunkBuilder* section = sectionAt(neighborX, sectionY, neighborZ);
+    chunk::ChunkBuilder* section = sectionAt(neighborX, sectionY, neighborZ);
     if(section == nullptr || (!section->built && !section->meshJobInFlight)) {
      continue;
     }
@@ -516,6 +526,7 @@ void ChunkSectionSystem::drainBorderRefresh() {
     compilePipeline_->enqueueDirtyChunk(section);
    }
   }
+  ++processed;
   columnIt = pendingBorderRefresh_.erase(columnIt);
  }
 }

@@ -302,9 +302,10 @@ void renderSkyVoid(const AtmosphereContext& ctx, float) {
  core::depthMask(false);
  SkyMeshes& meshes = skyMeshes(skyBoxRadius(ctx.settings));
  const bool darkVoid = ctx.world->dimension->hasGround();
- const float voidR = darkVoid ? skyR * 0.2f + 0.04f : skyR;
- const float voidG = darkVoid ? skyG * 0.2f + 0.04f : skyG;
- const float voidB = darkVoid ? skyB * 0.6f + 0.1f : skyB;
+ const float* haze = core::fog().color;
+ const float voidR = ctx.settings.distantTerrain ? haze[0] : darkVoid ? skyR * 0.2f + 0.04f : skyR;
+ const float voidG = ctx.settings.distantTerrain ? haze[1] : darkVoid ? skyG * 0.2f + 0.04f : skyG;
+ const float voidB = ctx.settings.distantTerrain ? haze[2] : darkVoid ? skyB * 0.6f + 0.1f : skyB;
  core::setConstColor(voidR, voidG, voidB, 1.0f);
  {
   const core::RenderStageScope stage(core::RenderStage::Void);

@@ -10,7 +10,6 @@ SugarItem::SugarItem() : Item(kRawId, RegistrationMode::Deferred) {
 void SugarItem::registerClass() {
  static SugarItem instance;
  instance.setTexturePosition(13, 0);
- instance.setHandheld();
  instance.setTranslationKey("sugar");
  Item::registerInItemsArray(&instance);
 }

@@ -12,6 +12,7 @@ class SwordItem : public Item {
      : Item(rawId, RegistrationMode::Deferred), damage_(4 + toolMaterialAttackDamage(material) * 2) {
   setMaxCount(1);
   setMaxDamage(toolMaterialDurability(material));
+  setHandheld();
  }
  [[nodiscard]] float getMiningSpeedMultiplier(ItemStack* /*stack*/, Block* block) const override {
   if(block != nullptr && Block::COBWEB != nullptr && block->id == Block::COBWEB->id) {
@@ -41,7 +42,7 @@ class SwordItem : public Item {
  [[nodiscard]] bool isSuitableFor(Block* block) const override {
   return block != nullptr && Block::COBWEB != nullptr && block->id == Block::COBWEB->id;
  }
- [[nodiscard]] bool isHandheld() const {
+ [[nodiscard]] bool isHandheld() const override {
   return true;
  }
 

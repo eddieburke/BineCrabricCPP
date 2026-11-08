@@ -10,6 +10,7 @@
 #include "net/minecraft/world/World.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
+#include "net/minecraft/world/storage/AlphaWorldStorage.hpp"
 namespace net::minecraft {
 namespace {
 bool isInvalidDouble(double value) {
@@ -267,6 +268,13 @@ void World::addPlayer(PlayerEntity* player) {
    }
    player->readNbt(*playerNbt);
    properties_.clearPlayerNbt();
+  } else if(!isRemote_) {
+   if(auto* alphaStorage = dynamic_cast<AlphaWorldStorage*>(dimensionData_); alphaStorage != nullptr) {
+    alphaStorage->loadPlayerData(*player);
+    if(ChunkSource* chunkSource = getChunkSource(); chunkSource != nullptr) {
+     chunkSource->loadChunk(MathHelper::floor(player->x) >> 4, MathHelper::floor(player->z) >> 4);
+    }
+   }
   }
   setChunkCacheCenterFromBlockPos(MathHelper::floor(player->x), MathHelper::floor(player->z));
   // Last line of defence: whatever the saved coordinate was, never drop the player

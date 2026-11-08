@@ -11,6 +11,9 @@ class ShearsItem : public Item {
  static void registerClass();
  static void registerRecipes(recipe::CraftingRecipeManager& recipeManager);
  explicit ShearsItem(int rawId);
+ [[nodiscard]] bool isHandheld() const override {
+  return true;
+ }
  bool postMine(ItemStack* stack, int blockId, int x, int y, int z, LivingEntity* miner) override;
  [[nodiscard]] bool isSuitableFor(Block* block) const override;
  [[nodiscard]] float getMiningSpeedMultiplier(ItemStack* stack, Block* block) const override;

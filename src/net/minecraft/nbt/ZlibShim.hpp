@@ -52,9 +52,11 @@ int deflateInit2_(z_streamp strm,
                   const char* version,
                   int stream_size);
 int deflate(z_streamp strm, int flush);
+int deflateReset(z_streamp strm);
 int deflateEnd(z_streamp strm);
 int inflateInit2_(z_streamp strm, int windowBits, const char* version, int stream_size);
 int inflate(z_streamp strm, int flush);
+int inflateReset(z_streamp strm);
 int inflateEnd(z_streamp strm);
 }
 inline int deflateInit2(z_streamp strm, int level, int method, int windowBits, int memLevel, int strategy) {

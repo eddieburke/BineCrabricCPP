@@ -1,7 +1,11 @@
 #include <gtest/gtest.h>
+#include <algorithm>
+#include <chrono>
 #include <limits>
 #include <memory>
 #include <string>
+#include <thread>
+#include <utility>
 #include "net/minecraft/server/MinecraftServer.hpp"
 #include "net/minecraft/world/chunk/ChunkCache.hpp"
 #include "net/minecraft/util/math/Types.hpp"
@@ -18,6 +22,28 @@ struct ServerChunkCacheFixture {
   world.setSpawnPos(net::minecraft::Vec3i{0, 64, 0});
   cache = world.chunkCache;
  }
+};
+class SpillingDecorator final : public net::minecraft::ChunkSource {
+ public:
+ net::minecraft::world::chunk::ChunkCache* cache = nullptr;
+ int depth = 0;
+ int deepest = 0;
+ bool spilled = false;
+ bool isChunkLoaded(int x, int z) const override { return cache->isChunkLoaded(x, z); }
+ net::minecraft::Chunk& getChunk(int x, int z) override { return cache->getChunk(x, z); }
+ net::minecraft::Chunk& loadChunk(int x, int z) override { return cache->loadChunk(x, z); }
+ void decorate(net::minecraft::ChunkSource*, int, int) override {
+  deepest = std::max(deepest, ++depth);
+  if(!spilled) {
+   spilled = true;
+   cache->loadChunk(102, 100);
+  }
+  --depth;
+ }
+ bool save(bool, SaveProgressCallback) override { return true; }
+ bool tick() override { return false; }
+ bool canSave() const override { return true; }
+ std::string getDebugInfo() const override { return {}; }
 };
 class RetryChunkStorage final : public net::minecraft::ChunkStorage {
  public:
@@ -102,6 +128,91 @@ TEST(ServerChunkCache, ResidencyPlanIsCircularAndStableUntilInputsChange) {
  EXPECT_EQ(fixture.cache->queuedResidencyCount(), queued);
  fixture.cache->setChunkCacheCenter(-9, 7);
  EXPECT_EQ(fixture.cache->desiredChunkCount(), 29U);
+}
+TEST(ServerChunkCache, ResidencyPlanSkipsResidentChunksAndUnloadsTheTrailingEdge) {
+ ServerChunkCacheFixture fixture;
+ ASSERT_NE(fixture.cache, nullptr);
+ fixture.cache->forceLoad = true;
+ fixture.cache->setActiveRadius(3);
+ fixture.cache->setChunkCacheCenter(100, 100);
+ EXPECT_EQ(fixture.cache->queuedResidencyCount(), 29U);
+ fixture.cache->loadChunk(97, 100);
+ fixture.cache->loadChunk(100, 100);
+ fixture.cache->loadChunk(103, 100);
+ fixture.cache->setChunkCacheCenter(101, 100);
+ EXPECT_EQ(fixture.cache->desiredChunkCount(), 29U);
+ EXPECT_EQ(fixture.cache->queuedResidencyCount(), 27U);
+ EXPECT_NE(fixture.cache->getDebugInfo().find("Pending unload: 1"), std::string::npos);
+ fixture.cache->tick();
+ EXPECT_FALSE(fixture.cache->isChunkLoaded(97, 100));
+ EXPECT_TRUE(fixture.cache->isChunkLoaded(100, 100));
+ EXPECT_TRUE(fixture.cache->isChunkLoaded(103, 100));
+ EXPECT_EQ(fixture.cache->loadedChunkCount(), 2U);
+ EXPECT_TRUE(fixture.cache->save(true));
+}
+TEST(ServerChunkCache, SynchronousLoadsDecorateAsSoonAsNeighborsArrive) {
+ ServerChunkCacheFixture fixture;
+ ASSERT_NE(fixture.cache, nullptr);
+ fixture.cache->forceLoad = true;
+ fixture.cache->loadChunk(40, 40);
+ fixture.cache->loadChunk(41, 40);
+ fixture.cache->loadChunk(40, 41);
+ EXPECT_FALSE(fixture.cache->getChunk(40, 40).terrainPopulated);
+ fixture.cache->loadChunk(41, 41);
+ EXPECT_TRUE(fixture.cache->getChunk(40, 40).terrainPopulated);
+}
+TEST(ServerChunkCache, AsyncLoadsDecorateThroughTheTickBudget) {
+ ServerChunkCacheFixture fixture;
+ ASSERT_NE(fixture.cache, nullptr);
+ fixture.cache->forceLoad = true;
+ fixture.cache->setActiveRadius(3);
+ fixture.cache->setChunkCacheCenter(60, 60);
+ for(const auto [x, z] : {std::pair{60, 60}, std::pair{61, 60}, std::pair{60, 61}, std::pair{61, 61}}) {
+  fixture.cache->requestChunkAsync(x, z);
+ }
+ const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+ while(std::chrono::steady_clock::now() < deadline &&
+       !(fixture.cache->isChunkLoaded(60, 60) && fixture.cache->getChunk(60, 60).terrainPopulated)) {
+  fixture.cache->tick();
+  std::this_thread::yield();
+ }
+ ASSERT_TRUE(fixture.cache->isChunkLoaded(60, 60));
+ EXPECT_TRUE(fixture.cache->getChunk(60, 60).terrainPopulated);
+}
+TEST(ServerChunkCache, DecorationSpillingIntoAnUnloadedChunkDoesNotCascade) {
+ ServerChunkCacheFixture fixture;
+ SpillingDecorator decorator;
+ world::chunk::ChunkCache cache(&fixture.world, nullptr, &decorator);
+ decorator.cache = &cache;
+ cache.forceLoad = true;
+ for(const auto [x, z] : {std::pair{100, 100}, std::pair{101, 100}, std::pair{100, 101}, std::pair{102, 101}}) {
+  cache.loadChunk(x, z);
+ }
+ cache.loadChunk(101, 101);
+ EXPECT_EQ(decorator.deepest, 1);
+ EXPECT_TRUE(cache.getChunk(100, 100).terrainPopulated);
+ EXPECT_FALSE(cache.getChunk(101, 100).terrainPopulated);
+ cache.tick();
+ EXPECT_EQ(decorator.deepest, 1);
+ EXPECT_TRUE(cache.getChunk(101, 100).terrainPopulated);
+}
+TEST(ServerChunkCache, LightNeutralBlockSwapQueuesNoLighting) {
+ ServerChunkCacheFixture fixture;
+ ASSERT_NE(fixture.cache, nullptr);
+ fixture.cache->forceLoad = true;
+ net::minecraft::Chunk& chunk = fixture.cache->loadChunk(2, 2);
+ chunk.setBlock(4, 10, 4, 1);
+ const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+ while(fixture.world.hasPendingLightingUpdates() && std::chrono::steady_clock::now() < deadline) {
+  fixture.world.doLightingUpdates(std::numeric_limits<std::size_t>::max());
+  std::this_thread::yield();
+ }
+ ASSERT_FALSE(fixture.world.hasPendingLightingUpdates());
+ EXPECT_TRUE(chunk.setBlock(4, 10, 4, 16));
+ EXPECT_FALSE(fixture.world.hasPendingLightingUpdates());
+ EXPECT_EQ(chunk.getBlockId(4, 10, 4), 16);
+ EXPECT_TRUE(chunk.setBlock(4, 10, 4, 0));
+ EXPECT_TRUE(fixture.world.hasPendingLightingUpdates());
 }
 TEST(ServerChunkCache, AsyncLoadWindowScalesWithComputeWorkers) {
  EXPECT_EQ(world::chunk::ChunkCache::asyncLoadWindow(1), 64U);

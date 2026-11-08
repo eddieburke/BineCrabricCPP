@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <vector>
 #include "net/minecraft/util/IntHashMap.hpp"
 #include "net/minecraft/world/World.hpp"
@@ -35,6 +35,7 @@ class ServerWorld : public World {
  void playNoteBlockActionAt(int x, int y, int z, int soundType, int pitch);
  void forceSave();
  void saveWithProgress(bool saveEntities, ChunkSource::SaveProgressCallback progress = nullptr);
+ [[nodiscard]] WorldProperties propertiesWithPlayer() const override;
  void updateWeatherCycles() override;
  bool savingDisabled = false;
  bool isSavingDisabled() const override { return savingDisabled; }
