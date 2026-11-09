@@ -36,7 +36,7 @@ class WorkerHandoff {
     finish(std::move(job));
     return;
    }
-   auto canceledJob = job;
+   std::weak_ptr<Job> canceledJob = job;
    pool_->submit(
        [this, job = std::move(job), work = std::forward<Fn>(work), epoch]() mutable {
         if(epoch_.load(std::memory_order::acquire) == epoch) {
@@ -46,7 +46,13 @@ class WorkerHandoff {
        },
        priority,
        this,
-       [this, job = std::move(canceledJob)]() mutable { finish(std::move(job)); });
+       [this, canceledJob = std::move(canceledJob)] {
+        if(std::shared_ptr<Job> job = canceledJob.lock()) {
+         finish(std::move(job));
+        } else {
+         inFlight_.fetch_sub(1, std::memory_order::release);
+        }
+       });
   }
   [[nodiscard]] std::vector<std::shared_ptr<Job>> drainCompleted() {
    const std::lock_guard lock(completedMutex_);

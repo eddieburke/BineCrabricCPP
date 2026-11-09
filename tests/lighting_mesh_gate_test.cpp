@@ -60,6 +60,32 @@ TEST(LightingMeshGate, ReadinessBeforeSectionCreationIsPreserved) {
  EXPECT_TRUE(section->lightingReady);
  EXPECT_TRUE(section->readyForMeshCapture());
 }
+TEST(LightingMeshGate, ReloadDropKeepsLightingGatesThatAWorldResetClears) {
+ LightingMeshFixture fixture;
+ fixture.load(0, 0);
+ fixture.load(1, 0);
+ fixture.sections.chunkAvailable(0, 0);
+ fixture.sections.markChunkColumnLit(0, 0);
+ fixture.sections.chunkAvailable(1, 0);
+ fixture.sections.drainPendingColumns();
+ ASSERT_TRUE(fixture.sections.columnLightingReady(0, 0));
+ ASSERT_FALSE(fixture.sections.columnLightingReady(1, 0));
+ fixture.sections.dropSections();
+ EXPECT_EQ(fixture.sections.sectionAt(0, 0, 0), nullptr);
+ EXPECT_TRUE(fixture.sections.columnLightingReady(0, 0));
+ EXPECT_FALSE(fixture.sections.columnLightingReady(1, 0));
+ fixture.sections.enqueueColumn(1, 0);
+ fixture.sections.drainPendingColumns();
+ const auto* waiting = fixture.sections.sectionAt(1, 0, 0);
+ ASSERT_NE(waiting, nullptr);
+ EXPECT_FALSE(waiting->lightingReady);
+ fixture.sections.markChunkColumnLit(1, 0);
+ EXPECT_TRUE(fixture.sections.sectionAt(1, 0, 0)->lightingReady);
+ fixture.load(2, 0);
+ fixture.sections.chunkAvailable(2, 0);
+ fixture.sections.clearSections();
+ EXPECT_TRUE(fixture.sections.columnLightingReady(2, 0));
+}
 TEST(LightingMeshGate, BorderRefreshWaitsForArrivingColumnLighting) {
  LightingMeshFixture fixture;
  fixture.load(0, 0);

@@ -97,6 +97,7 @@ class ChunkSectionSystem {
   compilePipeline_ = &pipeline;
  }
  void clearSections();
+ void dropSections();
  void reloadIfViewDistanceChanged();
  void setLastViewDistance(int viewDistance) noexcept {
   lastViewDistance = viewDistance;

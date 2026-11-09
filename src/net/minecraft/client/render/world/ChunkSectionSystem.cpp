@@ -226,6 +226,10 @@ void ChunkSectionSystem::updateDebugCounts() {
  });
 }
 void ChunkSectionSystem::clearSections() {
+ dropSections();
+ pendingLit_.clear();
+}
+void ChunkSectionSystem::dropSections() {
  compilePipeline_->cancelAll();
  for(auto& entry : columns_) {
   for(const std::shared_ptr<chunk::ChunkBuilder>& section : entry.second) {
@@ -244,7 +248,6 @@ void ChunkSectionSystem::clearSections() {
  pendingColumns_.clear();
  pendingSet_.clear();
   pendingBorderRefresh_.clear();
-  pendingLit_.clear();
   pendingAmbientColumns_.clear();
   pendingAmbientSet_.clear();
  meshRadius_ = -1;

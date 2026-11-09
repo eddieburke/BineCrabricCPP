@@ -106,7 +106,13 @@ void WorldRenderer::setWorld(net::minecraft::World* worldIn) {
  }
  if(world != nullptr) {
   world->addEventListener(this);
+  chunkSections_.clearSections();
   reload();
+  if(ChunkSource* source = world->getChunkSource(); source != nullptr) {
+   source->forEachLoadedChunk([this](int chunkX, int chunkZ, Chunk&) {
+    chunkSections_.chunkAvailable(chunkX, chunkZ);
+   });
+  }
  } else {
   chunkSections_.clearSections();
   terrainDrawListStamp_ = -1;
@@ -114,7 +120,7 @@ void WorldRenderer::setWorld(net::minecraft::World* worldIn) {
  }
 }
 void WorldRenderer::reload() {
- chunkSections_.clearSections();
+ chunkSections_.dropSections();
  terrainDrawListStamp_ = -1;
  if(world == nullptr) {
   return;
@@ -133,11 +139,6 @@ void WorldRenderer::reload() {
  gl::GLCore::ensureLoaded();
  scene_.blockEntities.clear();
  entityRenderCooldown = 2;
- if(ChunkSource* source = world->getChunkSource(); source != nullptr) {
-  source->forEachLoadedChunk([this](int chunkX, int chunkZ, Chunk&) {
-   chunkSections_.chunkAvailable(chunkX, chunkZ);
-  });
- }
 }
 int WorldRenderer::render(net::minecraft::LivingEntity& camera, int layer, bool drawModMeshes) {
  if(chunkSections_.empty()) {
