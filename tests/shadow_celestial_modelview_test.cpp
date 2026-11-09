@@ -221,6 +221,87 @@ TEST(ShadowCelestialModelView, DirectionOverrideAlignsShadowAxis) {
   EXPECT_NEAR(m[10], direction[2] / length, 1e-6f);
  }
 }
+// Complementary-family packs (Reimagined, Cleanroom, rethinking-voxels) never read
+// sunPosition: GetSunVector rebuilds the sun from sunAngle and the pack's own
+// sunPathRotation, and its lighting, moon glow and lens flare sit on that vector or its
+// antipode. The engine's arc has to land exactly there, or the pack lights and flares
+// somewhere the shadow map and the drawn sun and moon are not.
+// see shaders/rethinking-voxels_r0.1-beta9/shaders/lib/util/commonFunctions.glsl
+TEST(ShadowCelestialModelView, PackRebuiltSunMatchesCelestialState) {
+ using net::minecraft::client::render::CelestialState;
+ using net::minecraft::client::render::makeCelestialState;
+ for(const float sunPathRotation : {0.0f, 25.0f, -40.0f, 60.0f}) {
+  const float spr = sunPathRotation * 0.01745329251994f;
+  for(int i = 0; i <= 24; ++i) {
+   const float celestial = static_cast<float>(i) / 24.0f;
+   const float ang = celestial * 6.28318530718f;
+   const float pack[3] = {-std::sin(ang), std::cos(ang) * std::cos(spr), -std::cos(ang) * std::sin(spr)};
+   const CelestialState state = makeCelestialState(celestial, sunPathRotation);
+   for(int c = 0; c < 3; ++c) {
+    EXPECT_NEAR(state.sunDirectionWorld[c], pack[c], 1e-5f)
+        << "component " << c << " celestial " << celestial << " sunPathRotation " << sunPathRotation;
+   }
+  }
+ }
+}
+// Realtime Sky hands over the real sun and moon. Under a pack those sit off the arc the
+// pack rebuilds from sunAngle, and near new moon the real moon is below the horizon all
+// night, which lit the shadow map from underneath while the pack flared an empty sky. With
+// a pack the override may only move the sun along the arc, so every pack-facing direction
+// and the shadow camera must come out exactly as makeCelestialState builds them.
+TEST(ShadowCelestialModelView, PackOverrideStaysOnIrisArc) {
+ using net::minecraft::client::render::applyDirectionOverride;
+ using net::minecraft::client::render::CelestialState;
+ using net::minecraft::client::render::makeCelestialState;
+ const float realSun[3] = {0.35f, -0.4f, 0.85f};
+ const float realMoon[3] = {0.5f, -0.3f, 0.81f};
+ for(const float sunPathRotation : {0.0f, -40.0f}) {
+  for(int i = 0; i < 24; ++i) {
+   const float celestial = static_cast<float>(i) / 24.0f;
+   CelestialState state = makeCelestialState(0.1f, sunPathRotation);
+   applyDirectionOverride(state, true, celestial, 0.9f, 0.6f, realSun, realMoon, false);
+   const CelestialState expected = makeCelestialState(celestial, sunPathRotation);
+   EXPECT_FALSE(state.directionOverride) << "celestial " << celestial;
+   EXPECT_EQ(state.day, expected.day) << "celestial " << celestial;
+   EXPECT_NEAR(state.celestialAngle, celestial, 1e-6f);
+   EXPECT_NEAR(state.sunAngle, expected.sunAngle, 1e-6f) << "celestial " << celestial;
+   EXPECT_NEAR(state.shadowAngle, expected.shadowAngle, 1e-6f) << "celestial " << celestial;
+   for(int c = 0; c < 3; ++c) {
+    EXPECT_NEAR(state.sunDirectionWorld[c], expected.sunDirectionWorld[c], 1e-6f) << "celestial " << celestial;
+    EXPECT_NEAR(state.moonDirectionWorld[c], -state.sunDirectionWorld[c], 1e-6f) << "celestial " << celestial;
+    EXPECT_NEAR(state.shadowLightDirectionWorld[c], expected.shadowLightDirectionWorld[c], 1e-6f)
+        << "celestial " << celestial;
+   }
+   float m[16]{};
+   buildShadowCelestialModelView(m, state.shadowAngle, state.sunPathRotation, 0.0f, 0.0, 0.0, 0.0);
+   const float* light = state.shadowLightDirectionWorld;
+   EXPECT_NEAR(light[0] * m[2] + light[1] * m[6] + light[2] * m[10], 1.0f, 1e-4f) << "celestial " << celestial;
+  }
+ }
+}
+// Without a pack nothing rebuilds the sun from sunAngle, so the explicit directions stand:
+// the night light is the real moon and the shadow camera follows it directly.
+TEST(ShadowCelestialModelView, VanillaOverrideKeepsExplicitDirections) {
+ using net::minecraft::client::render::applyDirectionOverride;
+ using net::minecraft::client::render::CelestialState;
+ using net::minecraft::client::render::makeCelestialState;
+ CelestialState state = makeCelestialState(0.1f, 0.0f);
+ const float sun[3] = {0.0f, -2.0f, 0.0f};
+ const float moon[3] = {0.0f, 0.0f, 3.0f};
+ applyDirectionOverride(state, false, 0.6f, 0.85f, 0.35f, sun, moon, false);
+ EXPECT_TRUE(state.directionOverride);
+ EXPECT_FALSE(state.day);
+ EXPECT_NEAR(state.celestialAngle, 0.6f, 1e-6f);
+ EXPECT_NEAR(state.sunAngle, 0.85f, 1e-6f);
+ EXPECT_NEAR(state.shadowAngle, 0.35f, 1e-6f);
+ const float expectedSun[3] = {0.0f, -1.0f, 0.0f};
+ const float expectedMoon[3] = {0.0f, 0.0f, 1.0f};
+ for(int c = 0; c < 3; ++c) {
+  EXPECT_NEAR(state.sunDirectionWorld[c], expectedSun[c], 1e-6f);
+  EXPECT_NEAR(state.moonDirectionWorld[c], expectedMoon[c], 1e-6f);
+  EXPECT_NEAR(state.shadowLightDirectionWorld[c], expectedMoon[c], 1e-6f);
+ }
+}
 TEST(ShadowCelestialModelView, CelestialOverrideAnglesNormalizeAndRejectNonFiniteValues) {
  using net::minecraft::client::render::normalizeCelestialAngle;
  EXPECT_FLOAT_EQ(normalizeCelestialAngle(1.25f, 0.0f), 0.25f);

@@ -107,4 +107,39 @@ inline CelestialState makeCelestialState(float celestialAngle, float sunPathRota
  }
  return state;
 }
+// A shader pack only ever sees Iris' celestial contract: it rebuilds the sun from sunAngle
+// and its own compile-time sunPathRotation, takes the moon as the sun's antipode, and the
+// shadow map is oriented from shadowAngle. Explicit directions off that arc left the pack's
+// lighting, sky glow and lens flare in one place and the shadow map and drawn sun and moon
+// in another, so with a pack active an override can only move the sun along the arc.
+// see shaders/rethinking-voxels_r0.1-beta9/shaders/lib/util/commonFunctions.glsl (GetSunVector)
+// https://github.com/IrisShaders/Iris/blob/26.1/common/src/main/java/net/irisshaders/iris/uniforms/CelestialUniforms.java
+inline void applyDirectionOverride(CelestialState& state, bool packActive, float celestialAngle,
+                                   float sunAngle, float shadowAngle, const float sun[3],
+                                   const float moon[3], bool day) {
+ const float angle = normalizeCelestialAngle(celestialAngle, state.celestialAngle);
+ if(packActive) {
+  state = makeCelestialState(angle, state.sunPathRotation);
+  return;
+ }
+ const auto applyDirection = [](const float in[3], float out[3]) {
+  const float length = std::sqrt(in[0] * in[0] + in[1] * in[1] + in[2] * in[2]);
+  if(std::isfinite(length) && length > 1.0e-6f) {
+   out[0] = in[0] / length;
+   out[1] = in[1] / length;
+   out[2] = in[2] / length;
+  }
+ };
+ state.celestialAngle = angle;
+ state.sunAngle = normalizeCelestialAngle(sunAngle, state.sunAngle);
+ state.shadowAngle = normalizeCelestialAngle(shadowAngle, state.shadowAngle);
+ applyDirection(sun, state.sunDirectionWorld);
+ applyDirection(moon, state.moonDirectionWorld);
+ state.day = day;
+ for(int i = 0; i < 3; ++i) {
+  state.shadowLightDirectionWorld[i] =
+      state.day ? state.sunDirectionWorld[i] : state.moonDirectionWorld[i];
+ }
+ state.directionOverride = true;
+}
 } // namespace net::minecraft::client::render

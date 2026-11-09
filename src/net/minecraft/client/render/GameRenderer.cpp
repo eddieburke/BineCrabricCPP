@@ -70,6 +70,9 @@ void updateSunLight(World* world, float tickDelta, ::net::minecraft::entity::Ent
  const float sunPathRotation = celestialClient != nullptr && celestialClient->gameRenderer != nullptr
                                    ? celestialClient->gameRenderer->packDefinition().sunPathRotation
                                    : 25.0f;
+ const bool packActive = celestialClient != nullptr && celestialClient->gameRenderer != nullptr &&
+                         celestialClient->gameRenderer->shaderPipeline() != nullptr &&
+                         celestialClient->gameRenderer->shaderPipeline()->hasActivePack();
  CelestialState state = makeCelestialState(celestialAngle, sunPathRotation);
  mod::CelestialStateEvent celestialEvent{world,
                                          camera,
@@ -94,26 +97,11 @@ void updateSunLight(World* world, float tickDelta, ::net::minecraft::entity::Ent
  } else {
   world->releaseCelestialPhase();
  }
- const auto applyDirection = [](float x, float y, float z, float out[3]) {
-  const float length = std::sqrt(x * x + y * y + z * z);
-  if(std::isfinite(length) && length > 1.0e-6f) {
-   out[0] = x / length;
-   out[1] = y / length;
-   out[2] = z / length;
-  }
- };
  if(celestialEvent.overrideDirections) {
-  state.celestialAngle = normalizeCelestialAngle(celestialEvent.celestialAngle, state.celestialAngle);
-  state.sunAngle = normalizeCelestialAngle(celestialEvent.sunAngle, state.sunAngle);
-  state.shadowAngle = normalizeCelestialAngle(celestialEvent.shadowAngle, state.shadowAngle);
-  applyDirection(celestialEvent.sunX, celestialEvent.sunY, celestialEvent.sunZ, state.sunDirectionWorld);
-  applyDirection(celestialEvent.moonX, celestialEvent.moonY, celestialEvent.moonZ, state.moonDirectionWorld);
-  state.day = celestialEvent.day;
-  for(int i = 0; i < 3; ++i) {
-   state.shadowLightDirectionWorld[i] =
-       state.day ? state.sunDirectionWorld[i] : state.moonDirectionWorld[i];
-  }
-  state.directionOverride = true;
+  const float sun[3] = {celestialEvent.sunX, celestialEvent.sunY, celestialEvent.sunZ};
+  const float moon[3] = {celestialEvent.moonX, celestialEvent.moonY, celestialEvent.moonZ};
+  applyDirectionOverride(state, packActive, celestialEvent.celestialAngle, celestialEvent.sunAngle,
+                         celestialEvent.shadowAngle, sun, moon, celestialEvent.day);
  }
  if(celestialEvent.overrideStarFrame && std::isfinite(celestialEvent.poleAltitudeDeg) &&
     std::isfinite(celestialEvent.siderealAngle)) {
