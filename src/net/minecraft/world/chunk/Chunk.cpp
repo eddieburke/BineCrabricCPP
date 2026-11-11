@@ -87,13 +87,13 @@ bool Chunk::setBlock(int localX, int yPos, int localZ, int rawId, int metadataVa
  std::atomic_ref<std::uint8_t>(blocks[index(localX, yPos, localZ)])
      .store(static_cast<std::uint8_t>(rawId & 0xFF), std::memory_order_relaxed);
  updateSectionBlockCount(yPos, previousId, rawId);
- meta.set(localX, yPos, localZ, metadataValue);
  if(previousId != 0 && world != nullptr && !world->isRemote()) {
   Block* previousBlock = Block::BLOCKS[static_cast<std::size_t>(previousId)];
   if(previousBlock != nullptr) {
    previousBlock->onBreak(world, blockX, yPos, blockZ);
   }
  }
+ meta.set(localX, yPos, localZ, metadataValue);
  if(world != nullptr && changesLight(previousId, rawId)) {
   const bool hasSkyLight = world->dimension == nullptr || !world->dimension->hasCeiling;
   if(hasSkyLight) {
@@ -136,13 +136,13 @@ bool Chunk::setBlock(int localX, int yPos, int localZ, int rawId) {
  std::atomic_ref<std::uint8_t>(blocks[index(localX, yPos, localZ)])
      .store(static_cast<std::uint8_t>(rawId & 0xFF), std::memory_order_relaxed);
  updateSectionBlockCount(yPos, previousId, rawId);
- meta.set(localX, yPos, localZ, 0);
  if(previousId != 0 && world != nullptr) {
   Block* previousBlock = Block::BLOCKS[static_cast<std::size_t>(previousId)];
   if(previousBlock != nullptr) {
    previousBlock->onBreak(world, blockX, yPos, blockZ);
   }
  }
+ meta.set(localX, yPos, localZ, 0);
  if(world != nullptr) {
   if(changesLight(previousId, rawId)) {
    if(Block::BLOCKS_LIGHT_OPACITY[static_cast<std::size_t>(rawId & 0xFF)] != 0) {
