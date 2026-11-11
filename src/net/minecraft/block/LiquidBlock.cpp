@@ -194,7 +194,15 @@ int LiquidBlock::getTickRate() const {
  return 0;
 }
 int LiquidBlock::getLiquidState(World* world, int x, int y, int z) const {
- if(world == nullptr || &world->getMaterial(x, y, z) != &material) {
+ if(world == nullptr) {
+  return -1;
+ }
+ const int blockId = world->getBlockId(x, y, z);
+ if(blockId <= 0 || blockId >= Block::BLOCK_COUNT) {
+  return -1;
+ }
+ const Block* block = Block::BLOCKS[static_cast<std::size_t>(blockId)];
+ if(block == nullptr || &block->material != &material) {
   return -1;
  }
  return world->getBlockMeta(x, y, z);
