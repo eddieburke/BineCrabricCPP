@@ -105,10 +105,7 @@ void DisplayManager::toggleFullscreen(Minecraft& client) {
  display::Window::pumpMessages();
  display::Window::present();
  syncClientSizeFromWindow(client);
- if(client.currentScreen() != nullptr) {
-  resize(client, client.displayWidth, client.displayHeight);
- }
- relockCursorIfFocused(client);
+ resize(client, client.displayWidth, client.displayHeight);
 }
 void DisplayManager::resize(Minecraft& client, int width, int height) {
  clampPositive(width, height);

@@ -256,6 +256,9 @@ void resolveFullscreenSize() {
  }
 }
 void applyDisplaySize(int x, int y, int width, int height, int refreshRate) {
+ if(window_ == nullptr) {
+  return;
+ }
  if(fullscreen_) {
   if(refreshRate == GLFW_DONT_CARE) {
    const GLFWvidmode* mode = primaryVideoMode();
@@ -263,16 +266,25 @@ void applyDisplaySize(int x, int y, int width, int height, int refreshRate) {
   }
   glfwSetWindowMonitor(window_, primaryMonitor(), 0, 0, width, height, refreshRate);
  } else {
-  glfwSetWindowSize(window_, width, height);
-  glfwSetWindowPos(window_, x, y);
+  glfwSetWindowMonitor(window_, nullptr, x, y, width, height, GLFW_DONT_CARE);
  }
 }
 void rememberWindowedPlacement() {
  if(window_ == nullptr || fullscreen_) {
   return;
  }
- glfwGetWindowPos(window_, &windowedX_, &windowedY_);
- glfwGetWindowSize(window_, &windowedWidth_, &windowedHeight_);
+ int x = 0;
+ int y = 0;
+ int width = 0;
+ int height = 0;
+ glfwGetWindowPos(window_, &x, &y);
+ glfwGetWindowSize(window_, &width, &height);
+ if(width > 0 && height > 0) {
+  windowedX_ = x;
+  windowedY_ = y;
+  windowedWidth_ = width;
+  windowedHeight_ = height;
+ }
 }
 } // namespace
 // Reported as doubles: under GLFW_CURSOR_DISABLED the position is a virtual,
