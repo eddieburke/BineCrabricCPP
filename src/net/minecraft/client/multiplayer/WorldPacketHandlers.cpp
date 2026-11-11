@@ -97,7 +97,7 @@ void ClientNetworkHandler::handleUpdateSign(const UpdateSignPacket& packet) {
  }
  auto* blockEntity = minecraft->world->getBlockEntity(packet.x, packet.y, packet.z);
  auto* sign = dynamic_cast<block::entity::SignBlockEntity*>(blockEntity);
- if(sign == nullptr) {
+ if(sign == nullptr || sign->isEditable()) {
   return;
  }
  for(int i = 0; i < 4; ++i) {

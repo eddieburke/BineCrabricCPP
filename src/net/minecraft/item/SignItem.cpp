@@ -1,5 +1,6 @@
 #include "net/minecraft/item/SignItem.hpp"
 #include "net/minecraft/block/Block.hpp"
+#include "net/minecraft/block/entity/SignBlockEntity.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/item/Item.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
@@ -40,6 +41,10 @@ bool SignItem::useOnBlock(ItemStack* stack, PlayerEntity* user, World* world, in
   world->setBlock(x, y, z, Block::WALL_SIGN->id, static_cast<std::uint8_t>(side));
  }
  --stack->count;
+ auto* sign = dynamic_cast<block::entity::SignBlockEntity*>(world->getBlockEntity(x, y, z));
+ if(sign != nullptr) {
+  user->openEditSignScreen(sign);
+ }
  return true;
 }
 void SignItem::registerClass() {

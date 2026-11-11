@@ -3,6 +3,8 @@
 #include <vector>
 #include <gtest/gtest.h>
 
+#include "net/minecraft/block/entity/SignBlockEntity.hpp"
+#include "net/minecraft/client/gui/screen/ingame/SignEditScreen.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/gui/layout/OptionsListScroll.hpp"
 #include "net/minecraft/client/gui/screen/option/KeybindsScreen.hpp"
@@ -260,6 +262,49 @@ TEST(GuiRegression, EscapeCancelsKeybindCaptureAndReturnsFromVideoOptions) {
  minecraft.currentScreen()->keyPressed(0, client::input::keys::kEscape);
  EXPECT_EQ(parentCalls, 1);
  EXPECT_NE(dynamic_cast<EmptyScreen*>(minecraft.currentScreen()), nullptr);
+}
+
+TEST(GuiRegression, SignEditScreenInputAndCommit) {
+ block::entity::SignBlockEntity sign;
+ EXPECT_TRUE(sign.isEditable());
+ EXPECT_EQ(sign.currentRow, -1);
+
+ client::gui::screen::ingame::SignEditScreen screen(&sign);
+ EXPECT_EQ(screen.currentLine, 0);
+ EXPECT_EQ(sign.currentRow, 0);
+
+ screen.keyPressed('H', 0);
+ screen.keyPressed('i', 0);
+ EXPECT_EQ(screen.text[0], "Hi");
+ EXPECT_EQ(sign.texts[0], "Hi");
+
+ screen.keyPressed('\r', client::input::keys::kEnter);
+ EXPECT_EQ(screen.currentLine, 1);
+ EXPECT_EQ(sign.currentRow, 1);
+
+ for(char c : std::string("World!")) {
+  screen.keyPressed(c, 0);
+ }
+ EXPECT_EQ(screen.text[1], "World!");
+
+ screen.keyPressed(0, client::input::keys::kBackspace);
+ EXPECT_EQ(screen.text[1], "World");
+ EXPECT_EQ(sign.texts[1], "World");
+
+ screen.keyPressed(0, client::input::keys::kUp);
+ EXPECT_EQ(screen.currentLine, 0);
+ EXPECT_EQ(sign.currentRow, 0);
+
+ for(int i = 0; i < 20; ++i) {
+  screen.keyPressed('X', 0);
+ }
+ EXPECT_EQ(screen.text[0].size(), 15U);
+
+ screen.removed();
+ EXPECT_EQ(sign.texts[0], screen.text[0]);
+ EXPECT_EQ(sign.texts[1], "World");
+ EXPECT_EQ(sign.currentRow, -1);
+ EXPECT_FALSE(sign.isEditable());
 }
 }
 }

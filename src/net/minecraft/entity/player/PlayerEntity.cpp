@@ -330,6 +330,9 @@ void PlayerEntity::openCraftingScreen(int xIn, int yIn, int zIn) {
  (void)yIn;
  (void)zIn;
 }
+void PlayerEntity::openEditSignScreen(::net::minecraft::block::entity::SignBlockEntity* sign) {
+ (void)sign;
+}
 float PlayerEntity::getEyeHeight() const {
  return 0.12f;
 }

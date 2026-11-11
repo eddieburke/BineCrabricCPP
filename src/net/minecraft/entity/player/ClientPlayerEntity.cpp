@@ -4,6 +4,7 @@
 #include "net/minecraft/block/entity/ChestBlockEntity.hpp"
 #include "net/minecraft/block/entity/DispenserBlockEntity.hpp"
 #include "net/minecraft/block/entity/FurnaceBlockEntity.hpp"
+#include "net/minecraft/block/entity/SignBlockEntity.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/auth/microsoft/PlayerTextures.hpp"
 #include "net/minecraft/client/session/OfflineIdentity.hpp"
@@ -11,6 +12,7 @@
 #include "net/minecraft/client/gui/screen/ingame/DispenserScreen.hpp"
 #include "net/minecraft/client/gui/screen/ingame/DoubleChestScreen.hpp"
 #include "net/minecraft/client/gui/screen/ingame/FurnaceScreen.hpp"
+#include "net/minecraft/client/gui/screen/ingame/SignEditScreen.hpp"
 #include "net/minecraft/client/input/InputSystem.hpp"
 #include "net/minecraft/inventory/DoubleInventory.hpp"
 #include "net/minecraft/inventory/Inventory.hpp"
@@ -172,6 +174,12 @@ void ClientPlayerEntity::openCraftingScreen(int xIn, int yIn, int zIn) {
   return;
  }
  minecraft_->setScreen(std::make_unique<client::gui::screen::ingame::CraftingScreen>(&inventory, xIn, yIn, zIn));
+}
+void ClientPlayerEntity::openEditSignScreen(block::entity::SignBlockEntity* sign) {
+ if(minecraft_ == nullptr || sign == nullptr) {
+  return;
+ }
+ minecraft_->setScreen(std::make_unique<client::gui::screen::ingame::SignEditScreen>(sign));
 }
 void ClientPlayerEntity::sendChatMessage(const std::string& message) {
  if(minecraft_ == nullptr || message.empty()) {

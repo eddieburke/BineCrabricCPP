@@ -15,9 +15,9 @@ void SignBlockEntityRenderer::render(
  }
  net::minecraft::block::Block* block = sign->getBlock();
  net::minecraft::util::math::MatrixStack matrices;
- // Identity pose base: x/y/z arrive relative to the camera eye (block-entity
- // dispatcher offsets), so the composed pose is camera-relative by construction.
- matrices.load(net::minecraft::util::math::Matrix4f::identityMatrix());
+ // see mcp/src/net/minecraft/src/TileEntitySignRenderer.java:25
+
+ matrices.load(render::core::drawPose());
  const float scale = 0.6666667f;
  if(block == net::minecraft::block::Block::SIGN) {
   matrices.translate(
@@ -41,12 +41,15 @@ void SignBlockEntityRenderer::render(
   matrices.translate(0.0f, -0.3125f, -0.4375f);
   model.stick.visible = false;
  }
- bindTexture("/item/sign.png");
- matrices.push();
- matrices.scale(scale, -scale, -scale);
- render::core::setDrawPose(matrices.top());
- model.render();
- matrices.pop();
+ {
+  const render::RenderPassScope modelPass(render::RenderType::block());
+  bindTexture("/item/sign.png");
+  matrices.push();
+  matrices.scale(scale, -scale, -scale);
+  render::core::setDrawPose(matrices.top());
+  model.render();
+  matrices.pop();
+ }
  font::TextRenderer* textRenderer = getTextRenderer();
  if(textRenderer == nullptr) {
   return;

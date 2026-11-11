@@ -28,6 +28,7 @@ class ClientPlayerEntity : public PlayerEntity {
  void openFurnaceScreen(block::entity::FurnaceBlockEntity* furnaceIn) override;
  void openDispenserScreen(block::entity::DispenserBlockEntity* dispenserIn) override;
  void openCraftingScreen(int xIn, int yIn, int zIn) override;
+ void openEditSignScreen(block::entity::SignBlockEntity* sign) override;
  virtual void sendChatMessage(const std::string& message);
  [[nodiscard]] bool isSneaking() const override;
  void respawn() override;

@@ -18,6 +18,7 @@ class FishingBobberEntity;
 namespace net::minecraft::block::entity {
 class FurnaceBlockEntity;
 class DispenserBlockEntity;
+class SignBlockEntity;
 } // namespace net::minecraft::block::entity
 namespace net::minecraft::entity::player {
 class PlayerEntity : public LivingEntity {
@@ -84,6 +85,7 @@ class PlayerEntity : public LivingEntity {
  virtual void openFurnaceScreen(::net::minecraft::block::entity::FurnaceBlockEntity* furnaceIn);
  virtual void openDispenserScreen(::net::minecraft::block::entity::DispenserBlockEntity* dispenserIn);
  virtual void openCraftingScreen(int xIn, int yIn, int zIn);
+ virtual void openEditSignScreen(::net::minecraft::block::entity::SignBlockEntity* sign);
  [[nodiscard]] float getEyeHeight() const override;
  virtual void resetEyeHeight();
  bool damage(Entity* damageSource, int amount) override;
