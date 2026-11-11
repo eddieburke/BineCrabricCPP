@@ -1,7 +1,7 @@
 # mina.h — the audio layer
 
 One header. Strict ANSI C89. No runtime dependencies, no codec libraries, no
-build system. Decodes WAV, FLAC, MP3, Ogg Vorbis and AAC, streams them, mixes
+build system. Decodes WAV, FLAC, MP3 and Ogg Vorbis, streams them, mixes
 named voices with distance and panning, and plays them on whatever output the
 host has.
 
@@ -18,20 +18,17 @@ class around it — `AudioEngine` calls `mina_*` directly.
 
 ## Provenance
 
-Based on upstream mina 2.0.0 (`C:\Users\Eddie\Desktop\Custom Programs\mina2.0.0\mina`),
-with four things that are **local to this repo and not in upstream**. They must
-be re-applied on every upstream refresh:
+Based on upstream mina 2.0.0, with three things that are **local to this repo
+and not in upstream**. They must be re-applied on every upstream refresh:
 
 | Local addition | Where |
 |---|---|
-| **AAC LC decoder** — codebooks, decoder, MP4 track walker, registry wiring | `#ifndef MINA_NO_AAC` block, `g_mina_aac_codec` |
 | **Streaming decode** — `mina_stream_*` | "Streaming decode" section |
 | **Playback engine** — `mina_engine_*`, `mina_clip_*`, threads, loader hook, cache | "Playback engine", "Threads", "Engine: clip cache…" sections |
-| Small fixes | `mina_br_peek` fast path; `MINA_NO_AAC` in the `MINA_USE_FBUF` guard; a zeroed `codec[]` in `mina_ogg_info` and an explicit `num_window_groups <= MINA_AAC_MAX_GROUP` bound in the AAC path, both to silence LTO false positives (the invariants already held) |
+| Small fixes | `mina_br_peek` fast path; a zeroed `codec[]` in `mina_ogg_info` to silence LTO false positives (the invariant already held) |
 
-Upstream 2.0.0 **only identifies** AAC — it has no sample decoder, and it is
-*smaller* than this vendored file. Byte count is not a safe check for whether a
-refresh lost something; diff the public symbol list instead.
+Byte count is not a safe check for whether a refresh lost something; diff the
+public symbol list instead.
 
 ---
 
@@ -45,7 +42,6 @@ refresh lost something; diff the public symbol list instead.
 | FLAC | Every subframe type, partitioned-Rice residuals, all decorrelation modes, wasted bits, CRC-8/CRC-16 verification, all metadata blocks |
 | MP3 | Full MPEG-1/2/2.5 Layer III, incl. Xing/Info/VBRI and LAME gapless trimming |
 | Ogg Vorbis | Full Vorbis I. Floor 0 is implemented but has no test coverage — no released encoder emits it |
-| AAC | AAC LC in ADTS and MP4/M4A (**local addition**, see the caveat under *Not verified* below) |
 | Ogg container | Pages, packet reassembly, granule tracking; identifies Vorbis, Opus, FLAC-in-Ogg, Speex, Theora, OggPCM |
 
 Plus: 13 PCM conversion formats both endians, a streaming resampler (linear and
@@ -77,11 +73,10 @@ mina_stream_rewind(s);
 mina_stream_close(s);
 ```
 
-WAV, MP3, Ogg Vorbis, FLAC, and AAC decode **on demand**, a frame or packet at a
+WAV, MP3, Ogg Vorbis, and FLAC decode **on demand**, a frame or packet at a
 time, so a long track costs its encoded size plus one decoder's working set rather
 than its whole decoded size — for a 3-minute stereo Ogg that is a few MB instead
-of about 60 MB. AAC supports both ADTS and MP4/M4A sample tables without first
-materializing an ADTS image. Registered custom codecs still decode once at open;
+of about 60 MB. Registered custom codecs still decode once at open;
 `mina_stream_incremental()` reports which path was selected.
 
 Head and tail trims (LAME encoder delay/padding, Ogg granule) are applied
@@ -170,7 +165,7 @@ instead of a hang.
 | `MINA_NO_STDIO` | no `<stdio.h>` anywhere (drops the wavfile sink and the default loader) |
 | `MINA_NO_DEVICES` | drop the output layer |
 | `MINA_NO_THREADS` | drop the threading layer; the engine stays caller-driven |
-| `MINA_NO_VORBIS` / `MINA_NO_MP3` / `MINA_NO_FLAC` / `MINA_NO_AAC` | drop a decoder |
+| `MINA_NO_VORBIS` / `MINA_NO_MP3` / `MINA_NO_FLAC` | drop a decoder |
 | `MINA_NO_STDINT` | derive fixed-width types from `<limits.h>` |
 | `MINA_FORCE_NO_64` | use the portable 32/32 arithmetic instead of a native 64-bit type |
 | `MINA_MALLOC` / `MINA_REALLOC` / `MINA_FREE` | your allocator |
@@ -183,7 +178,7 @@ instead of a hang.
 
 Everything in this section was **run in this repo** with the project's own
 toolchain (`toolchain/mingw64`, gcc 15.2.0, Windows 11 x86-64) against the
-164-file corpus in `Custom Programs\mina2.0.0\mina\testfiles`.
+164-file mina corpus.
 
 ### Streaming parity — 384 / 384
 
@@ -196,7 +191,7 @@ arithmetic the head/tail trim logic runs on.
 
 The incremental/buffered split over that corpus is **118 incremental, 48
 buffered, 0 unsupported** — i.e. every WAV, MP3 and Ogg Vorbis file takes the
-on-demand path, and the FLAC and AAC files take the decode-once path, as designed.
+on-demand path, and the FLAC files take the decode-once path, as designed.
 
 ### Engine — included in the 384 above
 
@@ -252,10 +247,6 @@ mina implementation compiled into `AudioEngine.cpp` under the project's LTO.
 
 Be honest about the edges.
 
-- **AAC decoder correctness.** The AAC files decode and stream without error, but
-  the streaming-parity test only proves stream output equals `mina_decode`
-  output, and AAC takes the buffered path where that is trivially true. Nothing
-  here checks AAC samples against a reference decoder.
 - **Upstream's bit-exactness numbers** (WAV/FLAC `maxerr` 0.0, MP3 ≤ 1.1e-5,
   Vorbis ≤ 3.0e-7 vs ffmpeg) are upstream's measurements, not re-run here. The
   384/384 above is stream-vs-`mina_decode`, a different claim.

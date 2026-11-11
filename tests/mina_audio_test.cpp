@@ -51,7 +51,7 @@ TEST(MinaAudioTest, SeeksStreamsAndLoopsRequestedRegion) {
  ASSERT_EQ(mina_engine_render(engine, mixed.data(), static_cast<mina_u32>(mixed.size())), mixed.size());
  EXPECT_FLOAT_EQ(mixed[0], 0.0f);
  EXPECT_LT(mixed[1], mixed[2]);
- EXPECT_LT(mixed[2], mixed[3]);
+ EXPECT_GT(mixed[2], mixed[3]);
  EXPECT_FLOAT_EQ(mixed[1], mixed[3]);
  mina_engine_destroy(engine);
 }
