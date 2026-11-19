@@ -21,14 +21,14 @@ void cycleNativeRadius(GameOptions& o, int delta) {
  o.lodNativeRadius = d::cycleDiscrete(o.lodNativeRadius, delta, values, 5);
 }
 void cycleMemory(GameOptions& o, int delta) {
- constexpr int values[] = {64, 128, 256, 512};
- o.lodMemoryMiB = d::cycleDiscrete(o.lodMemoryMiB, delta, values, 4);
+ constexpr int values[] = {64, 128, 256, 512, 1024};
+ o.lodMemoryMiB = d::cycleDiscrete(o.lodMemoryMiB, delta, values, 5);
 }
 std::array<OptionSpec, 4> kSpecs{{
- d::makeToggle("distantTerrain", 72, ApplyFlags::None,
+ d::makeToggle("distantTerrain", 72, ApplyFlags::ApplyToWorld,
                d::getBoolMember<&GameOptions::distantTerrain>, d::cycleBoolMember<&GameOptions::distantTerrain>,
                d::loadBoolMember<&GameOptions::distantTerrain>, d::saveBoolMember<&GameOptions::distantTerrain>),
- d::makeCycle("lodNativeRadius", 73, ApplyFlags::None, cycleNativeRadius,
+ d::makeCycle("lodNativeRadius", 73, ApplyFlags::ApplyToWorld, cycleNativeRadius,
               d::loadIntMember<&GameOptions::lodNativeRadius>, d::saveIntMember<&GameOptions::lodNativeRadius>, nullptr, lodControlsEnabled),
  d::makeCycle("lodQuality", 74, ApplyFlags::None, d::cycleIntMod<&GameOptions::lodQuality, 3>,
               d::loadIntMember<&GameOptions::lodQuality>, d::saveIntMember<&GameOptions::lodQuality>, nullptr, distantDetailEnabled),
@@ -57,6 +57,9 @@ class LodSettingsScreen : public SettingsScreen {
   });
   gui.customCycle(x1, gui.gridY(2), "lodMemoryMiB", [](const GameOptions& o) {
    return optionLabel("Distant Memory", std::to_string(o.lodMemoryMiB) + " MiB");
+  });
+  gui.mappedSlider(x2, gui.gridY(0), "renderScale", d::getRenderScaleSlider, [](const GameOptions& o) {
+   return optionLabel("View Range", std::to_string(net::minecraft::client::option::renderSettings(o).renderDistance.chunks()) + " chunks");
   });
  }
 };

@@ -19,6 +19,11 @@ class WorldSettingsScreen : public screen::Screen {
  void init() override;
  void render(int mouseX, int mouseY, float tickDelta) override;
  [[nodiscard]] std::string_view getScreenUiId() const override;
+ [[nodiscard]] screen::ScreenFactory getReopenFactory() const override {
+  return [parent = parentFactory_, options = gameOptions_]() {
+   return std::make_unique<WorldSettingsScreen>(parent, options);
+  };
+ }
 
  private:
  ParentFactory parentFactory_;

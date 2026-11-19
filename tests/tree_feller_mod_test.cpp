@@ -51,8 +51,17 @@ struct TreeFellerWorld {
       net::minecraft::Item::byRawId(net::minecraft::item::WoodenAxeItem::kRawId), 1, damage);
  }
  void placeLogs(int count) {
+  ASSERT_TRUE(fixture.world.setBlock(8, 63, 8, net::minecraft::Block::DIRT->id));
   for(int index = 0; index < count; ++index) {
    ASSERT_TRUE(fixture.world.setBlock(8, 64 + index, 8, net::minecraft::Block::LOG->id));
+  }
+  for(int y = 63 + count; y <= 64 + count; ++y) {
+   for(int x = 7; x <= 9; ++x) {
+    for(int z = 7; z <= 9; ++z) {
+     if(y == 63 + count && x == 8 && z == 8) continue;
+     ASSERT_TRUE(fixture.world.setBlock(x, y, z, net::minecraft::Block::LEAVES->id));
+    }
+   }
   }
  }
 };

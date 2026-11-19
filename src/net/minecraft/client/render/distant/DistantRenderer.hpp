@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -69,10 +70,14 @@ class DistantRenderer {
   std::uint64_t builtGeneration = 0;
   bool inFlight = false;
   std::uint64_t jobId = 0;
+  std::shared_ptr<std::atomic<bool>> cancellation;
   std::uint16_t chunkMask = 0;
+  std::uint64_t builtPinMask = 0;
+  std::uint64_t readyPinMask = 0;
   int retryFrame = 0;
   std::optional<DistantSlab::Allocation> opaque;
   std::optional<DistantSlab::Allocation> water;
+  std::optional<DistantSlab::Allocation> ice;
   int minY = 0;
   int maxY = 0;
   std::uint32_t seenFrame = 0;
@@ -84,6 +89,7 @@ class DistantRenderer {
   std::uint64_t jobId = 0;
   TileMesh mesh;
   std::uint16_t chunkMask = 0;
+  std::uint64_t pinMask = 0;
  };
  static constexpr int kPinSide = kTileChunks + 2;
  struct PinnedChunks {
@@ -94,6 +100,7 @@ class DistantRenderer {
   void release() noexcept;
  };
  struct Shared {
+  std::atomic<bool> cancelled{false};
   std::mutex mutex;
   std::vector<Completed> completed;
   std::vector<TileMesh> spareMeshes;
@@ -103,7 +110,20 @@ class DistantRenderer {
  void draw(Pipeline& pipeline, const option::RenderSettings& settings, const Frustum* culler, bool water);
  void ensureDepthTextures(int width, int height);
  void updateNativeRadius(const ChunkSectionSystem& sections, int requestedRadius);
- void collectBuildCandidates();
+ void updateTileGrid(const ChunkSectionSystem& sections, const option::RenderSettings& settings);
+ void updateClipDistance(const ChunkSectionSystem& sections);
+ void updateTransitionCoverage(const ChunkSectionSystem& sections);
+ void collectBuildCandidates(std::size_t limit = 0);
+ struct GridState {
+  int cameraX = 0;
+  int cameraZ = 0;
+  float viewBlocks = 0.0f;
+  int nativeRadius = 0;
+  int requestedNativeRadius = 0;
+  int quality = 0;
+  int memoryStride = 1;
+  bool operator==(const GridState&) const = default;
+ };
  [[nodiscard]] static int meshPriority(int distance, bool replacement);
  DistantSlab slab_;
  bool slabReady_ = false;
@@ -113,18 +133,29 @@ class DistantRenderer {
  std::shared_ptr<Shared> shared_ = std::make_shared<Shared>();
  std::vector<std::pair<int, TileKey>> wanted_;
  std::vector<std::pair<int, TileKey>> buildCandidates_;
+ std::optional<GridState> grid_;
  net::minecraft::util::concurrent::WorkerPool* pool_ = nullptr;
  std::weak_ptr<void> poolLifetime_;
  std::shared_ptr<BiomeSource> biomes_;
+ const World* world_ = nullptr;
+ std::uint64_t worldSeed_ = 0;
+ bool netherGeometry_ = false;
  std::uint32_t frame_ = 0;
  int inFlight_ = 0;
  int memoryStride_ = 1;
  int nativeRadius_ = -1;
+ double clipDistance_ = 0.0;
  std::uint64_t nextJobId_ = 0;
  double eyeX_ = 0.0;
  double eyeY_ = 0.0;
  double eyeZ_ = 0.0;
  int drawnLastFrame_ = 0;
+ static constexpr int kCoverageSide = 72;
+ std::array<std::uint8_t, kCoverageSide * kCoverageSide * 2> transitionCoverage_{};
+ gl::GlTexture coverageTexture_;
+ bool coverageDirty_ = true;
+ float coverageOrigin_[2]{};
+ std::optional<float> ambientOcclusion_;
  gl::GlTexture depth_[2];
  int depthWidth_ = 0;
  int depthHeight_ = 0;

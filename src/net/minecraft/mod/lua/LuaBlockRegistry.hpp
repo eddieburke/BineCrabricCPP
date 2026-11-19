@@ -17,6 +17,7 @@ struct BlockRegistrationSpec {
  bool fullCube = true;
   bool translucent = false;
  float collisionHeight = 1.0f;
+ bool collision = true;
  bool stackOnSame = false;
  bool requiresSolidBelow = true;
  bool coordinateBounds = false;

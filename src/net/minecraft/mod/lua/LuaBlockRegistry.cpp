@@ -168,6 +168,9 @@ class LuaModBlock : public Block {
   return Block::canPlaceAt(world, x, y, z);
  }
  [[nodiscard]] std::optional<Box> getCollisionShape(World* /*world*/, int x, int y, int z) const override {
+  if(!spec_.collision) {
+   return std::nullopt;
+  }
   if(spec_.coordinateBounds) {
    return Box{static_cast<double>(x),
               static_cast<double>(y),

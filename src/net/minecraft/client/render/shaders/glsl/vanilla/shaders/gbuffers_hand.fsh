@@ -1,12 +1,11 @@
 #version 430 core
 #include "/lib/common.glsl"
 in vec2 texcoord;
-in vec2 lmcoord;
+in vec3 vertexLight;
 in vec4 color;
 in vec3 normal;
 in float viewDistance;
 uniform sampler2D gtexture;
-uniform sampler2D lightmap;
 uniform vec3 sunDirectionView;
 uniform vec3 fillDirectionView;
 uniform vec3 ambientColor;
@@ -25,6 +24,6 @@ void main() {
  vec4 surface = vec4(tex.rgb * tintAndAo(color), tex.a);
  if(surface.a < alphaTestRef) discard;
  if(lightingEnabled != 0) surface.rgb *= entityDiffuse(normalize(normal));
- surface.rgb *= texture(lightmap, lmcoord).rgb;
+ surface.rgb *= vertexLight;
  outColor = vec4(applyFog(surface.rgb, viewDistance), surface.a);
 }

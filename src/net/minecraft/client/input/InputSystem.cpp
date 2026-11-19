@@ -25,6 +25,7 @@ void InputSystem::setKeyboardRepeat(bool enabled) {
  keyboardRepeat_ = enabled;
 }
 void InputSystem::resetBindings() {
+ movementKeysDown_.fill(false);
  movement_ = {};
 }
 void InputSystem::refreshMovement() {
@@ -33,20 +34,24 @@ void InputSystem::refreshMovement() {
   return;
  }
  const option::GameOptions& options = *activeOptions_;
- if(isKeyDown(options.forwardKey.code)) {
+ const auto isMovementKeyDown = [this](int key) {
+  return key >= 0 && key < static_cast<int>(movementKeysDown_.size()) &&
+         movementKeysDown_[static_cast<std::size_t>(key)];
+ };
+ if(isMovementKeyDown(options.forwardKey.code)) {
   movement_.forward += 1.0f;
  }
- if(isKeyDown(options.backKey.code)) {
+ if(isMovementKeyDown(options.backKey.code)) {
   movement_.forward -= 1.0f;
  }
- if(isKeyDown(options.leftKey.code)) {
+ if(isMovementKeyDown(options.leftKey.code)) {
   movement_.sideways += 1.0f;
  }
- if(isKeyDown(options.rightKey.code)) {
+ if(isMovementKeyDown(options.rightKey.code)) {
   movement_.sideways -= 1.0f;
  }
- movement_.jumping = isKeyDown(options.jumpKey.code);
- movement_.sneaking = isKeyDown(options.sneakKey.code);
+ movement_.jumping = isMovementKeyDown(options.jumpKey.code);
+ movement_.sneaking = isMovementKeyDown(options.sneakKey.code);
  if(movement_.sneaking) {
   movement_.sideways = static_cast<float>(static_cast<double>(movement_.sideways) * 0.3);
   movement_.forward = static_cast<float>(static_cast<double>(movement_.forward) * 0.3);
@@ -215,6 +220,9 @@ void InputSystem::drainScreenEvents(gui::screen::Screen& screen) {
  if(!display::Window::isActive()) {
   return;
  }
+ if(!screen.passEvents) {
+  resetBindings();
+ }
  const auto screenChanged = [&] {
   if(screen.minecraft() == nullptr || screen.minecraft()->currentScreen() == &screen) return false;
   mouseReadIndex_ = mouseEvents_.size();
@@ -227,7 +235,12 @@ void InputSystem::drainScreenEvents(gui::screen::Screen& screen) {
   if(screenChanged()) return;
  }
  if(!screen.passEvents) {
+  const bool modKeys = dynamic_cast<gui::screen::ingame::HandledScreen*>(&screen) != nullptr;
   while(const KeyboardEvent* event = nextKeyboardEvent()) {
+   if(modKeys && net::minecraft::mod::runtime::luaHookKeyPress(event->key, event->down, event->repeat)) {
+    if(screenChanged()) return;
+    continue;
+   }
    screen.onKeyboardEvent(*event);
    if(screenChanged()) return;
   }
@@ -235,6 +248,7 @@ void InputSystem::drainScreenEvents(gui::screen::Screen& screen) {
 }
 void InputSystem::pollGame(Minecraft& client) {
  if(!display::Window::isActive()) {
+  resetBindings();
   return;
  }
  if((client.currentScreen() == nullptr || client.currentScreen()->passEvents) && client.player != nullptr) {
@@ -260,11 +274,21 @@ void InputSystem::pollGame(Minecraft& client) {
    }
   }
   client.handleMouseDown(0, client.currentScreen() == nullptr && isMouseButtonDown(0) && client.focused.load());
-  refreshMovement();
+  if(client.currentScreen() == nullptr || client.currentScreen()->passEvents) {
+   refreshMovement();
+  } else {
+   resetBindings();
+  }
+ } else {
+  resetBindings();
  }
 }
 void InputSystem::pollGameMouse(Minecraft& client) {
  while(const MouseEvent* event = nextMouseEvent()) {
+  if(client.currentScreen() != nullptr && !client.currentScreen()->passEvents) {
+   mouseReadIndex_ = mouseEvents_.size();
+   return;
+  }
   if(currentTimeMillis() - client.lastTickTime > 200) {
    continue;
   }
@@ -306,6 +330,13 @@ void InputSystem::pollGameMouse(Minecraft& client) {
 }
 void InputSystem::pollGameKeyboard(Minecraft& client) {
  while(const KeyboardEvent* event = nextKeyboardEvent()) {
+  if(client.currentScreen() != nullptr && !client.currentScreen()->passEvents) {
+   keyboardReadIndex_ = keyboardEvents_.size();
+   return;
+  }
+  if(!event->repeat) {
+   movementKeysDown_[static_cast<std::size_t>(event->key)] = event->down;
+  }
   if(net::minecraft::mod::runtime::luaHookKeyPress(event->key, event->down, event->repeat)) {
    continue;
   }

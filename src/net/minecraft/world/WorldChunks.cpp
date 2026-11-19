@@ -320,6 +320,7 @@ ChunkSource* World::createChunkCache() {
  } else {
   chunkStorage = std::make_unique<NullChunkStorage>();
  }
+ setChunkCache(nullptr);
  chunkGeneratorSource_ = dimension->createChunkGenerator();
  auto cache = std::make_unique<world::chunk::ChunkCache>(this, std::move(chunkStorage), chunkGeneratorSource_.get());
  setChunkCache(std::move(cache));

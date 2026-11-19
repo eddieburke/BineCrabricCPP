@@ -121,6 +121,9 @@ struct PackInstance {
  int depthTextureW[2]{};
  int depthTextureH[2]{};
  unsigned int dhDepthTexture = 0, dhDepthTextureNoTranslucent = 0;
+ unsigned int lodCoverageTexture = 0;
+ float lodCoverageOrigin[2]{};
+ float lodTransition[2]{};
  [[nodiscard]] int opaqueDepthTexture(int fallback) const noexcept {
   return depthTextures[1] ? static_cast<int>(depthTextures[1].handle()) : fallback;
  }

@@ -16,6 +16,11 @@ class VideoOptionsScreen : public screen::Screen {
  [[nodiscard]] std::string_view getScreenUiId() const override {
   return net::minecraft::mod::screen_ids::kVideoOptions;
  }
+ [[nodiscard]] screen::ScreenFactory getReopenFactory() const override {
+  return [parent = parentFactory_, options = options_]() {
+   return std::make_unique<VideoOptionsScreen>(parent, options);
+  };
+ }
 
  private:
  ParentFactory parentFactory_;

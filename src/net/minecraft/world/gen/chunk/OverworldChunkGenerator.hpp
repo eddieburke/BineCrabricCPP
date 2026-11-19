@@ -11,7 +11,6 @@
 #include "net/minecraft/world/chunk/Chunk.hpp"
 #include "net/minecraft/world/chunk/ChunkSource.hpp"
 #include "net/minecraft/world/gen/Generator.hpp"
-#include "net/minecraft/world/gen/ModernTerrain.hpp"
 #include "net/minecraft/world/gen/TerrainStyle.hpp"
 #include "net/minecraft/world/gen/carver/CaveWorldCarver.hpp"
 namespace net::minecraft {
@@ -34,7 +33,6 @@ class OverworldChunkGenerator : public ChunkSource {
        floatingIslandScale_(constructionRandom_, 10),
        floatingIslandNoise_(constructionRandom_, 16),
        forestNoise_(constructionRandom_, 8),
-       modern_(seed),
        biomeSource_(seed) {
   resolveTerrainStyle();
  }
@@ -93,11 +91,7 @@ class OverworldChunkGenerator : public ChunkSource {
   static constexpr int sizeX = cellSize + 1;
   static constexpr int sizeY = 17;
   static constexpr int sizeZ = cellSize + 1;
-  if(style_ == world::gen::TerrainStyle::Modern) {
-   modern_.fill(heightMap_, chunkX * cellSize, chunkZ * cellSize);
-  } else {
-   heightMap_ = generateHeightMap(heightMap_, chunkX * cellSize, 0, chunkZ * cellSize, sizeX, sizeY, sizeZ);
-  }
+  heightMap_ = generateHeightMap(heightMap_, chunkX * cellSize, 0, chunkZ * cellSize, sizeX, sizeY, sizeZ);
   for(int cellX = 0; cellX < cellSize; ++cellX) {
    for(int cellZ = 0; cellZ < cellSize; ++cellZ) {
     for(int cellY = 0; cellY < 16; ++cellY) {
@@ -141,7 +135,8 @@ class OverworldChunkGenerator : public ChunkSource {
         int blockId = 0;
         if(localY < seaLevel) {
          blockId =
-             temperature < 0.5 && localY >= seaLevel - 1 ? Block::ICE->id : Block::WATER->id;
+             style_ != world::gen::TerrainStyle::Alpha && temperature < 0.5 && localY >= seaLevel - 1
+                 ? Block::ICE->id : Block::WATER->id;
         }
         if(density > 0.0) {
          blockId = Block::STONE->id;
@@ -163,26 +158,35 @@ class OverworldChunkGenerator : public ChunkSource {
  }
  void buildSurfaces(int chunkX, int chunkZ, Chunk& chunk, const std::vector<Biome*>& biomes) {
   static constexpr int seaLevel = 64;
-  static constexpr int modernRockLine = 98;
-  static constexpr int modernSnowLine = 108;
   constexpr double scale = 0.03125;
-  sandBuffer_ = perlinNoise2_.create(sandBuffer_, chunkX * 16, chunkZ * 16, 0.0, 16, 16, 1, scale, scale, 1.0);
-  gravelBuffer_ =
-      perlinNoise2_.create(gravelBuffer_, chunkX * 16, 109.0134, chunkZ * 16, 16, 1, 16, scale, 1.0, scale);
+  const bool alpha = style_ == world::gen::TerrainStyle::Alpha;
+  const auto noiseMode = alpha ? NoiseGridMode::Full3D : NoiseGridMode::HorizontalShortcut;
+  sandBuffer_ = perlinNoise2_.create(
+      sandBuffer_, chunkX * 16, chunkZ * 16, 0.0, 16, 16, 1, scale, scale, 1.0, noiseMode);
+  if(alpha) {
+   gravelBuffer_ = perlinNoise2_.create(
+       gravelBuffer_, chunkZ * 16, 109.0134, chunkX * 16, 16, 1, 16, scale, 1.0, scale, noiseMode);
+  } else {
+   gravelBuffer_ = perlinNoise2_.create(
+       gravelBuffer_, chunkX * 16, 109.0134, chunkZ * 16, 16, 1, 16, scale, 1.0, scale, noiseMode);
+  }
   depthBuffer_ = perlinNoise3_.create(
-      depthBuffer_, chunkX * 16, chunkZ * 16, 0.0, 16, 16, 1, scale * 2.0, scale * 2.0, scale * 2.0);
-  for(int z = 0; z < 16; ++z) {
-   for(int x = 0; x < 16; ++x) {
-    const std::size_t surfaceIndex = static_cast<std::size_t>(z + x * 16);
+      depthBuffer_, chunkX * 16, chunkZ * 16, 0.0, 16, 16, 1, scale * 2.0, scale * 2.0, scale * 2.0, noiseMode);
+  for(int outer = 0; outer < 16; ++outer) {
+   for(int inner = 0; inner < 16; ++inner) {
+    const int x = alpha ? outer : inner;
+    const int z = alpha ? inner : outer;
+    const std::size_t surfaceIndex = static_cast<std::size_t>(alpha ? x + z * 16 : z + x * 16);
     const Biome& biome = *biomes[surfaceIndex];
     const bool sand = sandBuffer_[surfaceIndex] + random_.nextDouble() * 0.2 > 0.0;
     const bool gravel = gravelBuffer_[surfaceIndex] + random_.nextDouble() * 0.2 > 3.0;
     int depth = static_cast<int>(depthBuffer_[surfaceIndex] / 3.0 + 3.0 + random_.nextDouble() * 0.25);
     int run = -1;
-    std::uint8_t top = biome.topBlockId;
-    std::uint8_t soil = biome.soilBlockId;
+    std::uint8_t top = alpha ? Block::GRASS_BLOCK->id : biome.topBlockId;
+    std::uint8_t soil = alpha ? Block::DIRT->id : biome.soilBlockId;
     for(int y = 127; y >= 0; --y) {
-     if(y <= random_.nextInt(5)) {
+     const int bedrockDepth = alpha ? random_.nextInt(6) - 1 : random_.nextInt(5);
+     if(y <= bedrockDepth) {
       Generator::setRawBlock(chunk, x, y, z, Block::BEDROCK->id);
       continue;
      }
@@ -199,8 +203,8 @@ class OverworldChunkGenerator : public ChunkSource {
        top = 0;
        soil = static_cast<std::uint8_t>(Block::STONE->id);
       } else if(y >= seaLevel - 4 && y <= seaLevel + 1) {
-       top = biome.topBlockId;
-       soil = biome.soilBlockId;
+       top = alpha ? Block::GRASS_BLOCK->id : biome.topBlockId;
+       soil = alpha ? Block::DIRT->id : biome.soilBlockId;
        if(gravel) {
         top = 0;
         soil = static_cast<std::uint8_t>(Block::GRAVEL->id);
@@ -209,10 +213,6 @@ class OverworldChunkGenerator : public ChunkSource {
         top = static_cast<std::uint8_t>(Block::SAND->id);
         soil = static_cast<std::uint8_t>(Block::SAND->id);
        }
-      }
-      if(style_ == world::gen::TerrainStyle::Modern && y >= modernRockLine) {
-       top = static_cast<std::uint8_t>(y >= modernSnowLine ? Block::SNOW_BLOCK->id : Block::STONE->id);
-       soil = static_cast<std::uint8_t>(Block::STONE->id);
       }
       if(y < seaLevel && top == 0) {
        top = static_cast<std::uint8_t>(Block::WATER->id);
@@ -226,7 +226,7 @@ class OverworldChunkGenerator : public ChunkSource {
      }
      Generator::setRawBlock(chunk, x, y, z, soil);
      --run;
-     if(run == 0 && soil == static_cast<std::uint8_t>(Block::SAND->id)) {
+     if(!alpha && run == 0 && soil == static_cast<std::uint8_t>(Block::SAND->id)) {
       run = random_.nextInt(4);
       soil = static_cast<std::uint8_t>(Block::SANDSTONE->id);
      }
@@ -248,7 +248,6 @@ class OverworldChunkGenerator : public ChunkSource {
  OctavePerlinNoiseSampler floatingIslandScale_;
  OctavePerlinNoiseSampler floatingIslandNoise_;
  OctavePerlinNoiseSampler forestNoise_;
- world::gen::ModernTerrain modern_;
  BiomeSource biomeSource_;
  world::gen::TerrainStyle style_ = world::gen::TerrainStyle::Beta;
  CaveWorldCarver cave_;

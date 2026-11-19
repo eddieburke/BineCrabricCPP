@@ -9,7 +9,8 @@ function settings_screen.register(spec)
   end
   local function layout(width, height)
     local all = {}
-    for _, slider in ipairs(spec.sliders or {}) do
+    local sliders = type(spec.sliders) == "function" and spec.sliders() or spec.sliders
+    for _, slider in ipairs(sliders or {}) do
       slider.kind = "slider"
       all[#all + 1] = slider
     end
@@ -77,6 +78,7 @@ function settings_screen.register(spec)
     priority = priority,
   }, function(event)
     if event.phase == "init" then
+      ui.drag = nil
       ui.page = 1
       layout(event.width, event.height)
       if ui.pages > 1 then
@@ -135,6 +137,8 @@ function settings_screen.register(spec)
           return event
         end
       end
+    elseif event.phase == "close" then
+      ui.drag = nil
     elseif event.phase == "key" and event.key == minecraft.key_code("escape") then
       close()
       event.handled = true

@@ -4,6 +4,7 @@
 #include "net/minecraft/client/gui/screen/option/OptionGui.hpp"
 #include "net/minecraft/client/gui/screen/option/SettingsScreen.hpp"
 #include "net/minecraft/client/option/OptionSpec.hpp"
+#include "net/minecraft/client/option/RenderSettings.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 namespace net::minecraft::client::gui::screen::option {
 namespace quality_screen {
@@ -101,8 +102,9 @@ class QualitySettingsScreen : public SettingsScreen {
                  "options.renderDistance.tiny"},
                 &GameOptions::viewDistance);
   gui.mappedSlider(x1, y0 + dy, "renderScale", d::getRenderScaleSlider, [](const GameOptions& o) {
-   char buf[32];
-   std::snprintf(buf, sizeof(buf), "Render Scale: %.0fx", o.renderScale);
+   char buf[64];
+   std::snprintf(buf, sizeof(buf), "Render Scale: %.0fx (%d chunks)", o.renderScale,
+                 net::minecraft::client::option::renderSettings(o).renderDistance.chunks());
    return std::string(buf);
   });
   gui.customCycle(x2, y0 + dy, "mipmapLevel", [](const GameOptions& o) {

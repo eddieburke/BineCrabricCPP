@@ -117,8 +117,8 @@ function search.build_criteria()
 end
 
 function search.free_map()
-  if S.map_tex ~= nil and S.map_tex.id ~= nil then
-    minecraft.render.release_texture(S.map_tex.id)
+  if S.map_tex ~= nil and S.map_tex.owned ~= nil then
+    minecraft.texture.release(S.map_tex.owned)
   end
   S.map_tex = nil
 end
@@ -132,13 +132,13 @@ function search.build_map(seed)
   if grid == nil then
     return
   end
-  local tex = minecraft.render.create_texture({
+  local tex = minecraft.texture.create({
     width = grid.side,
     height = grid.side,
     pixels = grid.channels.grass,
   })
-  if tex ~= nil and tex.id ~= nil then
-    S.map_tex = { id = tex.id, side = grid.side, origin_x = grid.origin_x, origin_z = grid.origin_z,
+  if tex ~= nil and tex.gl_id ~= nil then
+    S.map_tex = { id = tex.gl_id, owned = tex.id, side = grid.side, origin_x = grid.origin_x, origin_z = grid.origin_z,
       span = grid.side * grid.step }
   end
 end

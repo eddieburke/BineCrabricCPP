@@ -84,6 +84,7 @@ class InputSystem {
  option::GameOptions* activeOptions_ = nullptr;
  std::vector<KeyboardEvent> keyboardEvents_;
  std::array<bool, 256> keyboardDown_{};
+ std::array<bool, 256> movementKeysDown_{};
  std::size_t keyboardReadIndex_ = 0;
  bool keyboardRepeat_ = false;
  std::vector<MouseEvent> mouseEvents_;

@@ -228,6 +228,9 @@ void fillWorldState(PackUniformValues& values,
  } else if(world.clientTimeMode() == 2) {
   values.worldDay = static_cast<int>(absoluteTime / 24000ULL);
   values.worldTime = 18000;
+ } else if(world.celestialPhaseClaimed()) {
+  values.worldTime = worldTimeFromCelestialAngle(celestialAngle);
+  values.worldDay = static_cast<int>(absoluteTime / 24000ULL);
  } else {
   values.worldTime = static_cast<int>(absoluteTime % 24000ULL);
   values.worldDay = static_cast<int>(absoluteTime / 24000ULL);
@@ -602,5 +605,27 @@ float updateWetnessSmooth(float rainStrength, float frameTime, float wetnessHalf
                    (target > accumulator ? wetnessHalflife : kDrynessHalflife) * 0.1f);
  g_wetnessSmooth = accumulator;
  return g_wetnessSmooth;
+}
+int worldTimeFromCelestialAngle(float celestialAngle) noexcept {
+ constexpr double kPi = 3.14159265358979323846;
+ double target = std::fmod(static_cast<double>(celestialAngle), 1.0);
+ if(target < 0.0) {
+  target += 1.0;
+ }
+ double value = target;
+ for(int i = 0; i < 8; ++i) {
+  const double err = (2.0 * value + 0.5 - 0.5 * std::cos(value * kPi)) / 3.0 - target;
+  const double slope = (2.0 + 0.5 * kPi * std::sin(value * kPi)) / 3.0;
+  value = std::clamp(value - err / slope, 0.0, 1.0);
+ }
+ double phase = std::fmod(value + 0.25, 1.0);
+ if(phase < 0.0) {
+  phase += 1.0;
+ }
+ int ticks = static_cast<int>(std::llround(phase * 24000.0)) % 24000;
+ if(ticks < 0) {
+  ticks += 24000;
+ }
+ return ticks;
 }
 } // namespace net::minecraft::client::render

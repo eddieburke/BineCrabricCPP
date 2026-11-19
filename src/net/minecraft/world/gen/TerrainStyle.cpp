@@ -4,8 +4,6 @@ std::string_view terrainStyleName(TerrainStyle style) {
  switch(style) {
  case TerrainStyle::Alpha:
   return "alpha";
- case TerrainStyle::Modern:
-  return "modern";
  case TerrainStyle::Beta:
   break;
  }
@@ -14,9 +12,6 @@ std::string_view terrainStyleName(TerrainStyle style) {
 TerrainStyle parseTerrainStyle(std::string_view name) {
  if(name == "alpha") {
   return TerrainStyle::Alpha;
- }
- if(name == "modern") {
-  return TerrainStyle::Modern;
  }
  return TerrainStyle::Beta;
 }

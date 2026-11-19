@@ -13,10 +13,12 @@
 #include "net/minecraft/client/gl/GLCore.hpp"
 #include "net/minecraft/client/Minecraft.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
+#include "net/minecraft/client/option/GameOptions.hpp"
 #include "net/minecraft/entity/player/PlayerEntity.hpp"
 #include "net/minecraft/mod/ModSettingsRegistry.hpp"
 #include "net/minecraft/mod/runtime/LuaDirectHooks.hpp"
 #include "net/minecraft/world/World.hpp"
+#include "net/minecraft/world/biome/Biome.hpp"
 #define GL_GLEXT_PROTOTYPES
 #include <GL/glext.h>
 #include "net/minecraft/client/resource/pack/ZippedTexturePack.hpp"
@@ -476,5 +478,167 @@ TEST_F(FogDrawIntegrationTest, CustomProjectionChangesFogCoordinateAndRestoresPl
  }
  core::setActiveProgram(nullptr);
  core::setFog(savedFog);
+}
+TEST(BetaVisualStyle, SkyColorsMatchJavaHsbRounding) {
+ const std::array<float, 8> temperatures{-6.0f, -3.0f, 0.0f, 0.5f, 0.8f, 1.0f, 3.0f, 6.0f};
+ const std::array<int, 8> colors{0x9C99FF, 0x9C99FF, 0x80A2FF, 0x7BA5FF,
+                                0x79A7FF, 0x77A9FF, 0x66BDFF, 0x66BDFF};
+ for(std::size_t i = 0; i < temperatures.size(); ++i) {
+  EXPECT_EQ(Biome::plains().getSkyColor(temperatures[i]), colors[i]) << temperatures[i];
+ }
+}
+TEST_F(FogDrawIntegrationTest, VanillaLightmapMatchesJavaBrightnessWithoutChangingShaderpacks) {
+ const std::array<std::array<int, 16>, 6> expected{{
+     {13, 17, 22, 27, 33, 40, 47, 56, 67, 79, 94, 111, 134, 163, 201, 255},
+     {13, 19, 27, 35, 44, 53, 64, 76, 89, 104, 120, 140, 162, 188, 218, 255},
+     {13, 29, 45, 61, 77, 94, 110, 126, 142, 158, 174, 190, 207, 223, 239, 255},
+     {26, 30, 34, 39, 45, 51, 58, 67, 77, 88, 102, 119, 140, 168, 204, 255},
+     {45, 50, 57, 64, 71, 80, 89, 99, 111, 124, 138, 155, 174, 197, 223, 255},
+     {64, 77, 89, 102, 115, 128, 140, 153, 166, 179, 191, 204, 217, 230, 242, 255}}};
+ client::option::GameOptions options;
+ client::render::Pipeline pipeline(&options);
+ World world("beta_visual_style", 42);
+ const int savedUnit = core::getActiveTextureUnit();
+ for(int dimension = 0; dimension < 2; ++dimension) {
+  world.dimension = Dimension::fromId(dimension == 0 ? 0 : -1);
+  world.dimension->initBrightnessTable();
+  for(const char* selection : {"vanilla", "off", "rethinking-voxels"}) {
+   options.shaderPack = selection;
+   for(const int ambient : {0, 11}) {
+    world.ambientDarkness = ambient;
+    for(const int step : {0, 2, 1, 0}) {
+     options.brightness = static_cast<float>(step) * 0.5f;
+     pipeline.refreshLightmap(&world);
+     ASSERT_NE(pipeline.lightmapTexture(), 0u);
+     core::activeTexture(GL_TEXTURE0);
+     core::bindTexture(pipeline.lightmapTexture());
+     std::array<unsigned char, 16 * 16 * 4> pixels{};
+     ::glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+     const int curve = dimension * 3 + (options.shaderPack == "rethinking-voxels" ? 0 : step);
+     for(int sky = 0; sky < 16; ++sky) {
+      for(int block = 0; block < 16; ++block) {
+       const int level = std::max(block, std::max(0, sky - ambient));
+       const int offset = (sky * 16 + block) * 4;
+       for(int channel = 0; channel < 3; ++channel) {
+        EXPECT_EQ(pixels[offset + channel], expected[curve][level])
+            << selection << " dimension=" << dimension << " brightness=" << options.brightness
+            << " ambient=" << ambient << " sky=" << sky << " block=" << block;
+       }
+       EXPECT_EQ(pixels[offset + 3], 255);
+      }
+     }
+    }
+   }
+  }
+ }
+ core::activeTexture(GL_TEXTURE0 + savedUnit);
+ EXPECT_EQ(::glGetError(), GL_NO_ERROR);
+}
+TEST_F(FogDrawIntegrationTest, VanillaInterpolatesVertexBrightnessBeforeTextureShading) {
+ PackInstance pack;
+ ASSERT_TRUE(loadVanillaPack(pack));
+ client::option::GameOptions options;
+ options.shaderPack = "vanilla";
+ client::render::Pipeline pipeline(&options);
+ World world("beta_vertex_light", 42);
+ world.ambientDarkness = 0;
+ pipeline.refreshLightmap(&world);
+ const auto savedCamera = core::cameraFrame();
+ const auto savedFog = core::fog();
+ const bool savedLighting = core::lightingEnabled();
+ const core::ScopedDrawCameraState drawCamera;
+ const core::DepthScope depth(false, false);
+ const core::BlendScope blend(false);
+ const core::CullScope cull(false);
+ client::render::FrameRenderCamera camera;
+ camera.orthographic = true;
+ camera.viewForwardZ = -1.0f;
+ core::setCameraFrame(camera);
+ core::setDrawCameraStateFromCamera(camera);
+ core::setFogEnabled(false);
+ core::setLightingEnabled(false);
+ GLCore::bindFramebuffer(GL_FRAMEBUFFER, 0);
+ core::viewport(0, 0, 64, 64);
+ ::glReadBuffer(GL_BACK);
+ client::gl::GlTexture albedo(core::genTexture());
+ core::activeTexture(GL_TEXTURE0);
+ core::bindTexture(albedo.handle());
+ const std::array<unsigned char, 4> texel{64, 128, 192, 255};
+ ::glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, texel.data());
+ ::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+ ::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+ core::activeTexture(GL_TEXTURE1);
+ core::bindTexture(pipeline.lightmapTexture());
+ core::activeTexture(GL_TEXTURE0);
+ for(const char* key : {"gbuffers_terrain", "gbuffers_water", "gbuffers_basic",
+                         "gbuffers_textured_lit", "gbuffers_entities", "gbuffers_hand"}) {
+  ShaderProgram* program = compileProgram(pack, key);
+  ASSERT_NE(program, nullptr) << key;
+  program->bind();
+  program->set1i("gtexture", 0);
+  program->set1i("lightmap", 1);
+  core::setActiveProgram(program);
+  auto& tessellator = client::render::Tessellator::INSTANCE;
+  tessellator.startQuads();
+  tessellator.color(1.0f, 1.0f, 1.0f, 1.0f);
+  tessellator.normal(0.0f, 1.0f, 0.0f);
+  tessellator.light(0, 0);
+  tessellator.vertex(-1.0, -1.0, -1.0, 0.0, 0.0);
+  tessellator.light(15, 0);
+  tessellator.vertex(1.0, -1.0, -1.0, 1.0, 0.0);
+  tessellator.vertex(1.0, 1.0, -1.0, 1.0, 1.0);
+  tessellator.light(0, 0);
+  tessellator.vertex(-1.0, 1.0, -1.0, 0.0, 1.0);
+  tessellator.draw();
+  for(const int x : {8, 24, 40, 56}) {
+   std::array<unsigned char, 4> pixel{};
+   ::glReadPixels(x, 32, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel.data());
+   const float light = 13.0f / 255.0f + (1.0f - 13.0f / 255.0f) * (x + 0.5f) / 64.0f;
+   for(int channel = 0; channel < 3; ++channel) {
+    EXPECT_NEAR(pixel[channel], texel[channel] * light, 2.0f) << key << " x=" << x;
+   }
+  }
+ }
+ core::setActiveProgram(nullptr);
+ core::setLightingEnabled(savedLighting);
+ core::setFog(savedFog);
+ core::setCameraFrame(savedCamera);
+ EXPECT_EQ(::glGetError(), GL_NO_ERROR);
+}
+TEST_F(FogDrawIntegrationTest, VanillaFinalPreservesSkyFogAndTexturePaletteAtEveryBrightness) {
+ PackInstance pack;
+ ASSERT_TRUE(loadVanillaPack(pack));
+ ShaderProgram* program = compileProgram(pack, "final");
+ ASSERT_NE(program, nullptr);
+ const core::DepthScope depth(false, false);
+ const core::BlendScope blend(false);
+ const core::CullScope cull(false);
+ client::render::ColorTargets targets;
+ ASSERT_TRUE(targets.ensure(4, 4, {client::render::ColorFormat::Rgba8}, 1));
+ targets.bindGbuffers();
+ core::viewport(0, 0, 4, 4);
+ ::glReadBuffer(GL_COLOR_ATTACHMENT0);
+ client::gl::GlTexture scene(core::genTexture());
+ core::activeTexture(GL_TEXTURE0);
+ core::bindTexture(scene.handle());
+ ::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+ ::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+ program->bind();
+ program->set1i("colortex0", 0);
+ for(const std::array<unsigned char, 4> color : {
+         std::array<unsigned char, 4>{121, 167, 255, 255}, {192, 216, 255, 255},
+         {16, 48, 96, 128}, {64, 128, 192, 255}}) {
+  ::glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, color.data());
+  for(const float brightness : {0.0f, 0.5f, 1.0f}) {
+   program->set1f("screenBrightness", brightness);
+   core::drawFullscreen();
+   std::array<unsigned char, 4> pixel{};
+   ::glReadPixels(2, 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel.data());
+   EXPECT_EQ(pixel, color) << "brightness=" << brightness;
+  }
+ }
+ ShaderProgram::unbind();
+ targets.endGbuffers();
+ EXPECT_EQ(::glGetError(), GL_NO_ERROR);
 }
 } // namespace net::minecraft::test

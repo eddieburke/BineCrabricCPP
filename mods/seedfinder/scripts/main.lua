@@ -506,7 +506,9 @@ minecraft.on("screen_event", { screen_id = SCREEN_ID }, function(event)
     search.tick()
     return event
   elseif event.phase == "mouse" then
-    if event.button ~= 0 then
+    -- The engine fires this phase on press and again on release; only act on press
+    -- so each click triggers its button once.
+    if event.released or event.button ~= 0 then
       return event
     end
     for i = #S.hitboxes, 1, -1 do

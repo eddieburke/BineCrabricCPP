@@ -58,8 +58,8 @@ local function layout(width, height)
   ui.right_x = ui.left_x + ui.col_w + ui.gap
   ui.toggle_x = ui.right_x + 8
   ui.toggle_w = ui.col_w - 16
-  ui.toggle_h = 22
-  ui.toggle_ys = { 58, 86, 114, 142 }
+  ui.toggle_h = 20
+  ui.toggle_ys = { 56, 80, 104, 128, 152, 176 }
 end
 
 local function add_fields(settings)
@@ -106,6 +106,8 @@ local function draw_toggles(settings, mouse_x, mouse_y)
     { "Time override", settings.simulate_time },
     { "Simulation", settings.override_enabled },
     { "Realtime Sun", settings.drive_sun },
+    { "Sky Planets", settings.planets_enabled },
+    { "Daylight Planets", settings.planet_daylight },
   }
   minecraft.gui.draw_text(ui.toggle_x, 44, "SIMULATION", 0xFF7EC8F2)
   for index, spec in ipairs(specs) do
@@ -120,8 +122,6 @@ local function draw_toggles(settings, mouse_x, mouse_y)
       mouse_y = mouse_y,
     })
   end
-  minecraft.gui.draw_text(ui.toggle_x, 174, "Use overrides to preview any date", 0xFF9BB0C2)
-  minecraft.gui.draw_text(ui.toggle_x, 184, "or time without changing location.", 0xFF9BB0C2)
 end
 
 local function draw_screen(settings, width, height, mouse_x, mouse_y)
@@ -139,18 +139,14 @@ local function draw_screen(settings, width, height, mouse_x, mouse_y)
 end
 
 local function toggle_at(settings, x, y)
-  if not minecraft.util.in_rect(x, y, ui.toggle_x, ui.toggle_ys[1], ui.toggle_w, ui.toggle_h) and
-      not minecraft.util.in_rect(x, y, ui.toggle_x, ui.toggle_ys[2], ui.toggle_w, ui.toggle_h) and
-      not minecraft.util.in_rect(x, y, ui.toggle_x, ui.toggle_ys[3], ui.toggle_w, ui.toggle_h) and
-      not minecraft.util.in_rect(x, y, ui.toggle_x, ui.toggle_ys[4], ui.toggle_w, ui.toggle_h) then
-    return false
-  end
   for index, toggle_y in ipairs(ui.toggle_ys) do
     if minecraft.util.in_rect(x, y, ui.toggle_x, toggle_y, ui.toggle_w, ui.toggle_h) then
       if index == 1 then settings.simulate_date = not settings.simulate_date end
       if index == 2 then settings.simulate_time = not settings.simulate_time end
       if index == 3 then settings.override_enabled = not settings.override_enabled end
       if index == 4 then settings.drive_sun = not settings.drive_sun end
+      if index == 5 then settings.planets_enabled = not settings.planets_enabled end
+      if index == 6 then settings.planet_daylight = not settings.planet_daylight end
       return true
     end
   end

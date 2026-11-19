@@ -1,5 +1,6 @@
 #include "net/minecraft/client/option/GameOptions.hpp"
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -7,6 +8,7 @@
 #include "net/minecraft/client/input/Keys.hpp"
 #include "net/minecraft/client/option/OptionRegistry.hpp"
 #include "net/minecraft/client/option/RenderSettings.hpp"
+#include "net/minecraft/client/render/GameRenderer.hpp"
 #include "net/minecraft/client/render/world/WorldRenderer.hpp"
 #include "net/minecraft/client/resource/language/I18n.hpp"
 #include "net/minecraft/client/texture/TextureManager.hpp"
@@ -125,14 +127,20 @@ void GameOptions::applyToWorld(World* world) const {
   return;
  }
  world->applyWorldSettings(weather, autoSaveTicks, time);
- world->setChunkResidentRadius(renderSettings(*this).residentChunkRadius);
+ const RenderSettings settings = minecraft != nullptr && minecraft->gameRenderer != nullptr
+                                     ? renderSettings(*this, minecraft->gameRenderer->meshDefinition())
+                                     : renderSettings(*this);
+ world->setChunkResidentRadius(settings.residentChunkRadius);
 }
 void GameOptions::applyDerivedSettings() {
  backgroundThreads = std::clamp(backgroundThreads, 0, 16);
  net::minecraft::util::concurrent::ThreadCoordinator::instance().setComputeThreadLimit(static_cast<unsigned>(backgroundThreads));
  lodNativeRadius = std::clamp(lodNativeRadius, 8, 32);
  lodQuality = std::clamp(lodQuality, 0, 2);
- lodMemoryMiB = std::clamp(lodMemoryMiB, 64, 512);
+ lodMemoryMiB = std::clamp(lodMemoryMiB, 64, 1024);
+ renderScale = std::isfinite(renderScale)
+                   ? std::clamp(renderScale, RenderDistance::kMinRenderScale, RenderDistance::kMaxRenderScale)
+                   : RenderDistance::kMinRenderScale;
  const RenderSettings resolved = renderSettings(*this);
  texture::TextureManager::MIPMAP = mipmapLevel > 0;
  texture::TextureManager::MIPMAP_LINEAR = resolved.mipmapLinearFilter;

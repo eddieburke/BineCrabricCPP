@@ -1,5 +1,7 @@
 #pragma once
+#include <atomic>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -7,6 +9,7 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 #include "net/minecraft/mod/runtime/LuaEventId.hpp"
@@ -25,12 +28,14 @@ struct ModPackage {
  std::string version;
  std::string description;
  std::string entry;
+ std::string generationEntry;
  ModPackageSource source = ModPackageSource::Directory;
  bool enabledByDefault = true;
  bool configuredEnabled = true;
  bool active = false;
  bool resourceOverlay = false;
  bool runtimeScript = false;
+ bool worldRequired = true;
   std::string side = "both";
   std::string downloadUrl;
   std::string error;
@@ -56,6 +61,19 @@ class ModHost {
    bool active = false;
    int loadGeneration = 0;
   std::recursive_mutex stateMutex;
+  std::atomic<int> mainThreadWaiters{0};
+  std::filesystem::path generationScript;
+  LoadedLuaMod* generationOwner = nullptr;
+  std::mutex generationMutex;
+  std::unordered_map<std::thread::id, std::shared_ptr<LoadedLuaMod>> generationStates;
+  std::vector<int> generationPriorities;
+  std::unordered_map<std::string, std::string> worldOptions;
+  std::string worldSaveName;
+  bool worldNew = false;
+  bool worldOpened = false;
+  std::mutex sharedMutex;
+  std::unordered_map<std::string, std::string> shared;
+  std::deque<std::string> sharedOrder;
   std::vector<Callback> callbacks;
   std::vector<int> buttonCallbackRefs;
    std::vector<int> ownedTextureIds;
@@ -105,4 +123,5 @@ class ModHost {
 };
 ModHost& host();
 const std::vector<std::shared_ptr<ModHost::LoadedLuaMod>>& loadedLuaMods();
+std::shared_ptr<ModHost::LoadedLuaMod> createGenerationState(ModHost::LoadedLuaMod& owner, std::string& error);
 } // namespace net::minecraft::mod::runtime

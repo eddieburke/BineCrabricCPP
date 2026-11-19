@@ -6,7 +6,6 @@ class InventoryScreen : public HandledScreen {
  public:
  explicit InventoryScreen(::net::minecraft::screen::ScreenHandler* handler)
      : HandledScreen(handler) {
-  passEvents = true;
  }
  void init() override;
  void render(int mouseX, int mouseY, float tickDelta) override;

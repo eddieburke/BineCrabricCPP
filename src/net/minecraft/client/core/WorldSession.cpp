@@ -157,7 +157,7 @@ void WorldSession::setWorld(Minecraft& client,
     prepareWorld(client, message);
    }
    if(client.player != nullptr) {
-    worldIn->addPlayer(client.player);
+    worldIn->addPlayer(client.player, existingPlayer == nullptr);
     client.player->nudgeOutOfCollision();
    }
   } else if(client.player != nullptr) {

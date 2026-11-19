@@ -15,6 +15,11 @@ class OptionsScreen : public screen::Screen {
  [[nodiscard]] std::string_view getScreenUiId() const override {
   return net::minecraft::mod::screen_ids::kOptions;
  }
+ [[nodiscard]] screen::ScreenFactory getReopenFactory() const override {
+  return [parent = parentFactory_, options = options_]() {
+   return std::make_unique<OptionsScreen>(parent, options);
+  };
+ }
 
  private:
  screen::ScreenFactory parentFactory_;

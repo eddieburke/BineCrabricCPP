@@ -1,10 +1,12 @@
 #pragma once
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <ostream>
 #include <string_view>
 #include "net/minecraft/client/option/ApplyFlags.hpp"
 #include "net/minecraft/client/option/GameOptions.hpp"
+#include "net/minecraft/client/option/RenderDistance.hpp"
 namespace net::minecraft::client::option {
 struct OptionSpec {
  std::string_view persistKey;
@@ -100,10 +102,12 @@ inline void setAoLevel(GameOptions& options, float value) {
  options.ao = value > 0.0f;
 }
 inline float getRenderScaleSlider(const GameOptions& options) {
- return (options.renderScale - 1.0f) / 4.0f;
+ return (options.renderScale - RenderDistance::kMinRenderScale) /
+        (RenderDistance::kMaxRenderScale - RenderDistance::kMinRenderScale);
 }
 inline void setRenderScaleSlider(GameOptions& options, float value) {
- options.renderScale = 1.0f + value * 4.0f;
+ options.renderScale = RenderDistance::kMinRenderScale +
+                       std::round(value * (RenderDistance::kMaxRenderScale - RenderDistance::kMinRenderScale));
 }
 inline float getEntityDistanceSlider(const GameOptions& options) {
  return (options.entityDistanceScale - 0.25f) / 3.75f;

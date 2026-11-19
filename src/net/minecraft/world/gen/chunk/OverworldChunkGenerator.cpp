@@ -59,19 +59,18 @@ Chunk OverworldChunkGenerator::loadChunk(ChunkSource* source, int chunkX, int ch
   });
  }
  if(world_ != nullptr) {
-  chunk.populateHeightMap();
+  chunk.populateHeightMap(false);
  } else {
   chunk.populateHeightMapOnly();
  }
  return chunk;
 }
 void OverworldChunkGenerator::decorate(ChunkSource* source, int chunkX, int chunkZ) {
- block::FallingBlock::fallInstantly = true;
+ const block::FallingBlock::InstantFallScope instantFall;
  BiomeSource* biomeSource = activeBiomeSource();
  const std::uint64_t worldSeed = world_ != nullptr ? world_->getSeed() : seed_;
  (void)world::gen::seedPopulationRandom(random_, worldSeed, chunkX, chunkZ);
  if(world_ == nullptr || biomeSource == nullptr) {
-  block::FallingBlock::fallInstantly = false;
   return;
  }
  Chunk* chunk = world_->hasChunk(chunkX, chunkZ) ? &world_->getChunk(chunkX, chunkZ) : nullptr;
@@ -90,7 +89,6 @@ void OverworldChunkGenerator::decorate(ChunkSource* source, int chunkX, int chun
   world::gen::feature::decorateOverworldChunk(
       world_, random_, *biomeSource, forestNoise_, chunkX, chunkZ, decorateTemperatures_);
  });
- block::FallingBlock::fallInstantly = false;
 }
 std::vector<double>& OverworldChunkGenerator::generateHeightMap(
     std::vector<double>& heightMap, int x, int y, int z, int sizeX, int sizeY, int sizeZ) {
@@ -102,8 +100,16 @@ std::vector<double>& OverworldChunkGenerator::generateHeightMap(
  const BiomeSource* biomeSource = activeBiomeSource();
  const std::vector<double>& temperatureMap = biomeSource->temperatureMap();
  const std::vector<double>& downfallMap = biomeSource->downfallMap();
- scaleNoiseBuffer_ = floatingIslandScale_.create(scaleNoiseBuffer_, x, z, sizeX, sizeZ, 1.121, 1.121, 0.5);
- depthNoiseBuffer_ = floatingIslandNoise_.create(depthNoiseBuffer_, x, z, sizeX, sizeZ, 200.0, 200.0, 0.5);
+ const bool alpha = style_ == world::gen::TerrainStyle::Alpha;
+ if(alpha) {
+  scaleNoiseBuffer_ = floatingIslandScale_.create(
+      scaleNoiseBuffer_, x, 0, z, sizeX, 1, sizeZ, 1.0, 0.0, 1.0, NoiseGridMode::Full3D);
+  depthNoiseBuffer_ = floatingIslandNoise_.create(
+      depthNoiseBuffer_, x, 0, z, sizeX, 1, sizeZ, 100.0, 0.0, 100.0, NoiseGridMode::Full3D);
+ } else {
+  scaleNoiseBuffer_ = floatingIslandScale_.create(scaleNoiseBuffer_, x, z, sizeX, sizeZ, 1.121, 1.121, 0.5);
+  depthNoiseBuffer_ = floatingIslandNoise_.create(depthNoiseBuffer_, x, z, sizeX, sizeZ, 200.0, 200.0, 0.5);
+ }
  perlinNoiseBuffer_ = perlinNoise1_.create(
      perlinNoiseBuffer_, x, y, z, sizeX, sizeY, sizeZ, baseScale / 80.0, baseScale / 160.0, baseScale / 80.0);
  minLimitPerlinNoiseBuffer_ = minLimitPerlinNoise_.create(
@@ -124,18 +130,18 @@ std::vector<double>& OverworldChunkGenerator::generateHeightMap(
    scaleNoise = std::min(scaleNoise * terrainFactor, 1.0);
    double depthNoise = depthNoiseBuffer_[static_cast<std::size_t>(horizontalIndex)] / 8000.0;
    if(depthNoise < 0.0) {
-    depthNoise = -depthNoise * 0.3;
+    depthNoise = -depthNoise * (alpha ? 1.0 : 0.3);
    }
-   depthNoise = depthNoise * 3.0 - 2.0;
+   depthNoise = depthNoise * 3.0 - (alpha ? 3.0 : 2.0);
    if(depthNoise < 0.0) {
     depthNoise = std::max(depthNoise / 2.0, -1.0);
     depthNoise /= 1.4;
     depthNoise /= 2.0;
     scaleNoise = 0.0;
    } else {
-    depthNoise = std::min(depthNoise, 1.0) / 8.0;
+    depthNoise = std::min(depthNoise, 1.0) / (alpha ? 6.0 : 8.0);
    }
-   scaleNoise = std::max(scaleNoise, 0.0) + 0.5;
+   scaleNoise = (alpha ? scaleNoise : std::max(scaleNoise, 0.0)) + 0.5;
    depthNoise = depthNoise * static_cast<double>(sizeY) / 16.0;
    const double center = static_cast<double>(sizeY) / 2.0 + depthNoise * 4.0;
    ++horizontalIndex;
@@ -152,7 +158,8 @@ std::vector<double>& OverworldChunkGenerator::generateHeightMap(
                          : (selector > 1.0 ? maxLimit : minLimit + (maxLimit - minLimit) * selector);
     density -= vertical;
     if(iy > sizeY - 4) {
-     const double topFade = static_cast<double>(iy - (sizeY - 4)) / 3.0;
+     const double topFade = alpha ? static_cast<double>(static_cast<float>(iy - (sizeY - 4)) / 3.0f)
+                                  : static_cast<double>(iy - (sizeY - 4)) / 3.0;
      density = density * (1.0 - topFade) + -10.0 * topFade;
     }
     heightMap[static_cast<std::size_t>(index++)] = density;

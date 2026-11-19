@@ -16,8 +16,33 @@ void LuaModEntity::setRegistryId(std::string id) {
  getDataTracker().set(kRegistryIdTrackerKey, registryId_);
  dirty_ = true;
 }
+namespace {
+float dataSize(const NbtCompound& data, const char* key, float fallback) {
+ if(!data.contains(key)) {
+  return fallback;
+ }
+ double value = data.getDouble(key);
+ if(value == 0.0) {
+  value = data.getFloat(key);
+ }
+ if(value == 0.0) {
+  value = data.getInt(key);
+ }
+ return value > 0.0 && value <= 8.0 ? static_cast<float>(value) : fallback;
+}
+} // namespace
+void LuaModEntity::applyDataSize() {
+ const float w = dataSize(data_, "width", 0.6f);
+ const float h = dataSize(data_, "height", 1.0f);
+ if(w != width || h != height) {
+  width = w;
+  height = h;
+  setPosition(x, y, z);
+ }
+}
 void LuaModEntity::setData(const NbtCompound& value) {
  data_ = value;
+ applyDataSize();
  Nbt encoded = Nbt::compound();
  encoded.asCompound() = data_.storage().asCompound();
  getDataTracker().set(kDataTrackerKey, encoded.toBytes());
@@ -67,6 +92,7 @@ void LuaModEntity::onTrackedDataUpdated(int key) {
   const Nbt decoded = Nbt::read(getDataTracker().getByteArray(kDataTrackerKey));
   if(decoded.isCompound()) {
    data_ = NbtCompound(decoded);
+   applyDataSize();
   }
  } catch(const std::exception&) {
  }

@@ -161,6 +161,7 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& c
   if(uploadCount >= requestedWork || (uploadCount > 0 && budgetSpent()) || !byteBudget.tryConsume(bytes)) return false;
   builder->meshJobInFlight = false;
   ++uploadCount;
+  const bool hadNoGeometry = builder->hasNoGeometry();
   if(!builder->uploadMesh(*job)) {
    builder->dirty = true;
    enqueueDirtyChunk(builder);
@@ -168,6 +169,7 @@ bool ChunkCompilePipeline::compileChunks(net::minecraft::entity::LivingEntity& c
   }
   builder->dirty = false;
   eraseDirtyChunk(builder);
+  sectionSystem_->onSectionUploaded(builder, hadNoGeometry);
   return true;
  };
  meshHandoff_.drainCompletedInto(completedMeshUploads_);

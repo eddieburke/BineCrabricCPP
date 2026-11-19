@@ -4,6 +4,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -47,6 +48,9 @@ class ChunkCache : public ChunkSource {
  // Queue a background load/generate for the chunk; the result is folded into
  // the world by tick(). No-op if loaded, pending, or async-incapable.
  void requestChunkAsync(int chunkX, int chunkZ, int priority = 0);
+ using ChunkDataLoader = std::function<std::unique_ptr<Chunk>(int chunkX, int chunkZ)>;
+ bool readChunkDataAsync(std::function<void(const ChunkDataLoader&)> read, int priority,
+                          const void* owner, std::function<void()> onCancel);
  void markChunkDataReady(int chunkX, int chunkZ) override;
  // Main-thread only: number of async chunk loads not yet integrated.
  [[nodiscard]] std::size_t pendingAsyncLoadCount() const noexcept {
@@ -84,7 +88,8 @@ class ChunkCache : public ChunkSource {
   std::uint64_t saveTime = 0;
  };
  // Storage/generator work only; safe off-thread.
- std::unique_ptr<Chunk> produceChunk(int chunkX, int chunkZ);
+ std::unique_ptr<Chunk> produceChunk(int chunkX, int chunkZ, bool detached = false);
+ void completeLoadTask();
  // Worker-local terrain generator clone (seed-deterministic, local BiomeSource).
  ChunkSource* workerGenerator();
  // Main-thread integration: ownership, maps, light population, load, decorate.

@@ -233,7 +233,7 @@ class World : public IEntityWorld {
  }
  void queueLightUpdate(LightType type, int minX, int minY, int minZ, int maxX, int maxY, int maxZ);
  void queueLightUpdate(LightType type, int minX, int minY, int minZ, int maxX, int maxY, int maxZ, bool merge);
- void addPlayer(PlayerEntity* player);
+ void addPlayer(PlayerEntity* player, bool loadSavedPlayerData = true);
  virtual void updateWeatherCycles();
  void tickChunks();
  virtual void tick();
@@ -421,6 +421,7 @@ class World : public IEntityWorld {
  std::string celestialPhaseOwner_;
  WorldProperties properties_{};
  bool hasStorageBackedProperties_ = false;
+ std::unique_ptr<ChunkSource> chunkGeneratorSource_;
  std::unique_ptr<ChunkSource> chunkCache_;
  void setChunkCache(std::unique_ptr<ChunkSource> cache) {
   chunkCache_ = std::move(cache);
@@ -432,7 +433,6 @@ class World : public IEntityWorld {
  int lcgBlockSeed_ = 0;
  int ambientSoundCounter_ = 0;
  std::unordered_set<ChunkPos, ChunkPosHash> activeChunks_;
- std::unique_ptr<ChunkSource> chunkGeneratorSource_;
 
  private:
  void unloadPendingEntities();
@@ -464,5 +464,17 @@ class World : public IEntityWorld {
  };
  void waitForAsyncSave();
  std::shared_ptr<AsyncSaveState> asyncSaveState_ = std::make_shared<AsyncSaveState>();
+ // Must be the last member of World: during both normal destruction and
+ // constructor exception unwinding (when ~World() does not run), this stops all
+ // lighting worker threads BEFORE chunks_/chunkCache_ are destroyed, while
+ // keeping lighting_ itself alive so Chunk::~Chunk()->unload() can safely
+ // unregister from lighting_.
+ struct LightingStopGuard {
+  LightingEngine& engine;
+  ~LightingStopGuard() {
+   engine.stop();
+  }
+ };
+ LightingStopGuard lightingStopGuard_{lighting_};
 };
 } // namespace net::minecraft

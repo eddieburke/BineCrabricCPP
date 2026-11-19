@@ -30,7 +30,8 @@ class OctavePerlinNoiseSampler {
                              int depth,
                              double scaleX,
                              double scaleY,
-                             double scaleZ) const {
+                             double scaleZ,
+                             NoiseGridMode mode = NoiseGridMode::HorizontalShortcut) const {
   const std::size_t size = static_cast<std::size_t>(width * height * depth);
   if(map.size() < size) {
    map.assign(size, 0.0);
@@ -49,7 +50,8 @@ class OctavePerlinNoiseSampler {
                   scaleX * frequency,
                   scaleY * frequency,
                   scaleZ * frequency,
-                  frequency);
+                  frequency,
+                  mode);
    frequency /= 2.0;
   }
   return map;

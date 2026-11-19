@@ -35,20 +35,16 @@ void TntEntityRenderer::render(
   const float scale = 1.0f + pulse * 0.3f;
   matrices.scale(scale, scale, scale);
  }
- const float flash = (1.0f - (static_cast<float>(tnt->fuse) - tickDelta + 1.0f) / 100.0f) * 0.8f;
+ const float flash = tnt->fuse / 5 % 2 == 0
+                         ? (1.0f - (static_cast<float>(tnt->fuse) - tickDelta + 1.0f) / 100.0f) * 0.8f
+                         : 0.0f;
  bindTexture("/terrain.png");
  if(net::minecraft::block::Block* block = net::minecraft::block::Block::BLOCKS[kTntBlockId]) {
+  render::RenderPassScope passScope(render::RenderType::entityCutout());
+  render::core::setEntityColor(1.0f, 1.0f, 1.0f, flash);
   render::core::setDrawPose(matrices.top());
   blockRenderManager_.render(*block, 0, 1.0f);
-  if(tnt->fuse / 5 % 2 == 0) {
-   render::RenderPassScope passScope(render::RenderType::entityCutout());
-   render::core::setLightingEnabled(false);
-   core::blendDstAlpha();
-   render::core::setConstColor(1.0f, 1.0f, 1.0f, flash);
-   render::core::setDrawPose(matrices.top());
-   blockRenderManager_.render(*block, 0, 1.0f);
-   render::core::setConstColor(1.0f, 1.0f, 1.0f, 1.0f);
-  }
+  render::core::setEntityColor(0.0f, 0.0f, 0.0f, 0.0f);
  }
  matrices.pop();
  endDraw();

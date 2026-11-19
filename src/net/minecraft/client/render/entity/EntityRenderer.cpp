@@ -120,10 +120,10 @@ void EntityRenderer::renderOnFire(
   matrices.scale(scale, scale, scale);
   bindTexture("/terrain.png");
   Tessellator& tessellator = Tessellator::INSTANCE;
-  float radius = 0.35f;
-  float offset = 0.0f;
+  float radius = 0.5f;
+  constexpr float offset = 0.0f;
   float remaining = entity.height / scale;
-  const float yBase = static_cast<float>(entity.y - entity.boundingBox.minY);
+  float yBase = static_cast<float>(entity.y - entity.boundingBox.minY);
   if(dispatcher != nullptr) {
    matrices.rotate(-dispatcher->yaw_, 0.0f, 1.0f, 0.0f);
   }
@@ -155,7 +155,7 @@ void EntityRenderer::renderOnFire(
    tessellator.vertex(-radius - offset, 1.4f - yBase, layerOffset, uMin, vMin);
    tessellator.vertex(radius - offset, 1.4f - yBase, layerOffset, uMax, vMin);
    remaining -= 0.45f;
-   offset -= 0.45f;
+   yBase -= 0.45f;
    radius *= 0.9f;
    layerOffset += 0.03f;
    ++layer;

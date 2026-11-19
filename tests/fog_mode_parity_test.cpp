@@ -129,7 +129,7 @@ TEST(FogModeParity, VanillaProgramsUsePlanarFogCoordinate) {
   EXPECT_EQ(source.compare(assignment, std::strlen("viewDistance = fogCoord("), "viewDistance = fogCoord("), 0)
       << entry.path().filename().string() << " must take its fog coordinate from fogCoord()";
  }
- EXPECT_EQ(programsWithFog, 9);
+ EXPECT_EQ(programsWithFog, 12);
 }
 // P-FOGCLASS: Iris hangs the fog mode on the ShaderKey -- the kind of draw -- and never on
 // the program the key resolves to, so SKY_BASIC stays FogMode.OFF even when

@@ -172,6 +172,8 @@ void ChunkSectionSystem::removeColumn(int sectionX, int sectionZ) {
   }
   const auto regionIt = regions_.find(world::regionOf(pos));
   compilePipeline_->releaseSection(*section);
+  std::erase(regularVisibleSections_, section.get());
+  std::erase(scopedVisibleSections_, section.get());
   if(regionIt != regions_.end()) {
    regionIt->second->removeSection(section.get());
    if(regionIt->second->sections().empty()) {
@@ -457,9 +459,10 @@ void ChunkSectionSystem::lightColumn(world::SectionColumn& column) {
  }
 }
 void ChunkSectionSystem::markChunkColumnLit(int chunkX, int chunkZ) {
- // A column enters pendingLit_ once, in chunkAvailable, and leaves it the first time its
- // lighting lands; anything dirtied after that is re-enqueued by setBlocksDirty instead.
  if(pendingLit_.erase(world::ColumnPos{chunkX, chunkZ}) == 0) {
+  if(scene_.distant != nullptr) {
+   const_cast<distant::DistantRenderer*>(scene_.distant)->markChunkDirty(chunkX, chunkZ);
+  }
   return;
  }
  pendingBorderRefresh_.insert(world::ColumnPos{chunkX, chunkZ});
@@ -467,9 +470,30 @@ void ChunkSectionSystem::markChunkColumnLit(int chunkX, int chunkZ) {
  if(it != columns_.end()) {
   lightColumn(it->second);
  }
+ if(scene_.distant != nullptr) {
+  const_cast<distant::DistantRenderer*>(scene_.distant)->markChunkDirty(chunkX, chunkZ);
+ }
 }
 bool ChunkSectionSystem::columnLightingReady(int chunkX, int chunkZ) const {
  return !pendingLit_.contains(world::ColumnPos{chunkX, chunkZ});
+}
+bool ChunkSectionSystem::columnBuilt(int chunkX, int chunkZ) const {
+ if(meshRadius_ < 0 || !world::columnInRange(chunkX, chunkZ, meshCameraX_, meshCameraZ_, meshRadius_)) return true;
+ const auto found = columns_.find(world::ColumnPos{chunkX, chunkZ});
+ if(found == columns_.end()) return false;
+ for(const auto& section : found->second) {
+  if(section == nullptr || !section->built) return false;
+ }
+ return true;
+}
+void ChunkSectionSystem::onSectionUploaded(chunk::ChunkBuilder* section, bool hadNoGeometry) {
+ if(section == nullptr || !hadNoGeometry || section->hasNoGeometry() || !section->visibleIn(frustumStamp_)) {
+  return;
+ }
+ std::vector<chunk::ChunkBuilder*>& visible = currentVisibleSections();
+ if(std::find(visible.begin(), visible.end(), section) == visible.end()) {
+  visible.push_back(section);
+ }
 }
 bool ChunkSectionSystem::nativeRadiusReady(int radius) const {
  if(meshRadius_ < radius || radius < 0) return false;
@@ -496,6 +520,9 @@ void ChunkSectionSystem::markAllChunksLit() {
   const auto it = columns_.find(column);
   if(it != columns_.end()) {
    lightColumn(it->second);
+  }
+  if(scene_.distant != nullptr) {
+   const_cast<distant::DistantRenderer*>(scene_.distant)->markChunkDirty(column.x, column.z);
   }
  }
 }

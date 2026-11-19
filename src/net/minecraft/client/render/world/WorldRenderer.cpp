@@ -414,18 +414,16 @@ void WorldRenderer::markDirty(int minX, int minY, int minZ, int maxX, int maxY, 
    distant_.markChunkDirty(x, z);
 }
 void WorldRenderer::blockUpdate(int x, int y, int z) {
- chunkSections_.blockUpdate(x, y, z);
- distant_.markChunkDirty(x >> 4, z >> 4);
+ markDirty(x - 1, y - 1, z - 1, x + 1, y + 1, z + 1);
 }
 void WorldRenderer::setBlocksDirty(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
- chunkSections_.setBlocksDirty(minX, minY, minZ, maxX, maxY, maxZ);
- for(int z = MathHelper::floorDiv(minZ, 16); z <= MathHelper::floorDiv(maxZ, 16); ++z)
-  for(int x = MathHelper::floorDiv(minX, 16); x <= MathHelper::floorDiv(maxX, 16); ++x)
-   distant_.markChunkDirty(x, z);
+ markDirty(minX - 1, minY - 1, minZ - 1, maxX + 1, maxY + 1, maxZ + 1);
 }
 void WorldRenderer::chunkAvailable(int chunkX, int chunkZ) {
  chunkSections_.chunkAvailable(chunkX, chunkZ);
- distant_.markChunkDirty(chunkX, chunkZ);
+ if(chunkSections_.columnLightingReady(chunkX, chunkZ)) {
+  distant_.markChunkDirty(chunkX, chunkZ);
+ }
 }
 void WorldRenderer::chunkUnloaded(int chunkX, int chunkZ) {
  chunkSections_.chunkUnloaded(chunkX, chunkZ);
@@ -433,7 +431,6 @@ void WorldRenderer::chunkUnloaded(int chunkX, int chunkZ) {
 }
 void WorldRenderer::markChunkColumnLit(int chunkX, int chunkZ) {
  chunkSections_.markChunkColumnLit(chunkX, chunkZ);
- distant_.markChunkDirty(chunkX, chunkZ);
 }
 void WorldRenderer::markAllChunksLit() {
  chunkSections_.markAllChunksLit();
@@ -445,7 +442,8 @@ void WorldRenderer::updateBlockEntity(int x,
                                       int y,
                                       int z,
                                       net::minecraft::block::entity::BlockEntity* blockEntity) {
- chunkSections_.updateBlockEntity(x, y, z, blockEntity);
+ (void)blockEntity;
+ markDirty(x - 1, y - 1, z - 1, x + 1, y + 1, z + 1);
 }
 void WorldRenderer::addParticle(
     const std::string& particle, double x, double y, double z, double velocityX, double velocityY, double velocityZ) {

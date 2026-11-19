@@ -270,20 +270,17 @@ end
 -- Atmospheric refraction (Bennett 1982)
 -- ---------------------------------------------------------------------------
 
+local function bennett_refraction_deg(h)
+  return 1.0 / math.tan((h + 7.31 / (h + 4.4)) * DEG) / 60.0
+end
+
 local function apply_refraction(geometric_altitude_deg)
   local h = geometric_altitude_deg
-  if h < -5.0 then return h end
-  if h > 90.0 then return h end
-
-  local h_rad = h * DEG
-  local R_arcmin
-  if h >= -0.5 then
-    R_arcmin = 1.0 / math.tan(h_rad + 7.31 / (h_rad + 4.4))
-  else
-    R_arcmin = -1.0 / math.tan(h_rad)
+  if h <= -5.0 or h >= 90.0 then return h end
+  if h >= -1.5 then
+    return h + bennett_refraction_deg(h)
   end
-
-  return h + R_arcmin / 60.0
+  return h + bennett_refraction_deg(-1.5) * smoothstep(-5.0, -1.5, h)
 end
 
 -- ---------------------------------------------------------------------------
@@ -626,6 +623,14 @@ end
 -- Public API
 -- ---------------------------------------------------------------------------
 
+function solar.celestial_from_sun_altitude(sun_altitude_deg, hour_angle_rad)
+  local zenith_rad = math.acos(clamp(math.sin(sun_altitude_deg * DEG), -1.0, 1.0))
+  if math.sin(hour_angle_rad) < 0.0 then
+    return ((TWO_PI - zenith_rad) / TWO_PI) % 1.0
+  end
+  return (zenith_rad / TWO_PI) % 1.0
+end
+
 function solar.vanilla_celestial_from_day_tick(day_tick)
   local raw = day_tick / 24000.0 - 0.25
   raw = raw - math.floor(raw)
@@ -633,6 +638,13 @@ function solar.vanilla_celestial_from_day_tick(day_tick)
   local curved = 1.0 - (math.cos(raw * PI) + 1.0) / 2.0
   return raw + (curved - raw) / 3.0
 end
+
+solar.julian_day = julian_day
+solar.julian_centuries = julian_centuries
+solar.true_equator = true_equator
+solar.local_sidereal_time_rad = local_sidereal_time_rad
+solar.horizontal_from_sidereal = horizontal_from_sidereal
+solar.direction_from_azimuth_altitude = direction_from_azimuth_altitude
 
 function solar.color_cycle_phase_from_day_tick(tick)
   return normalize_tick(tick - 6000.0) / 24000.0
@@ -766,7 +778,7 @@ function solar.build_frame(settings, partial_ticks, utc_millis)
   frame.utc_millis = observer_millis
   frame.day_tick = day_tick
   frame.partial_ticks = partial_ticks or 0.0
-  frame.celestial = solar.vanilla_celestial_from_day_tick(day_tick)
+  frame.celestial = solar.celestial_from_sun_altitude(sun_altitude, hour_angle)
   frame.skydome_yaw_deg = normalize_signed_deg(180.0 - sun_azimuth)
   frame.color_cycle_phase = solar.color_cycle_phase_from_day_tick(day_tick)
   frame.sun_angle = sun_angle

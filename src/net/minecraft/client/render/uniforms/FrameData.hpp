@@ -16,4 +16,5 @@ float smoothExponential(float target, float& accumulator, bool& initialized, flo
 [[nodiscard]] float updateCenterDepthSmooth(float windowDepth01, float nearPlane, float farPlane, float frameTime,
                                             float halfLife);
 [[nodiscard]] float updateWetnessSmooth(float rainStrength, float frameTime, float wetnessHalflife);
+[[nodiscard]] int worldTimeFromCelestialAngle(float celestialAngle) noexcept;
 } // namespace net::minecraft::client::render

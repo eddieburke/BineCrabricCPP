@@ -16,6 +16,8 @@
 #endif
 #include <algorithm>
 #include <cstdint>
+#include <thread>
+#include "net/minecraft/util/concurrent/ThreadNames.hpp"
 #include "net/minecraft/world/World.hpp"
 namespace net::minecraft::mod::runtime {
 using namespace net::minecraft::mod::lua;
@@ -48,6 +50,7 @@ void setWorldContextFields(lua_State* state, const World* world) {
  setField(state, "has_world", world != nullptr);
  setField(state, "world_name", world != nullptr ? world->name() : kNoWorldName);
  setField(state, "is_overworld", luaWorldIsOverworld(world));
+ setField(state, "dimension_id", world != nullptr && world->dimension != nullptr ? world->dimension->id : 0);
  setField(state, "is_nether", world != nullptr && world->dimension != nullptr && world->dimension->isNether);
  setField(state,
           "world_seed",
@@ -153,6 +156,27 @@ void setClientTickFields(lua_State* state, const ClientTickEvent& event) {
   setField(state, "world_time", 0.0);
   setField(state, "is_day", true);
  }
+}
+namespace {
+thread_local int tl_luaStateDepth = 0;
+} // namespace
+LuaStateGuard::LuaStateGuard(ModHost::LoadedLuaMod& mod) : lock_(mod.stateMutex, std::defer_lock) {
+ if(util::concurrent::tl_is_main_thread) {
+  mod.mainThreadWaiters.fetch_add(1, std::memory_order_acq_rel);
+  lock_.lock();
+  mod.mainThreadWaiters.fetch_sub(1, std::memory_order_acq_rel);
+ } else {
+  if(tl_luaStateDepth == 0) {
+   while(mod.mainThreadWaiters.load(std::memory_order_acquire) > 0) {
+    std::this_thread::yield();
+   }
+  }
+  lock_.lock();
+ }
+ ++tl_luaStateDepth;
+}
+LuaStateGuard::~LuaStateGuard() {
+ --tl_luaStateDepth;
 }
 bool isClientBuild() {
 #ifdef MINECRAFT_NATIVE_EXPORTS

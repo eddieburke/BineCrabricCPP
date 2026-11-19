@@ -19,7 +19,7 @@ namespace net::minecraft::client::render::distant {
 inline constexpr int kTileBlocks = 64;
 inline constexpr int kTileChunks = kTileBlocks / 16;
 inline constexpr int kMaxStride = 16;
-inline constexpr int kNativeOverlapBlocks = 32;
+inline constexpr int kNativeOverlapBlocks = 64;
 // see third_party/iris/common/src/main/java/net/irisshaders/iris/pipeline/transform/transformer/DHTerrainTransformer.java
 struct DhVertex {
  std::uint16_t x = 0;
@@ -119,10 +119,11 @@ void updatePaletteFromAtlas(BlockPalette& palette, const client::texture::Raster
 struct TileMesh {
  std::vector<DhVertex> opaque;
  std::vector<DhVertex> water;
+ std::vector<DhVertex> ice;
  int minY = 0;
  int maxY = 0;
 };
-void meshTile(const TileCells& cells, const BlockPalette& palette, TileMesh& out);
+void meshTile(const TileCells& cells, const BlockPalette& palette, TileMesh& out, float ambientOcclusion = 1.0f);
 class DistantSlab {
  public:
  static constexpr std::size_t kPageVertices = 256;

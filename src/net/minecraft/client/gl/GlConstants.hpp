@@ -114,6 +114,8 @@ namespace blend {
 inline constexpr int SrcAlpha = 0x0302;
 inline constexpr int SrcColor = 0x0300;
 inline constexpr int DstAlpha = 0x0304;
+inline constexpr int OneMinusDstAlpha = 0x0305;
+inline constexpr int DstColor = 0x0306;
 inline constexpr int Zero = 0x0000;
 inline constexpr int One = 0x0001;
 inline constexpr int OneMinusSrcAlpha = 0x0303;

@@ -17,6 +17,7 @@
 #endif
 #include <chrono>
 #include <fstream>
+#include <limits>
 #include <optional>
 #include <span>
 #include <sstream>
@@ -580,51 +581,39 @@ int luaOn(lua_State* state) {
  LuaApi& api = luaApi();
  ModHost::LoadedLuaMod* mod = currentLuaMod(state);
  const int top = api.gettop(state);
- const bool hasOptions = top >= 3 && api.type(state, 2) == kLuaTTable && api.type(state, 3) == kLuaTFunction;
- const int functionIndex = hasOptions ? 3 : 2;
- const int priorityIndex = hasOptions ? 4 : 3;
- if(mod == nullptr || top < functionIndex || api.type(state, 1) != kLuaTString ||
-    api.type(state, functionIndex) != kLuaTFunction) {
-  runtimeLog(mod != nullptr ? mod->modId : "",
-             "error",
-             "minecraft._subscribe expects (event_name, options?, function, priority?)");
-  api.pushboolean(state, 0);
-  return 1;
+ if(mod == nullptr || top != 4 || api.type(state, 1) != kLuaTString ||
+    api.type(state, 2) != kLuaTTable || api.type(state, 3) != kLuaTFunction) {
+  return LuaArgs(state).fail("minecraft._subscribe expects (event_name, options, function, priority)");
  }
- const std::string eventName = toLowerCopy(luaString(state, 1, ""));
+ const std::string eventName = luaString(state, 1, "");
  const int eventIndex = luaEventIndexOf(eventName);
  if(eventIndex < 0) {
-  runtimeLog(mod->modId, "error", "unknown Lua event: " + eventName);
-  api.pushboolean(state, 0);
-  return 1;
+  return LuaArgs(state).fail("unknown Lua event: " + eventName);
  }
- int priority = 0;
- if(top >= priorityIndex) {
-  int isNumber = 0;
-  const long long value = api.tointegerx(state, priorityIndex, &isNumber);
-  if(isNumber != 0) {
-   priority = static_cast<int>(value);
-  }
+ int isNumber = 0;
+ const long long value = api.tointegerx(state, 4, &isNumber);
+ if(api.type(state, 4) != kLuaTNumber || isNumber == 0 ||
+    value < std::numeric_limits<int>::min() || value > std::numeric_limits<int>::max()) {
+  return LuaArgs(state).fail("hook priority must be a signed 32-bit integer");
  }
- api.pushvalue(state, functionIndex);
+ const int priority = static_cast<int>(value);
+ api.pushvalue(state, 3);
  const int ref = api.ref(state, kLuaRegistryIndex);
  if(ref == kLuaNoRef) {
-  runtimeLog(mod->modId, "error", "failed to retain Lua callback");
-  api.pushboolean(state, 0);
-  return 1;
+  return LuaArgs(state).fail("failed to retain Lua callback");
  }
  ModHost::LoadedLuaMod::Callback callback;
  callback.event = eventName;
  callback.functionRef = ref;
  callback.priority = priority;
  callback.eventIndex = eventIndex;
- if(hasOptions && eventIndex == static_cast<int>(LuaEventId::WorldRender)) {
+ if(eventIndex == static_cast<int>(LuaEventId::WorldRender)) {
   callback.worldRenderStageMask =
       stringFilterMask<std::uint16_t>(state, 2, "stage", 0xFFFFu, worldRenderStageBit);
   callback.worldRenderMomentMask =
       stringFilterMask<std::uint8_t>(state, 2, "moment", 0xFFu, worldRenderMomentBit);
  }
- if(hasOptions && eventIndex == static_cast<int>(LuaEventId::PreEntityRender)) {
+ if(eventIndex == static_cast<int>(LuaEventId::PreEntityRender)) {
   api.getfield(state, 2, "entity_type");
   if(api.type(state, -1) == kLuaTString) {
    callback.entityTypeFilter = luaString(state, -1, "");
@@ -632,7 +621,9 @@ int luaOn(lua_State* state) {
   api.settop(state, -2);
  }
  mod->callbacks.push_back(std::move(callback));
- invalidateLuaHookCache();
+ if(mod->generationOwner == nullptr) {
+  invalidateLuaHookCache();
+ }
  api.pushboolean(state, 1);
  return 1;
 }

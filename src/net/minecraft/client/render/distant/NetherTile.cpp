@@ -98,6 +98,7 @@ bool extractNetherTile(const ChunkLookup& chunks, int tileX, int tileZ, int stri
 void meshNetherTile(const NetherTileCells& cells, const BlockPalette& palette, TileMesh& out) {
  out.opaque.clear();
  out.water.clear();
+ out.ice.clear();
  out.minY = kNetherHeight;
  out.maxY = 0;
  const int dimensions[3] = {cells.side, kNetherHeight, cells.side};

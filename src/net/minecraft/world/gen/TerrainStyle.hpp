@@ -6,7 +6,6 @@ namespace net::minecraft::world::gen {
 enum class TerrainStyle {
  Beta = 0,
  Alpha,
- Modern,
 };
 [[nodiscard]] std::string_view terrainStyleName(TerrainStyle style);
 [[nodiscard]] TerrainStyle parseTerrainStyle(std::string_view name);

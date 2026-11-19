@@ -168,10 +168,12 @@ int luaWorldGetBlockCollisions(lua_State* state) {
 int luaWorldSampleGrid(lua_State* state) {
  LuaApi& api = luaApi();
  LuaArgs args(state);
- int signedSeed = 0;
+ int seedIsInteger = 0;
+ const long long signedSeed = api.tointegerx(state, 1, &seedIsInteger);
  int requestedCenterX = 0;
  int requestedCenterZ = 0;
- if(!args.integer(1, signedSeed) || !args.integer(2, requestedCenterX) || !args.integer(3, requestedCenterZ) ||
+ if(api.type(state, 1) != kLuaTNumber || seedIsInteger == 0 ||
+    !args.integer(2, requestedCenterX) || !args.integer(3, requestedCenterZ) ||
     (args.count() >= 4 && !args.table(4))) {
   return args.fail("minecraft.world.sample expects (seed, center_x, center_z, options?)");
  }
@@ -419,8 +421,9 @@ int luaTextureCreate(lua_State* state) {
  const int textureId = net::minecraft::registry::TextureRegistry::getOrRegisterTexture(syntheticPath);
  net::minecraft::registry::TextureRegistry::seedResolvedTexture(textureId, glId, width, height);
  mod->ownedTextureIds.push_back(textureId);
- api.createtable(state, 0, 3);
+ api.createtable(state, 0, 4);
  setField(state, "id", textureId);
+ setField(state, "gl_id", glId);
  setField(state, "width", width);
  setField(state, "height", height);
  return 1;
@@ -560,9 +563,63 @@ int luaResolveSeed(lua_State* state) {
  api.pushinteger(state, static_cast<std::int64_t>(net::minecraft::util::resolveSeedText(text)));
  return 1;
 }
+namespace {
+constexpr std::size_t kSharedEntryLimit = 8192;
+LoadedLuaMod* sharedOwner(lua_State* state) {
+ LoadedLuaMod* mod = modFromUpvalue(state);
+ if(mod != nullptr && mod->generationOwner != nullptr) {
+  return mod->generationOwner;
+ }
+ return mod;
+}
+int luaSharedGet(lua_State* state) {
+ LuaApi& api = luaApi();
+ LoadedLuaMod* owner = sharedOwner(state);
+ if(owner == nullptr || api.type(state, 1) != kLuaTString) {
+  return LuaArgs(state).fail("minecraft.shared.get expects a string key");
+ }
+ std::size_t length = 0;
+ const char* data = api.tolstring(state, 1, &length);
+ const std::string key(data, length);
+ const std::lock_guard lock(owner->sharedMutex);
+ const auto it = owner->shared.find(key);
+ if(it == owner->shared.end()) {
+  api.pushnil(state);
+  return 1;
+ }
+ api.pushlstring(state, it->second.data(), it->second.size());
+ return 1;
+}
+int luaSharedPut(lua_State* state) {
+ LuaApi& api = luaApi();
+ LoadedLuaMod* owner = sharedOwner(state);
+ if(owner == nullptr || api.type(state, 1) != kLuaTString || api.type(state, 2) != kLuaTString) {
+  return LuaArgs(state).fail("minecraft.shared.put expects a string key and a string value");
+ }
+ std::size_t keyLength = 0;
+ const char* keyData = api.tolstring(state, 1, &keyLength);
+ std::size_t valueLength = 0;
+ const char* valueData = api.tolstring(state, 2, &valueLength);
+ std::string key(keyData, keyLength);
+ const std::lock_guard lock(owner->sharedMutex);
+ const auto [it, inserted] = owner->shared.insert_or_assign(key, std::string(valueData, valueLength));
+ if(inserted) {
+  owner->sharedOrder.push_back(std::move(key));
+  while(owner->sharedOrder.size() > kSharedEntryLimit) {
+   owner->shared.erase(owner->sharedOrder.front());
+   owner->sharedOrder.pop_front();
+  }
+ }
+ return 0;
+}
+} // namespace
 void installGenericModApi(lua_State* state, [[maybe_unused]] LoadedLuaMod& mod) {
  LuaApi& api = luaApi();
  const int root = api.gettop(state);
+ api.createtable(state, 0, 2);
+ bindModFunction(state, &mod, "get", luaSharedGet);
+ bindModFunction(state, &mod, "put", luaSharedPut);
+ api.setfield(state, root, "shared");
  pushFunctionTable(state,
                    {
                        {"resolve_seed", luaResolveSeed},
@@ -580,7 +637,7 @@ void installGenericModApi(lua_State* state, [[maybe_unused]] LoadedLuaMod& mod) 
  api.setfield(state, root, "registry");
  api.getfield(state, root, "world");
  bindFunctions(state,
-               {{"sample", luaWorldSampleGrid},
+               {{"sample", checkedLuaCall<luaWorldSampleGrid>},
                 {"sample_channels", luaWorldSampleChannels},
                 {"get_block_collisions", luaWorldGetBlockCollisions}});
  api.settop(state, root);

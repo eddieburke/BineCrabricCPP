@@ -122,7 +122,9 @@ class ChunkSectionSystem {
  void markChunkColumnLit(int chunkX, int chunkZ);
  void markAllChunksLit();
  [[nodiscard]] bool columnLightingReady(int chunkX, int chunkZ) const;
+ [[nodiscard]] bool columnBuilt(int chunkX, int chunkZ) const;
  [[nodiscard]] bool nativeRadiusReady(int radius) const;
+ void onSectionUploaded(chunk::ChunkBuilder* section, bool hadNoGeometry);
  void notifyAmbientDarknessChanged();
  void drainAmbientInvalidations(int maxSections);
  void updateBlockEntity(int x, int y, int z, net::minecraft::block::entity::BlockEntity* blockEntity);

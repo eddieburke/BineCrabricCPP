@@ -14,6 +14,7 @@ void PackInstance::clearGpuResources() {
  images.clear();
  noiseTexture.reset();
  noiseResolution = 0;
+ lodCoverageTexture = 0;
  for(int i = 0; i < 2; ++i) {
   depthTextures[i].reset();
   depthTextureW[i] = 0;

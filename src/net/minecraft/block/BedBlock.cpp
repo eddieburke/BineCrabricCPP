@@ -164,7 +164,7 @@ std::optional<Vec3i> BedBlock::findWakeUpPosition(World* world, int x, int y, in
   const int maxZ = minZ + 2;
   for(int bx = minX; bx <= maxX; ++bx) {
    for(int bz = minZ; bz <= maxZ; ++bz) {
-    if(world->shouldSuffocate(bx, y - 1, bz) || !world->isAir(bx, y, bz) || !world->isAir(bx, y + 1, bz)) {
+    if(!world->shouldSuffocate(bx, y - 1, bz) || !world->isAir(bx, y, bz) || !world->isAir(bx, y + 1, bz)) {
      continue;
     }
     if(remainingSkip > 0) {

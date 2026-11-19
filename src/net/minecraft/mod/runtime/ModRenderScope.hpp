@@ -1,5 +1,7 @@
 #pragma once
+#include <array>
 #include <string_view>
+#include <utility>
 #ifdef MINECRAFT_NATIVE_EXPORTS
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
@@ -63,6 +65,63 @@ class ScopedModWorldDrawContext {
   return ModDrawLayer::Textured;
  }
  return ModDrawLayer::Auto;
+}
+struct ModBlendMode {
+ bool enabled = false;
+ int src = 0x0302;
+ int dst = 0x0303;
+};
+[[nodiscard]] inline int parseModBlendFactor(std::string_view name, int fallback) noexcept {
+ static constexpr std::array<std::pair<std::string_view, int>, 10> kFactors = {{
+     {"zero", 0x0000},
+     {"one", 0x0001},
+     {"src_color", 0x0300},
+     {"one_minus_src_color", 0x0301},
+     {"src_alpha", 0x0302},
+     {"one_minus_src_alpha", 0x0303},
+     {"dst_alpha", 0x0304},
+     {"one_minus_dst_alpha", 0x0305},
+     {"dst_color", 0x0306},
+     {"one_minus_dst_color", 0x0307},
+ }};
+ for(const auto& [key, value] : kFactors) {
+  if(name == key) {
+   return value;
+  }
+ }
+ return fallback;
+}
+[[nodiscard]] inline ModBlendMode parseModBlendMode(std::string_view mode, bool enabledFallback = false) noexcept {
+ if(mode == "none" || mode == "opaque" || mode == "off") {
+  return {false, 0x0302, 0x0303};
+ }
+ static constexpr std::array<std::pair<std::string_view, ModBlendMode>, 16> kPresets = {{
+     {"alpha", {true, 0x0302, 0x0303}},
+     {"normal", {true, 0x0302, 0x0303}},
+     {"src_over", {true, 0x0302, 0x0303}},
+     {"additive", {true, 0x0302, 0x0001}},
+     {"add", {true, 0x0302, 0x0001}},
+     {"additive_one", {true, 0x0001, 0x0001}},
+     {"plus", {true, 0x0001, 0x0001}},
+     {"linear_add", {true, 0x0001, 0x0001}},
+     {"premultiplied", {true, 0x0001, 0x0303}},
+     {"premult", {true, 0x0001, 0x0303}},
+     {"screen", {true, 0x0307, 0x0001}},
+     {"screen_alpha", {true, 0x0302, 0x0301}},
+     {"multiply", {true, 0x0306, 0x0000}},
+     {"multiply_alpha", {true, 0x0306, 0x0303}},
+     {"dst_alpha", {true, 0x0302, 0x0304}},
+     {"inverse_color", {true, 0x0000, 0x0301}},
+ }};
+ for(const auto& [key, preset] : kPresets) {
+  if(mode == key) {
+   return preset;
+  }
+ }
+ if(mode == "invert" || mode == "difference_invert") {
+  return {true, 0x0307, 0x0301};
+ }
+ return {enabledFallback, 0x0302, 0x0303};
 }
 [[nodiscard]] inline std::string_view modDrawProgramKey(bool textured,
                                                         bool blend,

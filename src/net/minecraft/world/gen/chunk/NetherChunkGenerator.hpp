@@ -59,7 +59,7 @@ class NetherChunkGenerator : public ChunkSource {
   world::gen::runVanillaStage(
       world::gen::ChunkStage::Carver, context, [&] { cave_.place(this, world_, seed_, chunkX, chunkZ, chunk); });
   if(world_ != nullptr) {
-   chunk.populateHeightMap();
+   chunk.populateHeightMap(false);
   }
   scratchChunk_.emplace(std::move(chunk));
   return *scratchChunk_;
@@ -68,7 +68,7 @@ class NetherChunkGenerator : public ChunkSource {
   return true;
  }
  void decorate(ChunkSource* source, int chunkX, int chunkZ) override {
-  block::FallingBlock::fallInstantly = true;
+  const block::FallingBlock::InstantFallScope instantFall;
   const int blockOriginX = chunkX * 16;
   const int blockOriginZ = chunkZ * 16;
   Chunk* chunk =
@@ -128,7 +128,6 @@ class NetherChunkGenerator : public ChunkSource {
     PlantPatchFeature(Block::RED_MUSHROOM->id).generate(world_, random_, featureX, featureY, featureZ);
    }
   });
-  block::FallingBlock::fallInstantly = false;
  }
  bool save(bool /*saveEntities*/, SaveProgressCallback /*progress*/) override {
   return true;

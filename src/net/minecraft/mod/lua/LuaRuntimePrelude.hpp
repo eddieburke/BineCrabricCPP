@@ -35,20 +35,30 @@ package.searchers[2] = function(name)
 end
 
 function minecraft.on(event_name, options, callback)
+  assert(type(event_name) == "string", "minecraft.on expects an event name")
   assert(type(options) == "table", "minecraft.on expects (event, options, callback)")
   assert(type(callback) == "function", "minecraft.on expects (event, options, callback)")
-  -- The filter is flattened once here, not walked with pairs() on every dispatch:
-  -- entity_render and world_render fire per entity per frame.
+  assert(options.when == nil or type(options.when) == "function", "hook when must be a function")
+  assert(options.once == nil or type(options.once) == "boolean", "hook once must be a boolean")
+  local priority = options.priority
+  if priority == nil then priority = 0 end
+  assert(math.type(priority) == "integer" and priority >= -2147483648 and priority <= 2147483647,
+    "hook priority must be a signed 32-bit integer")
   local keys, wanted, count = {}, {}, 0
   for key, value in pairs(options) do
     if key ~= "once" and key ~= "priority" and key ~= "when" then
+      if type(value) == "table" then
+        local copy = {}
+        for filter_key, filter_value in pairs(value) do copy[filter_key] = filter_value end
+        value = copy
+      end
       count = count + 1
       keys[count], wanted[count] = key, value
     end
   end
   local when, once = options.when, options.once
   local active = true
-  return subscribe(event_name, options, function(event)
+  local ok, err = subscribe(event_name, options, function(event)
     if not active then return event end
     for index = 1, count do
       local want = wanted[index]
@@ -71,10 +81,13 @@ function minecraft.on(event_name, options, callback)
       end
     end
     if when ~= nil and when(event) ~= true then return event end
-    local result = callback(event)
     if once then active = false end
-    return result or event
-  end, tonumber(options.priority) or 0)
+    local result = callback(event)
+    assert(result == nil or result == event, "hook callbacks must mutate their event and return nil or that event")
+    return event
+  end, priority)
+  assert(ok, err)
+  return true
 end
 
 local function checked(register, spec)
@@ -107,7 +120,7 @@ function util.clamp(value, minimum, maximum) return math.max(minimum, math.min(m
 function util.in_rect(x, y, left, top, width, height)
   return x >= left and x < left + width and y >= top and y < top + height
 end
-function util.real_world(event) return event ~= nil and event.mod_generation ~= false end
+function util.real_world(event) return event ~= nil and event.mod_generation == true end
 function util.parse_boolean(value)
   if value == nil then return nil end
   value = tostring(value):match("^%s*(.-)%s*$"):lower()

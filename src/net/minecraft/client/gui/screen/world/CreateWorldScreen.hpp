@@ -35,6 +35,11 @@ class CreateWorldScreen : public screen::Screen {
  [[nodiscard]] const screen::ScreenFactory& parentScreenFactory() const {
   return parentFactory_;
  }
+ [[nodiscard]] screen::ScreenFactory getReopenFactory() const override {
+  return [parent = parentFactory_, name = worldNameFieldText(), seed = seedFieldText()]() {
+   return std::make_unique<CreateWorldScreen>(parent, name, seed);
+  };
+ }
 
  private:
  void initTextFields();

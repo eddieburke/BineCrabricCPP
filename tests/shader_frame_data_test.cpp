@@ -213,4 +213,11 @@ TEST(VanillaShaderAbi, EntityProgramsUseEntityLightingRig) {
   EXPECT_EQ(source.find("faceShade("), std::string::npos) << name;
  }
 }
+TEST(ShaderFrameData, DerivesWorldTimeFromClaimedCelestialAngle) {
+ EXPECT_EQ(client::render::worldTimeFromCelestialAngle(0.0f), 6000);
+ EXPECT_EQ(client::render::worldTimeFromCelestialAngle(0.5f), 18000);
+ EXPECT_EQ(client::render::worldTimeFromCelestialAngle(0.21549116f), 12000);
+ EXPECT_EQ(client::render::worldTimeFromCelestialAngle(0.25f), 12785);
+ EXPECT_EQ(client::render::worldTimeFromCelestialAngle(0.75f), 23215);
+}
 } // namespace net::minecraft::test

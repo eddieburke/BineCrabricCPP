@@ -319,7 +319,7 @@ TEST(DistantTile, SnowLayerCapsTheTopWithoutPaintingWalls) {
  EXPECT_EQ(run.layers[0].block, kGrass);
 }
 
-TEST(DistantMesher, CoarseWallKeepsSurfaceMaterialAndContactShade) {
+TEST(DistantMesher, CoarseWallKeepsSurfaceMaterialWithReducedCornerOcclusion) {
  TileCells cells = flatCells(4, 64, kStone);
  ColumnRun& run = cells.at(5, 5).runs[0];
  run.top = 68;
@@ -338,7 +338,7 @@ TEST(DistantMesher, CoarseWallKeepsSurfaceMaterialAndContactShade) {
   const int lit = static_cast<int>(palette.entries[kGrass].side[0] * 0.6f + 0.5f);
   EXPECT_EQ(quad[1].color[0], lit);
   EXPECT_EQ(quad[0].y, 64);
-  EXPECT_EQ(quad[0].color[0], static_cast<int>(lit * 0.7f + 0.5f));
+  EXPECT_EQ(quad[0].color[0], static_cast<int>(lit * 0.975f + 0.5f));
  }
  EXPECT_EQ(walls, 1);
 }
@@ -349,7 +349,7 @@ TEST(DistantMesher, VertexLayoutAndWater) {
  cells.at(20, 20).waterTop = 66;
  cells.at(20, 20).runs[0].top = 60;
  TileMesh mesh;
- meshTile(cells, defaultPalette(), mesh);
+ meshTile(cells, defaultPalette(), mesh, 0.0f);
  bool sawNegZ = false;
  bool sawPosZ = false;
  bool sawNegX = false;
@@ -407,6 +407,91 @@ TEST(DistantMesher, WindingIsCounterClockwiseFromOutside) {
   const float* e = expected[q[0].normal];
   EXPECT_GT(n[0] * e[0] + n[1] * e[1] + n[2] * e[2], 0.0f);
  }
+}
+
+TEST(DistantMesher, ContactShadowSoftensWithStrideWithoutChangingLight) {
+ for(const int stride : {1, 4, 16}) {
+  TileCells cells = flatCells(stride, 64, kStone);
+  cells.at(1, 1).runs[0].top = static_cast<std::uint8_t>(64 + stride);
+  for(const float strength : {0.0f, 0.5f, 1.0f}) {
+   TileMesh mesh;
+   meshTile(cells, defaultPalette(), mesh, strength);
+   bool found = false;
+   for(std::size_t i = 0; i < mesh.opaque.size(); i += 4) {
+    const auto* q = mesh.opaque.data() + i;
+    if(q[0].normal != DhNormal::NegX || q[0].x != stride) continue;
+    found = true;
+    EXPECT_EQ(q[0].color[0], static_cast<int>(75.0f * (1.0f - 0.1f * strength / stride) + 0.5f));
+    EXPECT_EQ(q[1].color[0], 75);
+    EXPECT_EQ(q[0].meta, 0xA5);
+    EXPECT_EQ(q[1].meta, 0xA5);
+   }
+   EXPECT_TRUE(found);
+  }
+ }
+}
+
+TEST(DistantTile, IceRetainsItsOwnRunAboveSolidAndWaterWithoutPaintingTheBed) {
+ for(const bool water : {false, true}) {
+  ChunkGrid grid;
+  grid.fillTile(0, 0, 60);
+  for(auto& [key, chunk] : grid.chunks) {
+   for(int z = 0; z < 16; ++z) {
+    for(int x = 0; x < 16; ++x) {
+     for(int y = 60; y < 63; ++y)
+      chunk->blocks[(x << 11) | (z << 7) | y] = water ? kWater : kStone;
+     chunk->blocks[(x << 11) | (z << 7) | 63] = 79;
+     chunk->heightmap[(z << 4) | x] = 64;
+    }
+   }
+  }
+  for(const int stride : {1, 4, 16}) {
+   TileCells cells;
+   ASSERT_TRUE(extractTile(grid.lookup(), 0, 0, stride, cells));
+   const auto& cell = cells.at(0, 0);
+   ASSERT_EQ(cell.runCount, 2);
+   EXPECT_EQ(cell.runs[0].block, 79);
+   EXPECT_EQ(cell.runs[0].top, 64);
+   EXPECT_EQ(cell.runs[0].bottom, 63);
+   EXPECT_EQ(cell.runs[1].top, water ? 60 : 63);
+   EXPECT_EQ(cell.waterTop, 0);
+   TileMesh mesh;
+   meshTile(cells, defaultPalette(), mesh);
+   ASSERT_FALSE(mesh.ice.empty());
+   ASSERT_FALSE(mesh.opaque.empty());
+   EXPECT_TRUE(mesh.water.empty());
+   for(const auto& vertex : mesh.ice) {
+    EXPECT_EQ(vertex.material, DhMaterial::Unknown);
+    EXPECT_EQ(vertex.color[3], 160);
+    EXPECT_GE(vertex.y, 63);
+    EXPECT_LE(vertex.y, 64);
+    EXPECT_EQ(vertex.meta & 0xFF00u, 0u);
+   }
+   for(const auto& vertex : mesh.opaque) EXPECT_LE(vertex.y, water ? 60 : 63);
+  }
+ }
+}
+
+TEST(DistantMesher, IceDoesNotHideTheAdjacentOpaqueCliff) {
+ TileCells cells = flatCells(1, 64, kStone);
+ cells.at(10, 10).runs[0].top = 70;
+ auto& ice = cells.at(9, 10);
+ ice.runCount = 2;
+ ice.runs[1] = ice.runs[0];
+ ice.runs[0].block = 79;
+ ice.runs[0].top = 68;
+ ice.runs[0].bottom = 64;
+ TileMesh mesh;
+ meshTile(cells, defaultPalette(), mesh);
+ int exposedHeight = 0;
+ for(std::size_t i = 0; i < mesh.opaque.size(); i += 4) {
+  const auto* q = mesh.opaque.data() + i;
+  if(q[0].normal != DhNormal::NegX || q[0].x != 10 || q[0].z != 11) continue;
+  exposedHeight += q[1].y - q[0].y;
+ }
+ EXPECT_EQ(exposedHeight, 6);
+ ASSERT_FALSE(mesh.ice.empty());
+ for(const auto& vertex : mesh.ice) EXPECT_LT(vertex.color[3], 255);
 }
 
 class DistantSlabTest : public ::testing::Test {

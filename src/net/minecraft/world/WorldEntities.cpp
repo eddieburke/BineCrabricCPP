@@ -252,7 +252,7 @@ entity::LivingEntity* World::spawnMob(
   return true;
  });
 }
-void World::addPlayer(PlayerEntity* player) {
+void World::addPlayer(PlayerEntity* player, bool loadSavedPlayerData) {
  if(player == nullptr) {
   return;
  }
@@ -268,7 +268,7 @@ void World::addPlayer(PlayerEntity* player) {
    }
    player->readNbt(*playerNbt);
    properties_.clearPlayerNbt();
-  } else if(!isRemote_) {
+  } else if(!isRemote_ && loadSavedPlayerData) {
    if(auto* alphaStorage = dynamic_cast<AlphaWorldStorage*>(dimensionData_); alphaStorage != nullptr) {
     alphaStorage->loadPlayerData(*player);
     if(ChunkSource* chunkSource = getChunkSource(); chunkSource != nullptr) {

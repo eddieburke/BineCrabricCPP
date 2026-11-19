@@ -68,7 +68,7 @@ int Biome::getSkyColor(float brightness) const {
  if(f > 1.0f) {
   f = 1.0f;
  }
- const float hue = 0.62222224f - f * 0.05f;
+ const float hue = 0.6222222f - f * 0.05f;
  const float saturation = 0.5f + f * 0.1f;
  const float value = 1.0f;
  const float wrappedHue = hue - std::floor(hue);
@@ -113,9 +113,9 @@ int Biome::getSkyColor(float brightness) const {
   blue = q;
   break;
  }
- const int r = static_cast<int>(red * 255.0f) & 0xFF;
- const int g = static_cast<int>(green * 255.0f) & 0xFF;
- const int b = static_cast<int>(blue * 255.0f) & 0xFF;
+ const int r = static_cast<int>(red * 255.0f + 0.5f) & 0xFF;
+ const int g = static_cast<int>(green * 255.0f + 0.5f) & 0xFF;
+ const int b = static_cast<int>(blue * 255.0f + 0.5f) & 0xFF;
  return (r << 16) | (g << 8) | b;
 }
 const std::vector<SpawnListEntry>& Biome::getSpawnableEntities(int creatureType) const {

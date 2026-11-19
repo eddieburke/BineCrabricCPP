@@ -19,6 +19,7 @@
 #include "net/minecraft/world/biome/source/BiomeSource.hpp"
 #include "net/minecraft/world/biome/Biome.hpp"
 #include "net/minecraft/world/chunk/Chunk.hpp"
+#include "net/minecraft/world/light/LightType.hpp"
 namespace net::minecraft::test {
 namespace {
 namespace option = client::option;
@@ -155,7 +156,7 @@ TEST(LodRegression, InvalidSettingsAreBoundedAndUnsupportedPacksRetainNativeCove
  auto settings = option::renderSettings(options);
  EXPECT_EQ(settings.nativeChunkRadius, 8);
  EXPECT_EQ(settings.lodQuality, 2);
- EXPECT_EQ(settings.lodMemoryMiB, 512);
+ EXPECT_EQ(settings.lodMemoryMiB, 1024);
  client::render::PackDefinition pack;
  pack.programs["gbuffers_terrain"] = {};
  option::applyShaderPack(settings, pack);
@@ -269,6 +270,28 @@ TEST(LodRegression, InvalidStridesFailBeforeReadingChunks) {
  const ChunkLookup lookup = [](int, int) -> const Chunk* { ADD_FAILURE(); return nullptr; };
  for(const int stride : {0, -1, 3, 32}) EXPECT_FALSE(extractTile(lookup, 0, 0, stride, cells));
 }
+TEST(LodRegression, IceUsesAtlasTransparencyAndKeepsItsOwnMaterial) {
+ client::texture::RasterImage atlas;
+ atlas.width = atlas.height = 256;
+ atlas.argb.assign(256u * 256u, 0xFF204060u);
+ for(int y = 64; y < 80; ++y) {
+  for(int x = 48; x < 64; ++x)
+   atlas.argb[static_cast<std::size_t>(y * 256 + x)] = y < 72 ? 0x406080A0u : 0xC06080A0u;
+ }
+ auto palette = defaultPalette();
+ updatePaletteFromAtlas(palette, atlas);
+ const auto& ice = palette.entries[79];
+ EXPECT_TRUE(ice.translucent);
+ EXPECT_EQ(ice.material, DhMaterial::Unknown);
+ for(const auto* face : {ice.top, ice.side}) {
+  EXPECT_EQ(face[0], 96);
+  EXPECT_EQ(face[1], 128);
+  EXPECT_EQ(face[2], 160);
+  EXPECT_EQ(face[3], 128);
+ }
+ EXPECT_EQ(palette.entries[1].top[3], 255);
+ EXPECT_EQ(palette.entries[80].material, DhMaterial::Snow);
+}
 TEST(LodRegression, PartialTilesKeepReadyColumnsAndSkirtOnlyMissingCells) {
  LodColumns grid;
  grid.chunks[7].reset();
@@ -313,6 +336,32 @@ TEST(LodRegression, PressureAndQualityRemainOrderedAcrossDistanceBands) {
     ASSERT_LE(strides[1], strides[2]);
    }
   }
+ }
+}
+TEST(LodRegression, BlockLitUndergroundOpeningSplitsColumnRunsAndWaterSurfaceEncodesHeightOffset) {
+ LodColumns grid;
+ auto& chunk = *grid.chunks[7];
+ for(int y = 30; y <= 34; ++y) {
+  chunk.blocks[y] = 0;
+  chunk.setLight(LightType::Block, 0, y, 0, 12);
+ }
+ chunk.blocks[63] = 9;
+ chunk.heightmap[0] = 63;
+ TileCells cells;
+ ASSERT_TRUE(extractTile(grid.lookup(), 0, 0, 1, cells));
+ const auto& cell = cells.at(0, 0);
+ ASSERT_EQ(cell.runCount, 2);
+ EXPECT_EQ(cell.runs[0].top, 63);
+ EXPECT_EQ(cell.runs[0].bottom, 35);
+ EXPECT_EQ(cell.runs[1].top, 30);
+ EXPECT_EQ(cell.runs[1].bottom, 0);
+ EXPECT_EQ(cell.waterTop, 64);
+ TileMesh mesh;
+ meshTile(cells, defaultPalette(), mesh);
+ ASSERT_EQ(mesh.water.size(), 4u);
+ for(const auto& vertex : mesh.water) {
+  EXPECT_EQ(vertex.y, 64);
+  EXPECT_NE(vertex.meta & 0x0800u, 0u);
  }
 }
 }

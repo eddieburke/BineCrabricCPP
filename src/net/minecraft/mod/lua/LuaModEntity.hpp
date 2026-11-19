@@ -53,6 +53,7 @@ class LuaModEntity : public entity::Entity {
  };
 
   private:
+  void applyDataSize();
   int clientInterpolationSteps_ = 0;
  double clientX_ = 0.0;
  double clientY_ = 0.0;

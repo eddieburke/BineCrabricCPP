@@ -1,5 +1,6 @@
 local solar = require("scripts.solar")
 local sky_render = require("scripts.sky_render")
+local planets = require("scripts.planets")
 local places = require("scripts.places")
 local globe_ui = require("scripts.globe_ui")
 local settings_ui = require("scripts.settings_ui")
@@ -315,10 +316,8 @@ local function register()
   }, function(event)
     local frame = current_solar_frame(event.tick_delta)
     local sun_angle = (frame.celestial + 0.25) % 1.0
-    local shadow_angle = sun_angle
-    if not frame.is_daylight then
-      shadow_angle = (sun_angle + 0.5) % 1.0
-    end
+    local is_day = sun_angle < 0.5
+    local shadow_angle = is_day and sun_angle or ((sun_angle + 0.5) % 1.0)
     event.celestial_angle = frame.celestial
     event.sun_angle = sun_angle
     event.shadow_angle = shadow_angle
@@ -329,7 +328,7 @@ local function register()
     event.moon_y = frame.moon_direction_y
     event.moon_z = frame.moon_direction_z
     event.moon_phase = math.floor(((frame.moon_phase + 0.5) % 1.0) * 8.0 + 0.5) % 8
-    event.is_day = frame.is_daylight
+    event.is_day = is_day
     event.pole_altitude_deg = config.latitude
     event.sidereal_angle = frame.sidereal_turns
     event.override_directions = true
@@ -528,6 +527,30 @@ local function register()
     event.astronomy_utc_millis = frame.utc_millis
     event.observer_latitude_deg = config.latitude
     event.observer_longitude_deg = config.longitude
+    return event
+  end)
+
+  minecraft.on("world_render", {
+    stage = "stars",
+    moment = "after",
+    is_overworld = true,
+    priority = 900,
+    when = function()
+      return config.planets_enabled == true
+    end,
+  }, function(event)
+    if event.shader_pack_active then return event end
+    local frame = current_solar_frame(event.tick_delta)
+    local weather_alpha = 1.0 - (event.rain_strength or 0.0)
+    local sky_darkness_override = nil
+    if not (realtime_active() and config.drive_sun) then
+      local star_b = event.star_brightness or 0.0
+      sky_darkness_override = clamp(star_b * 2.5, 0.0, 1.0)
+    end
+    local visible, count = planets.collect(config, frame, weather_alpha, sky_darkness_override)
+    if count > 0 then
+      sky_render.draw_planets(event, frame, visible, count, config.planet_scale)
+    end
     return event
   end)
 

@@ -63,7 +63,7 @@ Chunk& SkyChunkGenerator::getChunk(int chunkX, int chunkZ) {
  world::gen::runVanillaStage(
      world::gen::ChunkStage::Carver, context, [&] { cave_.place(this, world_, seed_, chunkX, chunkZ, chunk); });
  if(world_ != nullptr) {
-  chunk.populateHeightMap();
+  chunk.populateHeightMap(false);
  }
  scratchChunk_.emplace(std::move(chunk));
  return *scratchChunk_;
@@ -72,7 +72,7 @@ bool SkyChunkGenerator::isChunkLoaded(int /*chunkX*/, int /*chunkZ*/) const {
  return true;
 }
 void SkyChunkGenerator::decorate(ChunkSource* source, int chunkX, int chunkZ) {
- block::FallingBlock::fallInstantly = true;
+ const block::FallingBlock::InstantFallScope instantFall;
  BiomeSource* biomeSource = activeBiomeSource();
  const std::uint64_t worldSeed = world_ != nullptr ? world_->getSeed() : seed_;
  (void)world::gen::seedPopulationRandom(random_, worldSeed, chunkX, chunkZ);
@@ -92,7 +92,6 @@ void SkyChunkGenerator::decorate(ChunkSource* source, int chunkX, int chunkZ) {
   world::gen::feature::decorateSkyChunk(
       world_, random_, *biomeSource, forestNoise_, chunkX, chunkZ, decorateTemperatures_);
  });
- block::FallingBlock::fallInstantly = false;
 }
 bool SkyChunkGenerator::save(bool /*saveEntities*/, SaveProgressCallback /*progress*/) {
  return true;

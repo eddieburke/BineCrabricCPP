@@ -97,6 +97,20 @@ bool installLuaPrelude(lua_State* state, std::string& error) {
  api.settop(state, 0);
  return false;
 }
+bool runLuaFile(lua_State* state, const std::filesystem::path& path, std::string& error) {
+ LuaApi& api = luaApi();
+ const std::string script = path.string();
+ int status = api.loadfilex(state, script.c_str(), "t");
+ if(status == kLuaOk) {
+  status = api.pcallk(state, 0, 0, 0, 0, nullptr);
+ }
+ if(status == kLuaOk) {
+  return true;
+ }
+ const char* message = api.tolstring(state, -1, nullptr);
+ error = message != nullptr ? message : "Lua script failed to load";
+ return false;
+}
 bool loadLuaMod(ModPackage& info, std::vector<std::shared_ptr<ModHost::LoadedLuaMod>>& loadedMods) {
  if(info.entry.empty()) {
   info.active = info.resourceOverlay;
@@ -162,6 +176,29 @@ bool loadLuaMod(ModPackage& info, std::vector<std::shared_ptr<ModHost::LoadedLua
   runtimeLog(info.id, "error", info.error);
   return false;
  }
+ if(!info.generationEntry.empty()) {
+  if(!isSafeRelativePath(info.generationEntry) || !toLowerCopy(info.generationEntry).ends_with(".lua")) {
+   info.error = "Unsafe or non-Lua generation_entry path";
+  } else {
+   mod->generationScript = info.rootPath / std::filesystem::path(info.generationEntry);
+   std::shared_ptr<ModHost::LoadedLuaMod> first = createGenerationState(*mod, info.error);
+   if(first != nullptr) {
+    for(const ModHost::LoadedLuaMod::Callback& callback : first->callbacks) {
+     if(callback.eventIndex == static_cast<int>(LuaEventId::ChunkGeneration)) {
+      mod->generationPriorities.push_back(callback.priority);
+     }
+    }
+    mod->generationStates.emplace(std::this_thread::get_id(), std::move(first));
+    info.error.clear();
+   }
+  }
+  if(!info.error.empty()) {
+   api.close(state);
+   info.active = info.resourceOverlay;
+   runtimeLog(info.id, "error", info.error);
+   return false;
+  }
+ }
   mod->active = true;
    loadedMods.push_back(std::move(mod));
    invalidateLuaHookCache();
@@ -175,6 +212,36 @@ bool loadLuaMod(ModPackage& info, std::vector<std::shared_ptr<ModHost::LoadedLua
   return true;
 }
 } // namespace
+std::shared_ptr<ModHost::LoadedLuaMod> createGenerationState(ModHost::LoadedLuaMod& owner, std::string& error) {
+ LuaApi& api = luaApi();
+ if(!api.ready()) {
+  error = "Lua runtime unavailable";
+  return nullptr;
+ }
+ if(!std::filesystem::is_regular_file(owner.generationScript)) {
+  error = "Missing Lua generation script: " + owner.generationScript.string();
+  return nullptr;
+ }
+ lua_State* state = api.newstate();
+ if(state == nullptr) {
+  error = "Failed to create Lua generation state";
+  return nullptr;
+ }
+ api.openlibs(state);
+ auto generation = std::make_shared<ModHost::LoadedLuaMod>();
+ generation->modId = owner.modId;
+ generation->state = state;
+ generation->loadGeneration = owner.loadGeneration;
+ generation->generationOwner = &owner;
+ installMinecraftTable(state, *generation);
+ if(!installLuaPrelude(state, error) || !runLuaFile(state, owner.generationScript, error)) {
+  api.close(state);
+  generation->state = nullptr;
+  return nullptr;
+ }
+ generation->active = true;
+ return generation;
+}
 ModHost& host() {
  static ModHost value;
  return value;
@@ -221,6 +288,14 @@ void ModHost::shutdown() {
 void ModHost::closeLoadedLuaMod(const std::shared_ptr<LoadedLuaMod>& mod) {
   if(mod == nullptr) {
    return;
+  }
+  {
+   const std::lock_guard generationLock(mod->generationMutex);
+   for(const auto& [thread, generation] : mod->generationStates) {
+    (void)thread;
+    closeLoadedLuaMod(generation);
+   }
+   mod->generationStates.clear();
   }
   LuaApi* api = &luaApi();
   const std::lock_guard<std::recursive_mutex> lock(mod->stateMutex);

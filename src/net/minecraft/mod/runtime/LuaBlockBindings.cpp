@@ -33,6 +33,7 @@ int luaRegisterBlock(lua_State* state) {
  spec.fullCube = luaBoolField(state, tableIndex, "full_cube", true);
  spec.translucent = luaBoolField(state, tableIndex, "translucent", !spec.opaque);
  spec.collisionHeight = luaFloatField(state, tableIndex, "collision_height", 1.0f);
+ spec.collision = luaBoolField(state, tableIndex, "collision", true);
  spec.stackOnSame = luaBoolField(state, tableIndex, "stack_on_same", false);
  spec.requiresSolidBelow = luaBoolField(state, tableIndex, "requires_solid_below", true);
  spec.coordinateBounds = luaBoolField(state, tableIndex, "coordinate_bounds", false);

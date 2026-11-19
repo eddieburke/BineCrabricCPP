@@ -1,3 +1,4 @@
+local java_floor = require("scripts.common").java_floor
 local MASK = 0xffffffffffff
 local MULTIPLIER = 0x5deece66d
 local ADDEND = 0xb
@@ -8,8 +9,13 @@ local function trunc(value)
   return math.modf(value)
 end
 
+local function float32(value)
+  return (string.unpack("f", string.pack("f", value)))
+end
+
 local function java_seed(value)
-  return math.tointeger(value) or trunc(tonumber(value) or 0)
+  assert(type(value) == "number", "world_profiles: seed must be a signed 64-bit integer")
+  return assert(math.tointeger(value), "world_profiles: seed must be a signed 64-bit integer")
 end
 
 local Random = {}
@@ -100,9 +106,9 @@ function Perlin:sample(x, y, z)
   x = x + self.x_offset
   y = y + self.y_offset
   z = z + self.z_offset
-  local floor_x = math.floor(x)
-  local floor_y = math.floor(y)
-  local floor_z = math.floor(z)
+  local floor_x = java_floor(x)
+  local floor_y = java_floor(y)
+  local floor_z = java_floor(z)
   local ix = floor_x & 255
   local iy = floor_y & 255
   local iz = floor_z & 255
@@ -176,9 +182,7 @@ local function state_for(seed)
   return state
 end
 
-local function block_id(name)
-  return minecraft.world.block_id(name) or 0
-end
+local block_id = require("scripts.common").block_id
 
 local function fill_column(chunk, x, z, block_at)
   local start_y = 0
@@ -207,19 +211,23 @@ local function terrain(event, state)
       local wz = event.chunk_z * 16 + z
       local cell_x = trunc(wx / 1024)
       local cell_z = trunc(wz / 1024)
-      local broad = (state.low:sample(wx * 32.0, 0.0, wz * 32.0) - state.high:sample(wx * 64.0, 0.0, wz * 64.0)) / 2048.0
-      local selector = state.detail_b:sample2(wx / 4.0, wz / 4.0)
-      local shape = state.shape:sample2(wx / 8.0, wz / 8.0) / 8.0
+      local fx, fz = float32(wx), float32(wz)
+      local broad = float32(float32(float32(state.low:sample(float32(fx * 32.0), 0.0, float32(fz * 32.0))
+        - state.high:sample(float32(fx * 64.0), 0.0, float32(fz * 64.0))) / 512.0) / 4.0)
+      local selector = float32(state.detail_b:sample2(float32(fx / 4.0), float32(fz / 4.0)))
+      local shape = float32(float32(state.shape:sample2(float32(fx / 8.0), float32(fz / 8.0))) / 8.0)
+      local detail_x = float32(fx * float32(0.25714284))
+      local detail_z = float32(fz * float32(0.25714284))
       local detail
       if selector > 0.0 then
-        detail = state.selector:sample2(wx * 0.51428568, wz * 0.51428568) * shape / 4.0
+        detail = float32(state.selector:sample2(float32(detail_x * 2.0), float32(detail_z * 2.0)) * shape / 4.0)
       else
-        detail = state.detail_a:sample2(wx * 0.25714284, wz * 0.25714284) * shape
+        detail = float32(state.detail_a:sample2(detail_x, detail_z) * shape)
       end
-      local height = trunc(broad + 64.0 + detail)
-      if state.detail_b:sample2(wx, wz) < 0.0 then
+      local height = trunc(float32(float32(broad + 64.0) + detail))
+      if float32(state.detail_b:sample2(wx, wz)) < 0.0 then
         height = trunc(height / 2) * 2
-        if state.detail_b:sample2(wx / 5.0, wz / 5.0) < 0.0 then
+        if float32(state.detail_b:sample2(trunc(wx / 5), trunc(wz / 5))) < 0.0 then
           height = height + 1
         end
       end
@@ -255,15 +263,18 @@ end
 
 return {
   id = "infdev_20100227",
-  label = "Infdev 20100227",
-  order = 60,
-  cancel = { terrain = true, surface = true, carver = true, features = true },
+  label = "Infdev 20100227-1433 (Seeded)",
+  order = 70,
+  dimensions = { 0 },
   spawn = function()
     return 1, nil
   end,
-  generate = function(event)
-    if event.stage == "terrain" then
+  stages = {
+    surface = false,
+    carver = false,
+    features = false,
+    terrain = function(event)
       terrain(event, state_for(event.world_seed))
-    end
-  end,
+    end,
+  },
 }

@@ -612,8 +612,10 @@ void GameRenderer::onFrameUpdate(float tickDelta) {
  frameSettings_ = option::renderSettings(client->options, meshDefinition());
  if(client->world != nullptr && client->world->dimension != nullptr && client->world->dimension->hasCeiling &&
     !client->world->dimension->isNether) {
-  frameSettings_.distantTerrain = false;
-  frameSettings_.nativeChunkRadius = frameSettings_.renderDistance.chunks();
+  option::disableDistantTerrain(frameSettings_);
+ }
+ if(client->world != nullptr) {
+  client->world->setChunkResidentRadius(frameSettings_.residentChunkRadius);
  }
  if(!platform::glfw::Window::isActive()) {
   if(nowMillis() - lastInactiveTime > 500) {
@@ -1125,12 +1127,15 @@ void GameRenderer::renderToCurrentTarget(float tickDelta,
   shaderPipeline_->setDistantHorizons(frameSettings_.distantTerrain);
   shaderPipeline_->prepareFrame(client->world);
   if(frameSettings_.distantTerrain && shaderPipeline_->distantProgram(false) == nullptr) {
-   frameSettings_.distantTerrain = false;
-   frameSettings_.nativeChunkRadius = frameSettings_.renderDistance.chunks();
+   option::disableDistantTerrain(frameSettings_);
+   client->world->setChunkResidentRadius(frameSettings_.residentChunkRadius);
    frameCamera_.renderDistanceBlocks = frameSettings_.renderDistance.blocks;
+   frameCamera_.farPlane = frameSettings_.renderDistance.farPlane();
    frameCamera_.dhNearPlane = 0.0f;
    frameCamera_.dhFarPlane = 0.0f;
+   frameCamera_.dhRenderDistanceBlocks = 0.0f;
    core::setCameraFrame(frameCamera_);
+   core::setDrawCameraStateFromCamera(frameCamera_);
   }
  shaderPipeline_->setFrameUniforms(buildFrameUniforms(tickDelta));
 }
@@ -1265,6 +1270,7 @@ if(!frameCamera_.shadowPass && !renderCameraEntity) {
   const Vec3d eye = WorldRenderer::sectionOrigin();
   worldRenderer->distantTerrain().update(*client->world, client->textureManager, worldRenderer->sections(),
                                         frameSettings_, eye.x, eye.y, eye.z);
+  worldRenderer->sections().reloadIfViewDistanceChanged();
   worldRenderer->distantTerrain().renderOpaque(*shaderPipeline_, frameSettings_, activeCuller);
  }
  renderWorldStage(atmosphereCtx, tickDelta, mod::WorldRenderStage::OpaqueTerrain, !skipGbuffers, false, [&] {
@@ -1335,12 +1341,16 @@ if(!frameCamera_.shadowPass && !renderCameraEntity) {
    }
   }
  }
- if(drawDistant) {
+ const bool distantWaterBeforeTranslucent = shaderPipeline_->distantScenePack() != nullptr;
+ if(drawDistant && distantWaterBeforeTranslucent) {
   worldRenderer->distantTerrain().renderWater(*shaderPipeline_, frameSettings_, activeCuller);
  }
  renderWorldStage(atmosphereCtx, tickDelta, mod::WorldRenderStage::TranslucentTerrain, !skipGbuffers, false, [&] {
   drawTranslucentTerrain(*worldRenderer, *camera, tickDelta, terrainTextureId, fancyGraphics);
  });
+ if(drawDistant && !distantWaterBeforeTranslucent) {
+  worldRenderer->distantTerrain().renderWater(*shaderPipeline_, frameSettings_, activeCuller);
+ }
  if(!translucentParticlesBeforeDeferred) {
   renderTranslucentParticles();
  }

@@ -6,7 +6,7 @@ local config = settings.define("realtime_sky", {
     enabled = {
       type = "bool",
       label = "Enabled",
-      default = true,
+      default = false,
     },
     drive_sun = {
       type = "bool",
@@ -88,6 +88,64 @@ local config = settings.define("realtime_sky", {
       type = "string",
       label = "Time Zone",
       default = "GMT+0",
+    },
+    planets_enabled = {
+      type = "bool",
+      label = "Sky Planets",
+      default = false,
+    },
+    planet_daylight = {
+      type = "bool",
+      label = "Daylight Planets",
+      default = true,
+    },
+    planet_scale = {
+      type = "slider",
+      label = "Planet Size",
+      min = 0.5,
+      max = 6.0,
+      step = 0.25,
+      default = 2.0,
+    },
+    planet_mercury = {
+      type = "bool",
+      label = "Mercury",
+      default = true,
+    },
+    planet_venus = {
+      type = "bool",
+      label = "Venus",
+      default = true,
+    },
+    planet_mars = {
+      type = "bool",
+      label = "Mars",
+      default = true,
+    },
+    planet_jupiter = {
+      type = "bool",
+      label = "Jupiter",
+      default = true,
+    },
+    planet_saturn = {
+      type = "bool",
+      label = "Saturn",
+      default = true,
+    },
+    planet_uranus = {
+      type = "bool",
+      label = "Uranus",
+      default = true,
+    },
+    planet_neptune = {
+      type = "bool",
+      label = "Neptune",
+      default = true,
+    },
+    planet_pluto = {
+      type = "bool",
+      label = "Pluto",
+      default = true,
     },
   },
 })

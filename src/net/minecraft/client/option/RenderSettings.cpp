@@ -19,20 +19,25 @@ RenderSettings renderSettings(const GameOptions& options) {
  r.fancyWater = options.water == 0 && options.fancyGraphics;
  r.clearWater = options.clearWater;
  r.renderDistance.setting = options.viewDistance & 3;
- r.renderScale = std::isfinite(options.renderScale) ? std::clamp(options.renderScale, 1.0f, 5.0f) : 1.0f;
+ r.renderScale = std::isfinite(options.renderScale)
+                     ? std::clamp(options.renderScale, RenderDistance::kMinRenderScale, RenderDistance::kMaxRenderScale)
+                     : RenderDistance::kMinRenderScale;
  const int baseDistance = 256 >> r.renderDistance.setting;
  r.renderDistance.blocks = static_cast<float>(baseDistance) * r.renderScale;
- const int preloadMargin = options.preloadedChunks <= 0 ? 3 : 3 + options.preloadedChunks / 2;
- r.residentChunkRadius = r.renderDistance.chunks() + preloadMargin;
+ r.preloadChunkMargin = 3 + std::clamp(options.preloadedChunks, 0, 16) / 2;
  r.smoothInput = options.smoothInput;
  r.smoothFps = options.smoothFps;
  r.chunkUpdatesSlider = std::isfinite(options.chunkUpdates) ? std::clamp(options.chunkUpdates, 0.0f, 1.0f) : 0.5f;
  r.chunkUpdatesDynamic = options.chunkUpdatesDynamic;
  const int nativeRadius = std::clamp(options.lodNativeRadius, 8, 32);
  r.distantTerrain = options.distantTerrain && r.renderDistance.chunks() > nativeRadius;
+ if(!r.distantTerrain) {
+  r.renderDistance.blocks = std::min(r.renderDistance.blocks, static_cast<float>(RenderDistance::kMaxNativeChunks * 16));
+ }
  r.nativeChunkRadius = r.distantTerrain ? nativeRadius : r.renderDistance.chunks();
+ r.residentChunkRadius = r.nativeChunkRadius + r.preloadChunkMargin + (r.distantTerrain ? 5 : 0);
  r.lodQuality = std::clamp(options.lodQuality, 0, 2);
- r.lodMemoryMiB = std::clamp(options.lodMemoryMiB, 64, 512);
+ r.lodMemoryMiB = std::clamp(options.lodMemoryMiB, 64, 1024);
  r.renderSky = options.sky;
  r.renderStars = options.stars;
  r.vignette = options.vignette;
@@ -58,11 +63,23 @@ RenderSettings renderSettings(const GameOptions& options) {
 bool supportsDistantTerrain(const render::PackDefinition& pack) {
  return pack.programs.empty() || pack.programs.contains("dh_terrain");
 }
+void disableDistantTerrain(RenderSettings& settings) {
+ settings.distantTerrain = false;
+ settings.renderDistance.blocks = std::min(settings.renderDistance.blocks,
+                                          static_cast<float>(RenderDistance::kMaxNativeChunks * 16));
+ settings.nativeChunkRadius = settings.renderDistance.chunks();
+ settings.residentChunkRadius = settings.nativeChunkRadius + settings.preloadChunkMargin;
+}
 void applyShaderPack(RenderSettings& settings, const render::PackDefinition& pack) {
  settings.distantTerrain = settings.distantTerrain && supportsDistantTerrain(pack);
+ if(!settings.distantTerrain) {
+  disableDistantTerrain(settings);
+ }
  settings.nativeChunkRadius =
      settings.distantTerrain ? std::min(settings.nativeChunkRadius, settings.renderDistance.chunks())
                              : settings.renderDistance.chunks();
+ settings.residentChunkRadius = settings.nativeChunkRadius + settings.preloadChunkMargin +
+                                (settings.distantTerrain ? 5 : 0);
  settings.ambientOcclusionStrength *= std::clamp(pack.ambientOcclusionLevel, 0.0f, 1.0f);
  settings.separateAo = pack.separateAo;
  settings.vanillaShaderAo = pack.vanillaShaderAo;

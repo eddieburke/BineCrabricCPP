@@ -786,9 +786,10 @@ void World::finishLightingUpdates() {
  doLightingUpdates(std::numeric_limits<std::size_t>::max());
 }
 World::~World() {
- mod::runtime::WorldRequiredMods::forgetWorld(this);
  lighting_.stop();
  waitForAsyncSave();
+ chunkCache_.reset();
+ mod::runtime::WorldRequiredMods::forgetWorld(this);
 }
 void World::scheduleBlockUpdate(int x, int y, int z, int id, int tickRate) {
  BlockEvent blockEvent(x, y, z, id);

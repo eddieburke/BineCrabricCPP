@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include "net/minecraft/mod/lua/LuaHostApi.hpp"
@@ -45,8 +46,19 @@ void readStringMapField(lua_State* state,
 bool isLuaModExecutionEnabled();
 bool isClientBuild();
 bool isLocalPlayer(const entity::player::PlayerEntity* player);
+class LuaStateGuard {
+ public:
+ explicit LuaStateGuard(ModHost::LoadedLuaMod& mod);
+ ~LuaStateGuard();
+ LuaStateGuard(const LuaStateGuard&) = delete;
+ LuaStateGuard& operator=(const LuaStateGuard&) = delete;
+
+ private:
+ std::unique_lock<std::recursive_mutex> lock_;
+};
 template <typename Fill, typename Apply>
-void callLuaEvent(const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, Fill fill, Apply apply) {
+void callLuaEvent(const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, Fill fill, Apply apply,
+                  bool propagateFailure = false) {
  if(!isLuaModExecutionEnabled()) {
   return;
  }
@@ -55,7 +67,7 @@ void callLuaEvent(const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, Fi
  if(!api.ready() || mod == nullptr) {
   return;
  }
- const std::lock_guard<std::recursive_mutex> lock(mod->stateMutex);
+ const LuaStateGuard lock(*mod);
  if(!mod->active || mod->state == nullptr) {
   return;
  }
@@ -70,12 +82,20 @@ void callLuaEvent(const std::shared_ptr<ModHost::LoadedLuaMod>& mod, int ref, Fi
  fill(state);
  const int status = api.pcallk(state, 1, 1, 0, 0, nullptr);
  if(status != kLuaOk) {
-  const char* error = api.tolstring(state, -1, nullptr);
-  runtimeLog(mod->modId, "error", error != nullptr ? error : "Lua callback failed");
+  const std::string error = luaString(state, -1, "Lua callback failed");
+  runtimeLog(mod->modId, "error", error);
   api.settop(state, tableIndex - 2);
+  if(propagateFailure) {
+   throw std::runtime_error("Lua hook failed [" + mod->modId + "]: " + error);
+  }
   return;
  }
- apply(state);
+ try {
+  apply(state);
+ } catch(...) {
+  api.settop(state, tableIndex - 2);
+  throw;
+ }
  api.settop(state, tableIndex - 2);
 }
 } // namespace net::minecraft::mod::runtime

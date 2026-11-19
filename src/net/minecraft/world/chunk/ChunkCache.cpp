@@ -37,6 +37,18 @@ ChunkCache::~ChunkCache() {
   const std::lock_guard lock(workerGeneratorMutex_);
   workerGenerators_.clear();
  }
+ for(const auto& [raw, entry] : ownedChunks_) {
+  (void)raw;
+  if(entry != nullptr) {
+   entry->markEvicted();
+  }
+ }
+ for(const auto& [raw, entry] : ownedChunks_) {
+  (void)raw;
+  if(entry != nullptr && entry->renderPinCount() != 0) {
+   Chunk::waitForPinDrain(*entry, std::chrono::milliseconds(5000));
+  }
+ }
  for(const auto& entry : graveyard_) {
   if(entry != nullptr && entry->renderPinCount() != 0) {
    Chunk::waitForPinDrain(*entry, std::chrono::milliseconds(5000));
@@ -124,12 +136,12 @@ ChunkSource* ChunkCache::workerGenerator() {
  workerGenerators_.emplace(threadId, std::move(clone));
  return raw;
 }
-std::unique_ptr<Chunk> ChunkCache::produceChunk(int chunkX, int chunkZ) {
+std::unique_ptr<Chunk> ChunkCache::produceChunk(int chunkX, int chunkZ, bool detached) {
  if(storage_ != nullptr && world_ != nullptr) {
   try {
    std::unique_ptr<Chunk> loaded;
    {
-    loaded = std::make_unique<Chunk>(std::move(storage_->loadChunk(world_, chunkX, chunkZ)));
+    loaded = std::make_unique<Chunk>(std::move(storage_->loadChunk(detached ? nullptr : world_, chunkX, chunkZ)));
    }
    if(!loaded->empty && loaded->chunkPosEquals(chunkX, chunkZ)) {
     return loaded;
@@ -139,7 +151,9 @@ std::unique_ptr<Chunk> ChunkCache::produceChunk(int chunkX, int chunkZ) {
  }
  ChunkSource* generator = workerGenerator();
  if(generator != nullptr) {
-  return std::make_unique<Chunk>(std::move(generator->getChunk(chunkX, chunkZ)));
+  auto generated = std::make_unique<Chunk>(std::move(generator->getChunk(chunkX, chunkZ)));
+  if(detached) generated->world = nullptr;
+  return generated;
  }
  return nullptr;
 }
@@ -262,12 +276,41 @@ void ChunkCache::requestChunkAsync(int chunkX, int chunkZ, int priority) {
            }
           }
           pending->done.store(true, std::memory_order_release);
-          if(pendingLoadTasks_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-           const std::lock_guard lock(loadCompleteMutex_);
-           loadCompleteCv_.notify_all();
-          }
+          completeLoadTask();
          },
          priority);
+}
+void ChunkCache::completeLoadTask() {
+ if(pendingLoadTasks_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+  const std::lock_guard lock(loadCompleteMutex_);
+  loadCompleteCv_.notify_all();
+ }
+}
+bool ChunkCache::readChunkDataAsync(std::function<void(const ChunkDataLoader&)> read, int priority,
+                                    const void* owner, std::function<void()> onCancel) {
+ if(world_ == nullptr || world_->isRemote() || (storage_ == nullptr && generator_ == nullptr)) {
+  onCancel();
+  return false;
+ }
+ pendingLoadTasks_.fetch_add(1, std::memory_order_acq_rel);
+ return net::minecraft::util::concurrent::ThreadCoordinator::instance()
+     .pool(net::minecraft::util::concurrent::Domain::Compute)
+     .submit(
+         [this, read = std::move(read)] {
+          const ChunkDataLoader load = [this](int x, int z) { return produceChunk(x, z, true); };
+          try {
+           read(load);
+          } catch(...) {
+           completeLoadTask();
+           throw;
+          }
+          completeLoadTask();
+         },
+         priority, owner,
+         [this, onCancel = std::move(onCancel)] {
+          onCancel();
+          completeLoadTask();
+         });
 }
 void ChunkCache::integrateFinishedLoads(int budget, std::int64_t timeBudgetNs) {
  const auto start = timeBudgetNs >= 0 ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
@@ -438,7 +481,13 @@ void ChunkCache::decorate(ChunkSource* source, int chunkX, int chunkZ) {
   // only main-thread state, so it needs no mutual exclusion of its own.
   const bool outer = decorating_;
   decorating_ = true;
-  generator_->decorate(source, chunkX, chunkZ);
+  try {
+   generator_->decorate(source, chunkX, chunkZ);
+  } catch(...) {
+   decorating_ = outer;
+   chunk.terrainPopulated = false;
+   throw;
+  }
   decorating_ = outer;
   chunk.markDirty();
  }

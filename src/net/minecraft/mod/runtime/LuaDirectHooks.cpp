@@ -185,6 +185,7 @@ struct LuaHookEntry {
  std::uint16_t worldRenderStageMask = 0xFFFFu;
  std::uint8_t worldRenderMomentMask = 0xFFu;
  std::string entityTypeFilter;
+ int generationIndex = -1;
 };
 using LuaHookEntries = std::vector<LuaHookEntry>;
 constexpr std::size_t kWorldRenderStageCount = static_cast<std::size_t>(WorldRenderStage::Framebuffer) + 1;
@@ -215,6 +216,13 @@ void rebuildHookTable() {
        {{mod, cb.functionRef, cb.worldRenderStageMask, cb.worldRenderMomentMask, cb.entityTypeFilter},
         cb.priority,
         order++});
+  }
+  for(std::size_t index = 0; index < mod->generationPriorities.size(); ++index) {
+   LuaHookEntry entry;
+   entry.mod = mod;
+   entry.generationIndex = static_cast<int>(index);
+   pending[static_cast<std::size_t>(LuaEventId::ChunkGeneration)].push_back(
+       {std::move(entry), mod->generationPriorities[index], order++});
   }
  }
  for(std::size_t i = 0; i < kLuaEventCount; ++i) {
@@ -290,6 +298,62 @@ bool hasLuaWorldRenderHook(WorldRenderStage stage, RenderHookMoment moment) {
   return entry.mod != nullptr && entry.mod->active;
  });
 }
+namespace {
+int generationHookRef(const ModHost::LoadedLuaMod& generation, std::size_t index) {
+ std::size_t seen = 0;
+ for(const ModHost::LoadedLuaMod::Callback& callback : generation.callbacks) {
+  if(callback.eventIndex != static_cast<int>(LuaEventId::ChunkGeneration)) {
+   continue;
+  }
+  if(seen == index) {
+   return callback.functionRef;
+  }
+  ++seen;
+ }
+ throw std::runtime_error("Lua generation state for " + generation.modId + " is missing chunk_generation hook " +
+                          std::to_string(index));
+}
+void dispatchGenerationWorldOpen(const ModHost::LoadedLuaMod& owner,
+                                 const std::shared_ptr<ModHost::LoadedLuaMod>& generation) {
+ std::vector<const ModHost::LoadedLuaMod::Callback*> hooks;
+ for(const ModHost::LoadedLuaMod::Callback& callback : generation->callbacks) {
+  if(callback.eventIndex == static_cast<int>(LuaEventId::WorldOpen)) {
+   hooks.push_back(&callback);
+  }
+ }
+ std::stable_sort(hooks.begin(), hooks.end(), [](const auto* a, const auto* b) { return a->priority > b->priority; });
+ for(const ModHost::LoadedLuaMod::Callback* callback : hooks) {
+  callLuaEvent(
+      generation,
+      callback->functionRef,
+      [&owner](lua_State* state) {
+       setFields(state, "save_name", owner.worldSaveName, "new_world", owner.worldNew);
+       pushStringMap(state, owner.worldOptions);
+       luaApi().setfield(state, -2, "options");
+      },
+      [](lua_State*) {},
+      true);
+ }
+}
+std::shared_ptr<ModHost::LoadedLuaMod> generationStateFor(ModHost::LoadedLuaMod& owner) {
+ const std::thread::id thread = std::this_thread::get_id();
+ const std::lock_guard lock(owner.generationMutex);
+ if(const auto it = owner.generationStates.find(thread); it != owner.generationStates.end()) {
+  return it->second;
+ }
+ std::string error;
+ std::shared_ptr<ModHost::LoadedLuaMod> generation = createGenerationState(owner, error);
+ if(generation == nullptr) {
+  runtimeLog(owner.modId, "error", error);
+  throw std::runtime_error("Lua generation state failed [" + owner.modId + "]: " + error);
+ }
+ if(owner.worldOpened) {
+  dispatchGenerationWorldOpen(owner, generation);
+ }
+ owner.generationStates.emplace(thread, generation);
+ return generation;
+}
+} // namespace
 template <typename Fill, typename Read>
 void dispatchLuaHook(int eventIndex,
                      Fill fill,
@@ -315,7 +379,20 @@ void dispatchLuaHook(int eventIndex,
   if(!entityType.empty() && !entry.entityTypeFilter.empty() && entry.entityTypeFilter != entityType) {
    continue;
   }
-  callLuaEvent(entry.mod, entry.functionRef, fill, read);
+  const bool propagateFailure = eventIndex == static_cast<int>(LuaEventId::CreateWorld) ||
+                                eventIndex == static_cast<int>(LuaEventId::WorldOpen) ||
+                                eventIndex == static_cast<int>(LuaEventId::ChunkGeneration) ||
+                                eventIndex == static_cast<int>(LuaEventId::WorldSpawnSearch);
+  if(entry.generationIndex >= 0) {
+   const std::shared_ptr<ModHost::LoadedLuaMod> generation = generationStateFor(*entry.mod);
+   callLuaEvent(generation,
+                generationHookRef(*generation, static_cast<std::size_t>(entry.generationIndex)),
+                fill,
+                read,
+                propagateFailure);
+   continue;
+  }
+  callLuaEvent(entry.mod, entry.functionRef, fill, read, propagateFailure);
  }
 }
 namespace {
@@ -361,7 +438,9 @@ void registerChunkStageListener(world::gen::ChunkStage stage, int priority, Chun
 }
 void fireChunkGeneration(world::gen::ChunkGenerationEvent& event) {
  for(const auto& entry : chunkStageListeners()[chunkStageIndex(event.stage)]) {
+  const bool canceled = event.cancelVanilla;
   entry.listener(event);
+  event.cancelVanilla = event.cancelVanilla || canceled;
  }
  if(hasLuaHook(LuaEventId::ChunkGeneration)) {
   luaHookChunkGeneration(event);
@@ -610,6 +689,20 @@ void luaHookWorldOpen(WorldOpenEvent& e) {
       luaApi().setfield(state, -2, "options");
      },
      kNoRead);
+ for(const std::shared_ptr<ModHost::LoadedLuaMod>& mod : loadedLuaMods()) {
+  if(mod == nullptr || !mod->active || mod->generationScript.empty()) {
+   continue;
+  }
+  const std::lock_guard lock(mod->generationMutex);
+  mod->worldSaveName = e.saveName != nullptr ? *e.saveName : std::string();
+  mod->worldNew = e.newWorld;
+  mod->worldOptions = e.options != nullptr ? *e.options : std::unordered_map<std::string, std::string>{};
+  mod->worldOpened = true;
+  for(const auto& [thread, generation] : mod->generationStates) {
+   (void)thread;
+   dispatchGenerationWorldOpen(*mod, generation);
+  }
+ }
 }
 void luaHookWorldTick(WorldTickEvent& e) {
  runLuaHook(
@@ -1424,11 +1517,18 @@ void luaHookChunkGeneration(world::gen::ChunkGenerationEvent& e) {
  if(e.context.world != nullptr && e.context.world->isRemote()) {
   return;
  }
- LuaChunkContext::Scope scope(
-     e.context.chunk, e.context.world, e.context.chunkX, e.context.chunkZ, chunkWriteModeForStage(e.stage));
+ LuaChunkContext::Scope scope(e.context.chunk,
+                              e.context.world,
+                              e.context.chunkX,
+                              e.context.chunkZ,
+                              chunkWriteModeForStage(e.stage),
+                              e.context.biomeSource);
+ ModContextScope worldScope(e.context.world);
  dispatchLuaHook(
      static_cast<int>(LuaEventId::ChunkGeneration),
      [&e](lua_State* state) {
+      setWorldContextFields(state, e.context.world);
+      setLuaExecutionFields(state, e.context.world);
       setFields(state,
                 "stage",
                 chunkStageName(e.stage),
@@ -1440,7 +1540,6 @@ void luaHookChunkGeneration(world::gen::ChunkGenerationEvent& e) {
                 e.vanillaStageRan,
                 "world_seed",
                 static_cast<std::int64_t>(e.context.worldSeed));
-      setWorldContextFields(state, e.context.world);
       setFields(state,
                 "mod_generation",
                 e.context.modGeneration,
@@ -1452,7 +1551,13 @@ void luaHookChunkGeneration(world::gen::ChunkGenerationEvent& e) {
       pushChunkObject(state);
       luaApi().setfield(state, -2, "chunk");
      },
-     [&e](lua_State* state) { readField(state, "cancel_vanilla", e.cancelVanilla); });
+     [&e](lua_State* state) {
+      if(e.moment == world::gen::HookMoment::Before) {
+       bool canceled = false;
+       readField(state, "cancel_vanilla", canceled);
+       e.cancelVanilla = e.cancelVanilla || canceled;
+      }
+     });
 }
 void luaHookScreenRegion(ScreenRegionEvent& e) {
  if(!hasLuaHook(LuaEventId::ScreenRegion)) {
@@ -1510,13 +1615,18 @@ void luaHookWorldSpawnSearch(WorldSpawnSearchEvent& e) {
  if(e.world != nullptr && e.world->isRemote()) {
   return;
  }
- dispatchLuaHook(
-     static_cast<int>(LuaEventId::WorldSpawnSearch),
-     [&e](lua_State* state) {
-      setFields(state, "x", e.x, "y", e.y, "z", e.z, "resolved", e.resolved);
-      setWorldContextFields(state, e.world);
+ runLuaHook(
+     LuaEventId::WorldSpawnSearch,
+     e,
+     [](lua_State* state, WorldSpawnSearchEvent& event) {
+      setFields(state, "x", event.x, "y", event.y, "z", event.z, "resolved", event.resolved);
+      setWorldContextFields(state, event.world);
      },
-     [&e](lua_State* state) { readFields(state, "x", e.x, "y", e.y, "z", e.z, "resolved", e.resolved); });
+     [](lua_State* state, WorldSpawnSearchEvent& event) {
+      if(!event.resolved) {
+       readFields(state, "x", event.x, "y", event.y, "z", event.z, "resolved", event.resolved);
+      }
+     });
 }
 void luaHookScreenUi(ScreenUiEvent& e) {
 #ifdef MINECRAFT_NATIVE_EXPORTS

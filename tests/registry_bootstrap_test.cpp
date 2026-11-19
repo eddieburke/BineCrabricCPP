@@ -68,4 +68,20 @@ TEST(RegistryBootstrap, RejectsMalformedContentRegistration) {
  EXPECT_FALSE(mod::lua::registerItemSpec(texturelessItem, error));
  EXPECT_FALSE(error.empty());
 }
+TEST(RegistryBootstrap, ModBlockCollisionFlagRemovesCollisionShape) {
+ std::string error;
+ mod::lua::BlockRegistrationSpec solid;
+ solid.blockId = 251;
+ mod::lua::BlockRegistrationSpec passable;
+ passable.blockId = 252;
+ passable.collision = false;
+ ASSERT_TRUE(mod::lua::registerBlockSpec(solid, error)) << error;
+ ASSERT_TRUE(mod::lua::registerBlockSpec(passable, error)) << error;
+ const block::Block* solidBlock = block::Block::BLOCKS[251];
+ const block::Block* passableBlock = block::Block::BLOCKS[252];
+ ASSERT_NE(solidBlock, nullptr);
+ ASSERT_NE(passableBlock, nullptr);
+ EXPECT_TRUE(solidBlock->getCollisionShape(nullptr, 3, 64, 5).has_value());
+ EXPECT_FALSE(passableBlock->getCollisionShape(nullptr, 3, 64, 5).has_value());
+}
 } // namespace net::minecraft::test

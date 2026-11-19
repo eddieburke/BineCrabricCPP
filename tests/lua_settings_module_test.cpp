@@ -129,6 +129,7 @@ package.preload["scripts.solar"] = function()
   }
 end
 package.preload["scripts.sky_render"] = function() return {} end
+package.preload["scripts.planets"] = function() return {} end
 package.preload["scripts.places"] = function() return {} end
 package.preload["scripts.globe_ui"] = function() return {} end
 package.preload["scripts.settings_ui"] = function()

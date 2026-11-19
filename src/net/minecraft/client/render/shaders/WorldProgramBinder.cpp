@@ -9,6 +9,7 @@
 #include "net/minecraft/client/gl/GlConstants.hpp"
 #include "net/minecraft/client/render/RenderCore.hpp"
 #include "net/minecraft/client/render/GlState.hpp"
+#include "net/minecraft/client/render/camera/FrameRenderCamera.hpp"
 #include "net/minecraft/client/render/pipeline/Instance.hpp"
 #include "net/minecraft/client/render/pipeline/Resources.hpp"
 #include "net/minecraft/client/render/targets/RenderTargets.hpp"
@@ -106,6 +107,15 @@ void bindWorldProgram(gl::ShaderProgram& program, const WorldProgramBindContext&
   }
  }
  int unit = 4;
+ const bool lodTransition = context.pack != nullptr &&
+                            context.pack->lodCoverageTexture != 0 && !core::cameraFrame().shadowPass;
+ program.set1i("betaLodEnabled", lodTransition ? 1 : 0);
+ if(lodTransition) {
+  program.set2fAt(program.location("betaLodOrigin"), context.pack->lodCoverageOrigin);
+  program.set2fAt(program.location("betaLodTransition"), context.pack->lodTransition);
+  if(unit < maxUnits && bindSceneSampler(program, static_cast<int>(context.pack->lodCoverageTexture),
+                                         unit, nullptr, {"betaLodCoverage"})) ++unit;
+ }
  if(context.overlayTexture != 0 && unit < maxUnits) {
   const int irisLocation = program.location("iris_overlay");
   const int flywheelLocation = program.location("flw_overlayTex");

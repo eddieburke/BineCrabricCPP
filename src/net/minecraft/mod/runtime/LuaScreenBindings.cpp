@@ -236,8 +236,8 @@ void LuaScreen::keyPressed(char character, int keyCode) {
   event.keyCode = keyCode;
   net::minecraft::mod::runtime::luaHookScreenEvent(event);
  }
- if(!event.handled) {
-  closeOnEscape(keyCode);
+ if(!event.handled && escapePressed(keyCode)) {
+  closeToParent();
  }
 }
 void LuaScreen::mouseScrolled(int mouseX, int mouseY, int delta) {

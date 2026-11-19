@@ -192,3 +192,95 @@ profile_screen.register({id = "test:profiles", sliders = sliders, values = value
 profile_callbacks.screen_event({phase = "init", width = 320, height = 180})
 profile_callbacks.screen_event({phase = "render", width = 320, height = 180})
 assert(caption[1] == 0 and caption[3] == 320 and caption[4] == "Page 1 / 2")
+
+local quad_batches = {}
+minecraft = {
+  util = {
+    clamp = function(value, minimum, maximum)
+      return math.max(minimum, math.min(maximum, value))
+    end,
+  },
+  render = {
+    quads = function(spec)
+      quad_batches[#quad_batches + 1] = spec
+      return math.floor(#spec.packed / 36)
+    end,
+  },
+}
+package.path = ROOT .. "/mods/realtime_sky/?.lua;" .. ROOT .. "/mods/realtime_sky/?/init.lua;" .. original_package_path
+package.loaded["scripts.solar"] = nil
+package.loaded["scripts.planets"] = nil
+package.loaded["scripts.sky_render"] = nil
+local solar = require("scripts.solar")
+local planets = require("scripts.planets")
+local sky_render = require("scripts.sky_render")
+
+local prev_celestial = -1.0
+local prev_alt = 90.0
+local sunset_settings = { latitude = 40.71, longitude = -74.01, time_zone_id = "GMT-5" }
+for step = 0, 20 do
+  local utc_ms = 1794603600000.0 + step * 300000.0
+  local f = solar.build_frame(sunset_settings, 0.0, utc_ms)
+  assert(f.sun_altitude_deg < prev_alt, "sun altitude not decreasing at step " .. tostring(step))
+  assert(f.celestial > prev_celestial, "celestial not increasing through sunset at step " .. tostring(step))
+  prev_alt = f.sun_altitude_deg
+  prev_celestial = f.celestial
+end
+assert(math.abs(solar.celestial_from_sun_altitude(0.0, 1.0) - 0.25) < 1.0e-6)
+assert(math.abs(solar.celestial_from_sun_altitude(0.0, -1.0) - 0.75) < 1.0e-6)
+
+local frame = {
+  utc_millis = 1794600000000.0,
+  sun_direction_x = 0.0,
+  sun_direction_y = -0.3,
+  sun_direction_z = 0.95,
+  sun_altitude_deg = -15.0,
+  moon_direction_x = 0.5,
+  moon_direction_y = 0.6,
+  moon_direction_z = 0.62,
+  moon_illumination = 0.5,
+}
+local planet_settings = {
+  planets_enabled = true,
+  planet_daylight = true,
+  planet_scale = 2.0,
+  latitude = 43.2,
+  longitude = -80.3833,
+  planet_mercury = true,
+  planet_venus = true,
+  planet_mars = true,
+  planet_jupiter = true,
+  planet_saturn = true,
+  planet_uranus = true,
+  planet_neptune = true,
+  planet_pluto = true,
+}
+local visible, count = planets.collect(planet_settings, frame, 1.0, nil)
+assert(count >= 1, "expected at least one planet above horizon")
+planet_settings.planet_mercury = false
+planet_settings.planet_venus = false
+planet_settings.planet_mars = false
+planet_settings.planet_jupiter = false
+planet_settings.planet_saturn = false
+planet_settings.planet_uranus = false
+planet_settings.planet_neptune = false
+planet_settings.planet_pluto = false
+local _, zero_count = planets.collect(planet_settings, frame, 1.0, nil)
+assert(zero_count == 0)
+
+sky_render.draw_planets({ eye_x = 10.0, eye_y = 64.0, eye_z = -5.0 }, frame, visible, count, 2.0)
+assert(#quad_batches == 1)
+local batch = quad_batches[1]
+assert(batch.world_space == true and batch.blend == true and batch.cull == false)
+assert(batch.depth_test == false and batch.depth_write == false)
+assert(#batch.packed >= 36 and (#batch.packed % 36) == 0)
+
+frame.sun_altitude_deg = 25.0
+frame.sun_direction_y = 0.42
+sky_render.draw_planets({ eye_x = 10.0, eye_y = 64.0, eye_z = -5.0 }, frame, visible, count, 2.0)
+sky_render.draw_moon({ eye_x = 10.0, eye_y = 64.0, eye_z = -5.0 }, frame, 1.0, sky_render.MOON_MEAN_HALF_SIZE)
+assert(#quad_batches == 3)
+assert(quad_batches[2].blend == "additive")
+assert(quad_batches[3].blend == "additive")
+package.path = original_package_path
+assert(load_file(ROOT .. "/tests/world_profiles_regressions.lua"))(load_file)

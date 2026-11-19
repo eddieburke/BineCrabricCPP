@@ -9,6 +9,8 @@
 #include "net/minecraft/server/host/ServerLaunchConfig.hpp"
 #include "net/minecraft/server/network/ServerSocket.hpp"
 #include "tests/support/empty_server_mod_host.hpp"
+#include "net/minecraft/block/BedBlock.hpp"
+#include "net/minecraft/block/Block.hpp"
 #include "net/minecraft/entity/player/ServerPlayerEntity.hpp"
 #include "net/minecraft/item/ItemStack.hpp"
 #include "net/minecraft/world/ServerWorld.hpp"
@@ -248,5 +250,54 @@ TEST(IntegratedServerHost, AddPlayerRecoversFromDedicatedPlayerDatWhenLevelDatPl
  overworld.addPlayer(&joiningPlayer);
  EXPECT_EQ(joiningPlayer.inventory.main[0].itemId, 264);
  EXPECT_EQ(joiningPlayer.inventory.main[0].count, 15);
+}
+TEST(IntegratedServerHost, AddPlayerWithLoadSavedPlayerDataFalseDoesNotOverwriteRespawnedPlayer) {
+ const auto root = makeTempWorldRoot("host_skip_player_dat_on_respawn");
+ initializeEmptyServerModHost(root / "runtime");
+ server::MinecraftServer server;
+ AlphaWorldStorage storage(root, "World", true);
+ ServerWorld overworld(&server, &storage, "World", 0, 42);
+ entity::player::ServerPlayerEntity savedPlayer(&server, &overworld, "WorldHost", nullptr);
+ savedPlayer.inventory.main[0] = ItemStack(264, 15);
+ savedPlayer.inventory.armor[3] = ItemStack(310, 1);
+ storage.savePlayerData(savedPlayer);
+ overworld.getProperties().clearPlayerNbt();
+ entity::player::ServerPlayerEntity respawnedPlayer(&server, &overworld, "WorldHost", nullptr);
+ respawnedPlayer.setPosition(12.5, 70.0, 24.5);
+ overworld.addPlayer(&respawnedPlayer, false);
+ EXPECT_TRUE(respawnedPlayer.inventory.main[0].empty());
+ EXPECT_TRUE(respawnedPlayer.inventory.armor[3].empty());
+ EXPECT_DOUBLE_EQ(respawnedPlayer.x, 12.5);
+ EXPECT_DOUBLE_EQ(respawnedPlayer.z, 24.5);
+}
+TEST(IntegratedServerHost, BedFindWakeUpPositionRequiresSolidFloorAndRejectsAirFloor) {
+ const auto root = makeTempWorldRoot("bed_wakeup_solid_floor");
+ initializeEmptyServerModHost(root / "runtime");
+ server::MinecraftServer server;
+ AlphaWorldStorage storage(root, "World", true);
+ ServerWorld overworld(&server, &storage, "World", 0, 42);
+ for(int bx = 4; bx <= 12; ++bx) {
+  for(int bz = 4; bz <= 12; ++bz) {
+   for(int by = 63; by <= 66; ++by) {
+    overworld.setBlock(bx, by, bz, by == 63 ? Block::STONE->id : 0);
+   }
+  }
+ }
+ overworld.setBlock(8, 64, 8, Block::BED->id);
+ overworld.setBlockMeta(8, 64, 8, 0x8);
+ overworld.setBlock(8, 64, 9, Block::BED->id);
+ overworld.setBlockMeta(8, 64, 9, 0x0);
+ const std::optional<Vec3i> wakePos = block::BedBlock::findWakeUpPosition(&overworld, 8, 64, 8, 0);
+ ASSERT_TRUE(wakePos.has_value());
+ EXPECT_EQ(wakePos->y, 64);
+ EXPECT_TRUE(overworld.shouldSuffocate(wakePos->x, wakePos->y - 1, wakePos->z));
+ EXPECT_TRUE(overworld.isAir(wakePos->x, wakePos->y, wakePos->z));
+ EXPECT_TRUE(overworld.isAir(wakePos->x, wakePos->y + 1, wakePos->z));
+ for(int bx = 4; bx <= 12; ++bx) {
+  for(int bz = 4; bz <= 12; ++bz) {
+   overworld.setBlock(bx, 63, bz, 0);
+  }
+ }
+ EXPECT_FALSE(block::BedBlock::findWakeUpPosition(&overworld, 8, 64, 8, 0).has_value());
 }
 } // namespace net::minecraft::test

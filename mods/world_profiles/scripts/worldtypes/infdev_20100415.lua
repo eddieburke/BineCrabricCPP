@@ -1,3 +1,4 @@
+local java_floor = require("scripts.common").java_floor
 local MASK = 0xffffffffffff
 local MULTIPLIER = 0x5deece66d
 local ADDEND = 0xb
@@ -11,7 +12,8 @@ local function trunc(value)
 end
 
 local function java_seed(value)
-  return math.tointeger(value) or trunc(tonumber(value) or 0)
+  assert(type(value) == "number", "world_profiles: seed must be a signed 64-bit integer")
+  return assert(math.tointeger(value), "world_profiles: seed must be a signed 64-bit integer")
 end
 
 local Random = {}
@@ -102,9 +104,9 @@ function Perlin:sample(x, y, z)
   x = x + self.x_offset
   y = y + self.y_offset
   z = z + self.z_offset
-  local floor_x = math.floor(x)
-  local floor_y = math.floor(y)
-  local floor_z = math.floor(z)
+  local floor_x = java_floor(x)
+  local floor_y = java_floor(y)
+  local floor_z = java_floor(z)
   local ix = floor_x & 255
   local iy = floor_y & 255
   local iz = floor_z & 255
@@ -177,14 +179,13 @@ local function state_for(seed)
   local state = states[key]
   if state == nil then
     state = make_state(seed)
+    state.key = key
     states[key] = state
   end
   return state
 end
 
-local function block_id(name)
-  return minecraft.world.block_id(name) or 0
-end
+local block_id = require("scripts.common").block_id
 
 local function density(state, x, y, z)
   local vertical = y * 4.0 - 64.0
@@ -229,19 +230,28 @@ local function interpolated_density(grid, x, y, z)
   local fx = (x & 3) / 4.0
   local fy = (y & 3) / 4.0
   local fz = (z & 3) / 4.0
-  local x00 = lerp(fx, grid[gx][gz][gy], grid[gx + 1][gz][gy])
-  local x01 = lerp(fx, grid[gx][gz + 1][gy], grid[gx + 1][gz + 1][gy])
-  local x10 = lerp(fx, grid[gx][gz][gy + 1], grid[gx + 1][gz][gy + 1])
-  local x11 = lerp(fx, grid[gx][gz + 1][gy + 1], grid[gx + 1][gz + 1][gy + 1])
-  return lerp(fz, lerp(fy, x00, x10), lerp(fy, x01, x11))
+  local y00 = lerp(fy, grid[gx][gz][gy], grid[gx][gz][gy + 1])
+  local y01 = lerp(fy, grid[gx][gz + 1][gy], grid[gx][gz + 1][gy + 1])
+  local y10 = lerp(fy, grid[gx + 1][gz][gy], grid[gx + 1][gz][gy + 1])
+  local y11 = lerp(fy, grid[gx + 1][gz + 1][gy], grid[gx + 1][gz + 1][gy + 1])
+  return lerp(fz, lerp(fx, y00, y10), lerp(fx, y01, y11))
 end
 
 local function height_key(chunk_x, chunk_z)
   return tostring(chunk_x) .. ":" .. tostring(chunk_z)
 end
 
-local function remember_heights(state, chunk_x, chunk_z, heights)
+local HEIGHTS_FORMAT = string.rep("b", 256)
+
+local function shared_heights_key(state, key)
+  return "infdev_20100415:heights:" .. state.key .. ":" .. key
+end
+
+local function remember_heights(state, chunk_x, chunk_z, heights, publish)
   local key = height_key(chunk_x, chunk_z)
+  if publish then
+    minecraft.shared.put(shared_heights_key(state, key), string.pack(HEIGHTS_FORMAT, table.unpack(heights, 0, 255)))
+  end
   if state.heights[key] == nil then
     state.height_order[#state.height_order + 1] = key
   end
@@ -267,14 +277,24 @@ local function calculate_heights(state, chunk_x, chunk_z, grid)
       heights[x * 16 + z] = top
     end
   end
-  remember_heights(state, chunk_x, chunk_z, heights)
+  remember_heights(state, chunk_x, chunk_z, heights, true)
+  return heights
+end
+
+local function shared_heights(state, chunk_x, chunk_z)
+  local packed = minecraft.shared.get(shared_heights_key(state, height_key(chunk_x, chunk_z)))
+  if packed == nil then return nil end
+  local values = { string.unpack(HEIGHTS_FORMAT, packed) }
+  local heights = {}
+  for i = 0, 255 do heights[i] = values[i + 1] end
+  remember_heights(state, chunk_x, chunk_z, heights, false)
   return heights
 end
 
 local function heights_at(state, chunk_x, chunk_z)
   local heights = state.heights[height_key(chunk_x, chunk_z)]
   if heights == nil then
-    heights = calculate_heights(state, chunk_x, chunk_z)
+    heights = shared_heights(state, chunk_x, chunk_z) or calculate_heights(state, chunk_x, chunk_z)
   end
   return heights
 end
@@ -311,7 +331,7 @@ local function terrain(event, state)
       heights[x * 16 + z] = top
     end
   end
-  remember_heights(state, event.chunk_x, event.chunk_z, heights)
+  remember_heights(state, event.chunk_x, event.chunk_z, heights, true)
 end
 
 local function surface(event, state)
@@ -547,19 +567,19 @@ end
 return {
   id = "infdev_20100415",
   label = "Infdev 20100415",
-  order = 50,
-  cancel = { terrain = true, surface = true, carver = true, features = true },
+  order = 80,
+  dimensions = { 0 },
   spawn = function()
     return 64, nil
   end,
-  generate = function(event)
-    local state = state_for(event.world_seed)
-    if event.stage == "terrain" then
-      terrain(event, state)
-    elseif event.stage == "surface" then
+  stages = {
+    terrain = function(event) terrain(event, state_for(event.world_seed)) end,
+    surface = function(event)
+      local state = state_for(event.world_seed)
       surface(event, state)
-    elseif event.stage == "features" then
       features(event, state)
-    end
-  end,
+    end,
+    carver = false,
+    features = false,
+  },
 }

@@ -31,9 +31,14 @@ std::map<const World*, std::set<std::string>>& placedByWorld() {
  static std::map<const World*, std::set<std::string>> m;
  return m;
 }
+bool tracksWorldContent(const std::string& modId) {
+ const ModHost& modHost = host();
+ const ModPackage* pkg = modHost.findPackageMod(modId);
+ return pkg == nullptr || pkg->worldRequired;
+}
 } // namespace
 void WorldRequiredMods::registerContentBlock(const std::string& modId, int blockId) {
- if(modId.empty() || blockId <= 0 || blockId >= kMaxBlockId) {
+ if(modId.empty() || blockId <= 0 || blockId >= kMaxBlockId || !tracksWorldContent(modId)) {
   return;
  }
  const std::lock_guard lock(stateMutex());
@@ -41,7 +46,7 @@ void WorldRequiredMods::registerContentBlock(const std::string& modId, int block
  modBlockIds()[static_cast<std::size_t>(blockId)].store(true, std::memory_order_relaxed);
 }
 void WorldRequiredMods::registerContentItem(const std::string& modId, int itemId) {
- if(modId.empty() || itemId < 256) {
+ if(modId.empty() || itemId < 256 || !tracksWorldContent(modId)) {
   return;
  }
  const std::lock_guard lock(stateMutex());

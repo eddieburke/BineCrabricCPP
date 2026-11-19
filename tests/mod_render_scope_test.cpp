@@ -25,3 +25,28 @@ TEST(ModRenderScope, NestedStageLayerRestoresOuterLayer) {
  }
  EXPECT_EQ(runtime::ModWorldDrawContext::layer(), runtime::ModDrawLayer::Clouds);
 }
+TEST(ModRenderScope, ParsesAllStandardBlendModesAndFactors) {
+ const auto off = runtime::parseModBlendMode("none", true);
+ EXPECT_FALSE(off.enabled);
+ const auto alpha = runtime::parseModBlendMode("alpha", false);
+ EXPECT_TRUE(alpha.enabled);
+ EXPECT_EQ(alpha.src, 0x0302);
+ EXPECT_EQ(alpha.dst, 0x0303);
+ const auto add = runtime::parseModBlendMode("additive");
+ EXPECT_TRUE(add.enabled);
+ EXPECT_EQ(add.src, 0x0302);
+ EXPECT_EQ(add.dst, 0x0001);
+ const auto plus = runtime::parseModBlendMode("additive_one");
+ EXPECT_EQ(plus.src, 0x0001);
+ EXPECT_EQ(plus.dst, 0x0001);
+ const auto screen = runtime::parseModBlendMode("screen");
+ EXPECT_EQ(screen.src, 0x0307);
+ EXPECT_EQ(screen.dst, 0x0001);
+ const auto mult = runtime::parseModBlendMode("multiply");
+ EXPECT_EQ(mult.src, 0x0306);
+ EXPECT_EQ(mult.dst, 0x0000);
+ const auto premult = runtime::parseModBlendMode("premultiplied");
+ EXPECT_EQ(premult.src, 0x0001);
+ EXPECT_EQ(premult.dst, 0x0303);
+ EXPECT_EQ(runtime::parseModBlendFactor("one_minus_dst_alpha", 0), 0x0305);
+}

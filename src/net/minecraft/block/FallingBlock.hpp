@@ -5,6 +5,14 @@ namespace net::minecraft::block {
 class FallingBlock : public Block {
  public:
  static thread_local bool fallInstantly;
+ class InstantFallScope {
+  bool previous_ = fallInstantly;
+ public:
+  InstantFallScope() { fallInstantly = true; }
+  ~InstantFallScope() { fallInstantly = previous_; }
+  InstantFallScope(const InstantFallScope&) = delete;
+  InstantFallScope& operator=(const InstantFallScope&) = delete;
+ };
  [[nodiscard]] int getTickRate() const override {
   return 3;
  }

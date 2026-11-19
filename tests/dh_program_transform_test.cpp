@@ -24,6 +24,7 @@
 #include "net/minecraft/client/render/shaders/IncludeResolver.hpp"
 #include "net/minecraft/client/render/shaders/PassIndex.hpp"
 #include "net/minecraft/client/render/shaders/SourceProcessor.hpp"
+#include "net/minecraft/client/render/shaders/WorldProgramBinder.hpp"
 #include "net/minecraft/client/resource/pack/ZippedTexturePack.hpp"
 #include "net/minecraft/util/logging/Logging.hpp"
 namespace net::minecraft::test {
@@ -58,6 +59,20 @@ std::string legacyIdentifiers(const std::string& source, bool vertex) {
  std::smatch match;
  return std::regex_search(source, match, legacy) ? match.str() : std::string{};
 }
+std::string vanillaFragment(const std::string& program, const PackDefinition& definition) {
+ std::unordered_map<std::string, std::string> memo;
+ return client::render::prepareSource(program, ShaderStage::Fragment, definition,
+     client::render::resolveShaderIncludes([](std::string_view path) { return VanillaPackEmbed::get(path); },
+                                          "shaders/" + program + ".fsh", false, memo));
+}
+const std::string surfaceVertex =
+    "out vec2 texcoord;out vec3 vertexLight;out vec4 color;out vec3 normal;out float viewDistance;"
+    "out vec2 horizontalPosition;out vec3 nativeViewPosition;out float directionalShade;"
+    "uniform float testDistance;uniform vec4 testColor;uniform vec3 testLight;uniform float testShade;"
+    "void main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));"
+    "gl_Position=vec4(p*2.0-1.0,0.0,1.0);texcoord=vec2(0.5);vertexLight=testLight;color=testColor;"
+    "normal=vec3(0.0,1.0,0.0);viewDistance=testDistance;horizontalPosition=vec2(testDistance,0.0);"
+    "nativeViewPosition=vec3(0.0,0.0,-testDistance);directionalShade=testShade;}";
 void expectDhProgram(const std::filesystem::path& root, const std::string& directory, const std::string& program) {
  PackDefinition definition;
  definition.distantHorizons = true;
@@ -105,6 +120,7 @@ class DhProgramTransform : public ::testing::Test {
  void SetUp() override {
   if(window_ != nullptr) glfwMakeContextCurrent(window_);
   core::setActiveProgram(nullptr);
+  core::setCameraFrame({});
  }
  static GLFWwindow* window_;
 };
@@ -208,6 +224,8 @@ TEST_F(DhProgramTransform, VanillaEmbeddedProgramsCompile) {
    EXPECT_TRUE(pack.compiledPrograms.empty());
    EXPECT_TRUE(pack.preparedSourceCache.empty());
   }
+  EXPECT_NE(PackCompiler::compile(pack, "gbuffers_terrain", log), nullptr) << failure;
+  EXPECT_NE(PackCompiler::compile(pack, "gbuffers_water", log), nullptr) << failure;
   EXPECT_TRUE(failure.empty()) << failure;
  }
 }
@@ -219,12 +237,12 @@ TEST_F(DhProgramTransform, VanillaWaterUsesNativeProjectionToRejectForegroundTer
      client::render::resolveShaderIncludes([](std::string_view path) { return VanillaPackEmbed::get(path); },
                                           "shaders/dh_water.fsh", false, memo));
  const std::string vertex =
-     "out vec2 lmcoord;out vec4 color;out float viewDistance;out vec2 horizontalPosition;"
-     "out vec3 nativeViewPosition;void main(){"
+     "out vec3 vertexLight;out vec4 color;out float viewDistance;out vec2 horizontalPosition;"
+     "out vec3 nativeViewPosition;out float directionalShade;void main(){"
      "vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));"
-     "gl_Position=vec4(p*2.0-1.0,0.0,1.0);lmcoord=vec2(0.5);"
+     "gl_Position=vec4(p*2.0-1.0,0.0,1.0);vertexLight=vec3(1.0);"
      "color=vec4(0.0,0.0,1.0,0.6);viewDistance=500.0;"
-     "horizontalPosition=vec2(500.0,0.0);nativeViewPosition=vec3(0.0,0.0,-500.0);}";
+     "horizontalPosition=vec2(500.0,0.0);nativeViewPosition=vec3(0.0,0.0,-500.0);directionalShade=1.0;}";
  client::gl::ShaderProgram program;
  ASSERT_TRUE(program.compile(vertex, fragment, "#version 430 core\n")) << program.lastError();
  client::render::ColorTargets targets;
@@ -277,6 +295,226 @@ TEST_F(DhProgramTransform, VanillaWaterUsesNativeProjectionToRejectForegroundTer
  targets.destroy();
  core::activeTexture(0x84C0);
 }
+TEST_F(DhProgramTransform, NativeTerrainCrossfadesOnlyWhereDistantCoverageExists) {
+ PackInstance pack;
+ pack.directory = true;
+ pack.definition.distantHorizons = true;
+ client::gl::ShaderProgram native;
+ client::gl::ShaderProgram distant;
+ ASSERT_TRUE(native.compile(surfaceVertex, vanillaFragment("gbuffers_terrain", pack.definition), "#version 430 core\n"))
+     << native.lastError();
+ ASSERT_TRUE(distant.compile(surfaceVertex, vanillaFragment("dh_terrain", pack.definition), "#version 430 core\n"))
+     << distant.lastError();
+ client::render::ColorTargets targets;
+ ASSERT_TRUE(targets.ensure(8, 8, {client::render::ColorFormat::Rgba8}, 1));
+ client::gl::GlTexture diffuse(core::genTexture());
+ client::gl::GlTexture coverage(core::genTexture());
+ core::activeTexture(0x84C0);
+ core::bindTexture(diffuse.handle());
+ const std::array<unsigned char, 4> white{255, 255, 255, 255};
+ ::glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, white.data());
+ ::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+ ::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+ pack.lodCoverageTexture = coverage.handle();
+ pack.lodCoverageOrigin[0] = 176.0f;
+ pack.lodCoverageOrigin[1] = -8.0f;
+ pack.lodTransition[0] = 192.0f;
+ pack.lodTransition[1] = 240.0f;
+ client::render::WorldProgramBindContext context;
+ context.pack = &pack;
+ const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+ core::disableDepthTest();
+ core::disableCull();
+ core::disableBlend();
+ for(const bool ready : {false, true}) {
+  core::activeTexture(0x84C4);
+  core::bindTexture(coverage.handle());
+  std::array<unsigned char, 16> cells;
+  cells.fill(ready ? 255 : 0);
+  ::glTexImage2D(GL_TEXTURE_2D, 0, 0x822B, 8, 1, 0, 0x8227, GL_UNSIGNED_BYTE, cells.data());
+  ::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  ::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  for(const auto [distance, redPixels] : {std::pair{192.0f, 64}, std::pair{204.0f, 54},
+                                         std::pair{216.0f, 32}, std::pair{228.0f, 10}, std::pair{240.0f, 0}}) {
+   SCOPED_TRACE(::testing::Message() << ready << ' ' << distance);
+   targets.clearColors({true}, {{{0.0f, 1.0f, 0.0f, 1.0f}}});
+   targets.bindGbuffers();
+   ::glViewport(0, 0, 8, 8);
+   for(auto* program : {&distant, &native}) {
+    program->bind();
+    bindWorldProgram(*program, context);
+    program->set1f("testDistance", distance);
+    program->set1f("testShade", 1.0f);
+    program->set3f("testLight", 1.0f, 1.0f, 1.0f);
+    program->set4f("testColor", program == &native ? 1.0f : 0.0f, 0.0f, program == &distant ? 1.0f : 0.0f, 1.0f);
+    program->set1i("gtexture", 0);
+    program->set1i("fogMode", 0);
+    program->set1f("clipDistance", 192.0f);
+    program->setMatrix4("gbufferModelViewInverse", identity);
+    core::drawFullscreen();
+   }
+   std::array<unsigned char, 8 * 8 * 4> pixels{};
+   ::glReadBuffer(0x8CE0);
+   ::glReadPixels(0, 0, 8, 8, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+   int red = 0;
+   for(std::size_t p = 0; p < pixels.size(); p += 4) {
+    if(pixels[p] == 255) ++red;
+    EXPECT_EQ(pixels[p + 1], 0);
+    EXPECT_EQ(pixels[p] + pixels[p + 2], 255);
+   }
+   EXPECT_EQ(red, ready ? redPixels : 64);
+   EXPECT_EQ(::glGetError(), 0u);
+  }
+ }
+ auto shadowCamera = core::cameraFrame();
+ shadowCamera.shadowPass = true;
+ core::setCameraFrame(shadowCamera);
+ native.bind();
+ bindWorldProgram(native, context);
+ int enabled = 1;
+ const auto getUniform = reinterpret_cast<void (*)(unsigned int, int, int*)>(glfwGetProcAddress("glGetUniformiv"));
+ ASSERT_NE(getUniform, nullptr);
+ getUniform(native.handle(), native.location("betaLodEnabled"), &enabled);
+ EXPECT_EQ(enabled, 0);
+ core::setCameraFrame({});
+ client::gl::ShaderProgram::unbind();
+ targets.endGbuffers();
+ core::activeTexture(0x84C0);
+}
+
+TEST_F(DhProgramTransform, WaterAndIceCrossfadeWithoutApplyingAlphaTwice) {
+ PackInstance pack;
+ pack.directory = true;
+ pack.definition.distantHorizons = true;
+ client::gl::ShaderProgram native;
+ client::gl::ShaderProgram distant;
+ ASSERT_TRUE(native.compile(surfaceVertex, vanillaFragment("gbuffers_water", pack.definition), "#version 430 core\n"))
+     << native.lastError();
+ ASSERT_TRUE(distant.compile(surfaceVertex, vanillaFragment("dh_water", pack.definition), "#version 430 core\n"))
+     << distant.lastError();
+ client::render::ColorTargets targets;
+ ASSERT_TRUE(targets.ensure(8, 8, {client::render::ColorFormat::Rgba8}, 1));
+ client::gl::GlTexture diffuse(core::genTexture());
+ client::gl::GlTexture coverage(core::genTexture());
+ client::gl::GlTexture backgroundDepth(core::genTexture());
+ core::activeTexture(0x84C4);
+ core::bindTexture(coverage.handle());
+ std::array<unsigned char, 16> cells;
+ cells.fill(255);
+ ::glTexImage2D(GL_TEXTURE_2D, 0, 0x822B, 8, 1, 0, 0x8227, GL_UNSIGNED_BYTE, cells.data());
+ ::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+ ::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+ core::activeTexture(0x84C5);
+ core::bindTexture(backgroundDepth.handle());
+ std::array<float, 64> depths;
+ depths.fill(1.0f);
+ ::glTexImage2D(GL_TEXTURE_2D, 0, 0x8CAC, 8, 8, 0, GL_DEPTH_COMPONENT, GL_FLOAT, depths.data());
+ ::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+ ::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+ pack.lodCoverageTexture = coverage.handle();
+ pack.lodCoverageOrigin[0] = 176.0f;
+ pack.lodCoverageOrigin[1] = -8.0f;
+ pack.lodTransition[0] = 192.0f;
+ pack.lodTransition[1] = 240.0f;
+ client::render::WorldProgramBindContext context;
+ context.pack = &pack;
+ context.sceneTargets = &targets;
+ context.opaqueDepthTexture = static_cast<int>(backgroundDepth.handle());
+ context.dhDepthTextureNoTranslucent = static_cast<int>(backgroundDepth.handle());
+ client::render::FrameRenderCamera camera;
+ camera.farPlane = 4096.0f;
+ float projection[16];
+ client::render::buildCameraProjection(projection, camera);
+ const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+ core::disableDepthTest();
+ core::disableCull();
+ core::enableBlend();
+ core::blendAlpha();
+ for(const int alpha : {146, 160}) {
+  core::activeTexture(0x84C0);
+  core::bindTexture(diffuse.handle());
+  const std::array<unsigned char, 4> blue{0, 0, 255, static_cast<unsigned char>(alpha)};
+  ::glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, blue.data());
+  ::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  ::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  for(const float distance : {192.0f, 204.0f, 216.0f, 228.0f, 240.0f}) {
+   SCOPED_TRACE(::testing::Message() << alpha << ' ' << distance);
+   targets.clearColors({true}, {{{0.0f, 1.0f, 0.0f, 1.0f}}});
+   targets.bindGbuffers();
+   ::glViewport(0, 0, 8, 8);
+   for(auto* program : {&distant, &native}) {
+    program->bind();
+    bindWorldProgram(*program, context);
+    program->set1f("testDistance", distance);
+    program->set1f("testShade", 1.0f);
+    program->set3f("testLight", 1.0f, 1.0f, 1.0f);
+    program->set4f("testColor", program == &native ? 1.0f : 0.0f, program == &native ? 1.0f : 0.0f,
+                   1.0f, program == &native ? 1.0f : static_cast<float>(alpha) / 255.0f);
+    program->set1i("gtexture", 0);
+    program->set1i("fogMode", 0);
+    program->set1f("clipDistance", 192.0f);
+    program->setMatrix4("gbufferProjection", projection);
+    program->setMatrix4("dhProjection", projection);
+    program->setMatrix4("gbufferModelViewInverse", identity);
+    core::drawFullscreen();
+   }
+   std::array<unsigned char, 8 * 8 * 4> pixels{};
+   ::glReadBuffer(0x8CE0);
+   ::glReadPixels(0, 0, 8, 8, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+   for(std::size_t p = 0; p < pixels.size(); p += 4) {
+    ASSERT_EQ(pixels[p], 0);
+    ASSERT_NEAR(pixels[p + 1], 255 - alpha, 1);
+    ASSERT_NEAR(pixels[p + 2], alpha, 1);
+   }
+   EXPECT_EQ(::glGetError(), 0u);
+  }
+ }
+ core::disableBlend();
+ client::gl::ShaderProgram::unbind();
+ targets.endGbuffers();
+ core::activeTexture(0x84C0);
+}
+
+TEST_F(DhProgramTransform, DistantShadowsSoftenWhileTopFacesAndLightLevelsStayIntact) {
+ PackDefinition definition;
+ definition.distantHorizons = true;
+ client::gl::ShaderProgram program;
+ ASSERT_TRUE(program.compile(surfaceVertex, vanillaFragment("dh_terrain", definition), "#version 430 core\n"))
+     << program.lastError();
+ client::render::ColorTargets targets;
+ ASSERT_TRUE(targets.ensure(4, 4, {client::render::ColorFormat::Rgba8}, 1));
+ core::disableDepthTest();
+ core::disableCull();
+ core::disableBlend();
+ program.bind();
+ program.set1i("betaLodEnabled", 1);
+ program.set2f("betaLodTransition", 192.0f, 240.0f);
+ program.set1f("clipDistance", 192.0f);
+ program.set1i("fogMode", 0);
+ for(const float light : {0.1f, 0.5f, 1.0f}) {
+  for(const float shade : {0.5f, 0.6f, 0.8f, 1.0f}) {
+   for(const bool distantView : {false, true}) {
+    SCOPED_TRACE(::testing::Message() << light << ' ' << shade << ' ' << distantView);
+    program.set3f("testLight", light, light, light);
+    program.set4f("testColor", shade, shade, shade, 1.0f);
+    program.set1f("testShade", shade);
+    program.set1f("testDistance", distantView ? 496.0f : 240.0f);
+    targets.bindGbuffers();
+    ::glViewport(0, 0, 4, 4);
+    core::drawFullscreen();
+    std::array<unsigned char, 4> pixel{};
+    ::glReadBuffer(0x8CE0);
+    ::glReadPixels(2, 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel.data());
+    const float expected = (distantView ? (1.0f + shade) * 0.5f : shade) * light * 255.0f;
+    for(int channel = 0; channel < 3; ++channel) EXPECT_NEAR(pixel[channel], expected, 1.0f);
+    EXPECT_EQ(::glGetError(), 0u);
+   }
+  }
+ }
+ client::gl::ShaderProgram::unbind();
+ targets.endGbuffers();
+}
+
 TEST_F(DhProgramTransform, DisabledProviderSkipsRealPackProgramsAndCanBeReenabled) {
  for(const auto& [name, directory] : std::vector<std::pair<std::string, std::string>>{
          {"ComplementaryReimagined_r5.8.1", "world0"},

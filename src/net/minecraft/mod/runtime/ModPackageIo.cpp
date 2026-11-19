@@ -162,6 +162,9 @@ bool parseManifestJson(const std::string& manifestTextRaw,
  if(const std::optional<std::string> entry = util::json::stringField(manifestText, "entry")) {
   out.entry = normalizeRelativePath(trimCopy(*entry));
  }
+ if(const std::optional<std::string> generation = util::json::stringField(manifestText, "generation_entry")) {
+  out.generationEntry = normalizeRelativePath(trimCopy(*generation));
+ }
  if(out.entry.empty()) {
   if(const std::optional<std::string> script = util::json::stringField(manifestText, "script")) {
    out.entry = normalizeRelativePath(trimCopy(*script));
@@ -172,6 +175,7 @@ bool parseManifestJson(const std::string& manifestTextRaw,
  out.enabledByDefault = util::json::boolField(manifestText, "enabled").value_or(true);
  out.configuredEnabled = out.enabledByDefault;
  out.runtimeScript = !out.entry.empty() && toLowerCopy(out.entry).ends_with(".lua");
+ out.worldRequired = util::json::boolField(manifestText, "world_required").value_or(true);
  out.side = toLowerCopy(util::json::stringField(manifestText, "side").value_or("both"));
  if(out.side != "client" && out.side != "server" && out.side != "both") {
   out.error = errorPrefix + "side must be client, server, or both";

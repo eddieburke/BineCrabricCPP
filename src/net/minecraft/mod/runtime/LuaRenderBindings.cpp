@@ -34,6 +34,23 @@ void setItemModelRenderOverride(const bool enabled) {
  gItemModelRenderOverride = enabled;
 }
 namespace {
+ModBlendMode readLuaBlendMode(lua_State* state, int tableIndex, bool defaultEnabled) {
+ const std::string modeName = luaStringField(state, tableIndex, "blend", "");
+ const bool boolEnabled = luaBoolField(state, tableIndex, "blend", defaultEnabled);
+ ModBlendMode blend = parseModBlendMode(modeName, boolEnabled);
+ const std::string srcName = luaStringField(state, tableIndex, "blend_src", "");
+ const std::string dstName = luaStringField(state, tableIndex, "blend_dst", "");
+ if(!srcName.empty() || !dstName.empty()) {
+  blend.enabled = true;
+  if(!srcName.empty()) {
+   blend.src = parseModBlendFactor(srcName, blend.src);
+  }
+  if(!dstName.empty()) {
+   blend.dst = parseModBlendFactor(dstName, blend.dst);
+  }
+ }
+ return blend;
+}
 int luaRenderSetItemEntityOverride(lua_State* state) {
  LuaApi& api = luaApi();
  gItemModelRenderOverride = api.gettop(state) >= 1 && api.toboolean(state, 1) != 0;
@@ -49,7 +66,7 @@ int luaRenderDrawQuads(lua_State* state) {
  const std::string texturePath = luaStringField(state, specIndex, "texture", "");
  const int rawTextureId = luaIntField(state, specIndex, "texture_id", -1);
  const bool textured = !texturePath.empty() || rawTextureId > 0;
- const bool blend = luaBoolField(state, specIndex, "blend", false);
+ const ModBlendMode blend = readLuaBlendMode(state, specIndex, false);
  const bool cull = luaBoolField(state, specIndex, "cull", true);
  const bool depthTest = luaBoolField(state, specIndex, "depth_test", true);
  const bool depthWrite = luaBoolField(state, specIndex, "depth_write", true);
@@ -119,7 +136,7 @@ int luaRenderDrawQuads(lua_State* state) {
   api.pushinteger(state, 0);
   return 1;
  }
- const ModLuaDrawScope modCaps(textured, blend, cull, depthTest, depthWrite, layer);
+ const ModLuaDrawScope modCaps(textured, blend.enabled, cull, depthTest, depthWrite, layer, blend.src, blend.dst);
  const client::render::core::EntityIdScope entityIdScope(resolvedEntityId);
  if(textured) {
   int glTexture = -1;
@@ -304,7 +321,7 @@ int luaRenderDrawBillboards(lua_State* state) {
  const float brightness = luaFloatField(state, tableIndex, "brightness", 1.0f);
  const float rotationXRad = luaFloatField(state, tableIndex, "rotation_x_rad", 0.0f);
  const float rotationYRad = luaFloatField(state, tableIndex, "rotation_y_rad", 0.0f);
- const std::string blendMode = luaStringField(state, tableIndex, "blend", "alpha");
+ const ModBlendMode blend = readLuaBlendMode(state, tableIndex, true);
  const bool depthTest = luaBoolField(state, tableIndex, "depth_test", false);
  const bool depthWrite = luaBoolField(state, tableIndex, "depth_write", false);
  ModDrawLayer layer = parseModDrawLayer(luaStringField(state, tableIndex, "layer", ""));
@@ -335,10 +352,7 @@ int luaRenderDrawBillboards(lua_State* state) {
   sourceIndex = api.gettop(state);
   billboardCount = kMaxBillboardsPerBatch;
  }
-  const ModLuaDrawScope modCaps(false, true, false, depthTest, depthWrite, layer,
-                                client::gl::blend::SrcAlpha,
-                                blendMode == "additive" ? client::gl::blend::One
-                                                        : client::gl::blend::OneMinusSrcAlpha);
+  const ModLuaDrawScope modCaps(false, blend.enabled, false, depthTest, depthWrite, layer, blend.src, blend.dst);
  client::render::Tessellator& tessellator = client::render::Tessellator::INSTANCE;
  tessellator.startQuads();
  int emitted = 0;

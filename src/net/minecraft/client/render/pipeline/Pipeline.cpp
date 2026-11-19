@@ -396,7 +396,22 @@ void Pipeline::updateLightmap(const net::minecraft::World* world) {
  if(!hasGlContext()) return;
  const bool lit = world != nullptr && world->dimension != nullptr;
  const int ambient = world != nullptr ? world->ambientDarkness : 0;
- const auto luminance = lit ? world->dimension->lightLevelToLuminance : std::array<float, 16>{};
+ auto luminance = lit ? world->dimension->lightLevelToLuminance : std::array<float, 16>{};
+ const bool vanilla = options_ != nullptr &&
+                      (options_->shaderPack.empty() || options_->shaderPack == "vanilla" ||
+                       options_->shaderPack == "off");
+ if(lit && vanilla) {
+  const float brightness = std::clamp(options_->brightness, 0.0f, 1.0f);
+  if(brightness > 0.0f) {
+   const float minimum = luminance.front() + (world->dimension->isNether ? brightness * 0.15f : 0.0f);
+   const float falloff = 3.0f * (1.0f - brightness);
+   for(int level = 0; level < 16; ++level) {
+    const float darkness = 1.0f - static_cast<float>(level) / 15.0f;
+    luminance[static_cast<std::size_t>(level)] =
+        (1.0f - darkness) / (darkness * falloff + 1.0f) * (1.0f - minimum) + minimum;
+   }
+  }
+ }
  if(lightmapTexture_ && lightmapLit_ == lit && lightmapAmbient_ == ambient && lightmapLuminance_ == luminance) {
   return;
  }
@@ -422,7 +437,7 @@ void Pipeline::updateLightmap(const net::minecraft::World* world) {
    if(lit) {
     const int effectiveSky = std::max(0, sky - ambient);
     const int level = std::clamp(std::max(block, effectiveSky), 0, 15);
-    value = world->dimension->lightLevelToLuminance[static_cast<std::size_t>(level)];
+    value = luminance[static_cast<std::size_t>(level)];
    }
    const std::uint8_t channel = static_cast<std::uint8_t>(std::lround(value * 255.0f));
    const std::size_t offset = static_cast<std::size_t>((sky * 16 + block) * 4);
@@ -526,6 +541,7 @@ unsigned int Pipeline::sceneDepthTexture(const PackInstance* activePack) const {
  return activePack != nullptr ? activePack->colorTargets.depthTexture() : 0u;
 }
 void Pipeline::clearScene(PackInstance* activePack, float fogR, float fogG, float fogB) {
+ if(activePack != nullptr) activePack->lodCoverageTexture = 0;
  if(activePack == nullptr || !activePack->colorTargets.valid()) return;
  auto& scene = activePack->colorTargets;
  std::vector<bool> clear(static_cast<std::size_t>(scene.colorCount()), true);

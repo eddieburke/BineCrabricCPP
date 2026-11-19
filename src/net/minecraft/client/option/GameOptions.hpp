@@ -33,7 +33,7 @@ class GameOptions {
  int guiScale = 0;
  float fieldOfView = 0.0f;
  // Quality
- float renderScale = 1.0f;
+ float renderScale = 8.0f;
  int mipmapLevel = 0;
  bool mipmapLinear = false;
  float aoLevel = 1.0f;
@@ -49,7 +49,7 @@ class GameOptions {
  bool distantTerrain = true;
  int lodNativeRadius = 16;
  int lodQuality = 1;
- int lodMemoryMiB = 256;
+ int lodMemoryMiB = 512;
  int preloadedChunks = 0;
  float entityDistanceScale = 1.0f;
  // Details

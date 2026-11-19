@@ -120,7 +120,7 @@ bool BlockRenderManager::render(net::minecraft::block::Block& block, int x, int 
  ctx.blockMetadata = ctx.blockView->getBlockMeta(x, y, z);
  ctx.surroundingLightPending = ctx.tess != nullptr;
  ctx.renderBounds = block.getRenderBounds(ctx.blockView, x, y, z);
- if(ctx.textureOverride < 0 && net::minecraft::mod::drawBlockWorld(*this, block, x, y, z)) {
+ if(net::minecraft::mod::drawBlockWorld(*this, block, x, y, z)) {
   return true;
  }
  switch(renderType) {

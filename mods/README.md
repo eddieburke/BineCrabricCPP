@@ -110,7 +110,7 @@ The package root must contain `mod.json`. ZIP members must be relative paths wit
 
 The Mods screen can toggle/rescan packages. Enabled choices persist in `mods/mod-state.cfg`; extracted ZIPs go under `mods/.cache/`. Changed directories/archives are rescanned, but content registries and recipes are not a fully reversible hot-reload environment. Restart when changing IDs, models, recipes, or static registration definitions. Back up worlds before replacing installed content mods.
 
-Each package gets a separate Lua state. Logs use `[lua-mod:<id>:<level>] <message>`. Errors at entry load prevent the script from becoming active; callback errors are logged and later callbacks can still run. Resource-only packages can remain active without a Lua entry.
+Each package gets a separate Lua state. Logs use `[lua-mod:<id>:<level>] <message>`. Errors at entry load prevent the script from becoming active; callback errors are logged. Creation, world opening, chunk generation and spawn-selection failures also abort the native operation; other events can continue to later callbacks. Resource-only packages can remain active without a Lua entry.
 
 ### Check the current implementation
 
@@ -148,6 +148,8 @@ Manifest fields consumed by the loader:
 | `enabled` | boolean, true | Initial preference; saved `mod-state.cfg` can override it. |
 | `side` | string, `both` | Exactly `client`, `server`, or `both`, normalized to lowercase. |
 | `download_url` | string | Package download metadata for server-required mods; not an HTTP API for scripts. |
+| `generation_entry` | string | Relative `.lua` path run in a separate Lua state per generating thread. Put `chunk_generation` (and `world_open`) hooks there instead of in `entry`: worker threads then generate in parallel and never wait on, or block, the main state. Generation states only receive `chunk_generation` and `world_open`; share data with the main state or between threads through `minecraft.shared`. The `features` stage runs on the main thread during decoration, so do chunk-local population (anything that only writes `event.chunk`) in `terrain`/`surface`/`carver` instead. |
+| `world_required` | boolean, true | `false` stops the package's blocks/items from being recorded in a world's `required-mods.txt`, so removing the mod never blocks opening that world (its unknown blocks load as air). |
 
 ZIP limits: 256 MiB archive, 64 MiB per entry, 512 MiB total extracted, 4096 entries. ZIP roots must contain `mod.json`; nested enclosing folders do not count. Absolute/traversal paths are rejected. ZIPs extract to `mods/.cache/`; write persistent state with storage instead of modifying extracted assets. A directory without `mod.json`, including `mods/lib`, is not a package.
 
@@ -189,6 +191,7 @@ Lifecycle limitation: the current C++ bookkeeping marks a phase as fired for the
 | `read_asset(relative) -> string/nil` | Package-root file text. For arbitrary binary data use `read_asset_bytes`. |
 | `read_asset_bytes(relative,{gzip=false}?) -> string/nil` | Binary Lua string; optional gzip decompression. Empty/missing/decompression-failing files return nil. |
 | `read_nbt_asset(relative) -> value` or `nil,error` | Reads plain or gzip-detected NBT, capped by per-entry file limit. Numeric tags become numbers; compounds become keyed tables; lists/int arrays/long arrays become one-based arrays; byte arrays become binary strings. |
+| `shared.get(key) -> string/nil`, `shared.put(key,value)` | Per-mod in-memory string cache visible to the main state and every generation state of the same mod (thread-safe, binary-safe, oldest entries evicted after 8192). Not persisted. |
 | `storage.read(relative) -> string/nil` | Per-mod path under `<run>/config/mods/<sanitized_id>/`. Missing/invalid path returns nil. |
 | `storage.write(relative,text) -> boolean` | Writes per-mod persistent text, creating parent directories. Check false before updating in-memory state. No delete/list/world-local storage API. |
 | `files.pick({extension="json"}) -> string/nil` | Client only. Native file dialog; nil on cancel. Extension can be `json`, `.json`, `*.json`, or another extension pattern. |
@@ -200,7 +203,7 @@ Storage is mod-global across worlds. For per-world choices, put strings in `crea
 |---|---|
 | `util.clamp(value,min,max)` | Numeric clamp. |
 | `util.in_rect(x,y,left,top,width,height) -> boolean` | Left/top inclusive; right/bottom exclusive. |
-| `util.real_world(event) -> boolean` | True when event exists and `event.mod_generation ~= false`. Useful to exclude offline sampling; does not itself prove `has_world`. |
+| `util.real_world(event) -> boolean` | Requires `event.mod_generation == true`. Missing context is excluded; opted-in offline probes can still pass. Does not imply `has_world`. |
 | `util.parse_boolean(value) -> boolean/nil` | Case/whitespace-insensitive true/1/yes/on and false/0/no/off; accepts actual booleans/numbers too. Invalid/nil returns nil. |
 | `util.resolve_seed(text) -> integer` | Engine seed-text resolution. Keep the returned Lua integer rather than converting through floating-point/JSON if exact 64-bit identity matters. |
 | `util.json_encode(table) -> string` or `nil,error` | Root must be a table. Serializable nested tables/scalars only. Do not pass cycles/functions/userdata. |
@@ -269,13 +272,13 @@ These tables are installed on both builds. Active world/player context is taken 
 | `world.get_spawn() -> {x,y,z}/nil` | Current world spawn. |
 | `world.get_block_collisions({min_x,min_y,min_z,max_x,max_y,max_z}) -> box[]/nil` | Collision boxes intersecting the AABB; each box has the same six fields. |
 | `world.sample_channels() -> string[]` | `height`, `surface_block`, `surface_block_below`, `biome_id`, `grass`. |
-| `world.sample(seed,center_x,center_z,options?) -> table` or `nil,error` | Synchronous offline grid probe, not current-world data. Details below. |
+| `world.sample(seed,center_x,center_z,options?) -> table` or `nil/false,error` | Synchronous offline grid probe, not current-world data. Details below. |
 | `particles.spawn(spec) -> boolean` | Client particles; false on dedicated server/unavailable client. Spec below. |
 | `items.ids() -> integer[]` | Currently instantiated non-null item IDs; call after content initialization when needing custom items. |
 
 Particle spec defaults: `x=0,y=64,z=0,vx=0,vy=0,vz=0,scale=4,r=1,g=1,b=1,max_age=40,gravity=0.04`. Lifetime is ticks. No named particle-type argument is exposed here.
 
-Sampling options: `radius_chunks=6` (clamped 1..4096), `max_side=48` (8..256), `channel="grass"`, or `channels={...}` (at most 8 requested before deduplication), `mod_generation=false`. Center clamps to ±30000000; current seed argument uses the binding's signed `int` extraction, so do not assume the full resolved 64-bit seed is accepted unchanged by this API. Result: `side`, `step`, `origin_x`, `origin_z`, `center_x`, `center_z`, `channel` (first selected name), and `channels` mapping names to row-major arrays. Index is `row*side+column+1` for zero-based row/column. Sample coordinates are `origin + column_or_row*step`. There is no `result.values` field. `height` is column height; `surface_block` samples height-1, below samples height-2. `grass` is packed opaque ARGB. Terrain probes invoke custom generation only when requested. Bound probe sizes and cache results; never probe per render frame.
+Sampling options: `radius_chunks=6` (clamped 1..4096), `max_side=48` (8..256), `channel="grass"`, or `channels={...}` (at most 8 requested before deduplication), `mod_generation=false`. Center clamps to ±30000000; the seed is a signed 64-bit Lua integer and is preserved in generation events. `terrain_style` selects the native base style independently of Lua profile stages. Result: `side`, `step`, `origin_x`, `origin_z`, `center_x`, `center_z`, `channel` (first selected name), and `channels` mapping names to row-major arrays. Index is `row*side+column+1` for zero-based row/column. Sample coordinates are `origin + column_or_row*step`. There is no `result.values` field. `height` is column height; `surface_block` samples height-1, below samples height-2. `grass` is packed opaque ARGB. Terrain probes invoke custom generation only when requested. Bound probe sizes and cache results; never probe per render frame.
 
 Generation callbacks receive a temporary chunk object, not `minecraft.chunk`. Use colon calls only inside the callback:
 
@@ -284,7 +287,12 @@ Generation callbacks receive a temporary chunk object, not `minecraft.chunk`. Us
 | `event.chunk:get_block(local_x,y,local_z) -> integer` | 0 out of bounds/no active chunk. |
 | `event.chunk:set_block(local_x,y,local_z,id) -> boolean/nil` | Valid local X/Z 0..15, Y 0..127. Validate ID 0..255 yourself. No metadata argument. |
 | `event.chunk:fill(x1,y1,z1,x2,y2,z2,id) -> integer` | Inclusive box; reversed endpoints swapped, endpoints clamped to chunk bounds. Count of successful writes, not necessarily changed values. |
+| `event.chunk:fill_density(density_425,sea_level=64) -> boolean` | Trilinearly interpolates a 1-indexed 425-number (`5x17x5`, `((cx*5+cz)*17+cy)+1`) density grid into stone/water/ice across the chunk using active biome temperatures. |
 | `event.chunk:get_height(local_x,local_z) -> integer` | First Y above the top light-blocking cell (0 for empty/invalid). |
+| `event.chunk:top_solid_y(local_x,local_z) -> integer` | Highest non-air, non-water/ice solid block Y in column (-1 if none). |
+| `event.chunk:get_temperature(local_x,local_z) -> number` | Active chunk column biome temperature in `[0,1]` (0.5 out of bounds). |
+| `event.chunk:get_downfall(local_x,local_z) -> number` | Active chunk column biome downfall in `[0,1]` (0.5 out of bounds). |
+| `event.chunk:get_biome(local_x,local_z) -> string/nil` | Active chunk column biome wire name (e.g. `"plains"`, `"taiga"`). |
 
 `terrain/surface/carver` write raw generation blocks; `features` uses chunk APIs. `event.chunk_x/z` are chunk coordinates; world origin is `chunk_x*16,chunk_z*16`. Do not retain the object or call it after the callback. Filter `is_overworld` and `mod_generation` when intended; generator probes may have no live world.
 
@@ -352,6 +360,7 @@ Shared registration wrappers return true or raise with an error. Content definit
 | `material` | `stone` (default), `metal`, `wood`, `glass`; other strings currently fall back to stone. |
 | `opaque`, `full_cube`, `translucent` | true, true, `not opaque`. Baked bounds also influence full-cube behavior. |
 | `collision_height` | 1. Model/block bounds provide ordinary collision; heights above 1 extend special collision behavior. |
+| `collision` | true. `false` removes the collision box entirely so entities walk through the block (plants, crops); the outline and placement rules are unchanged. |
 | `stack_on_same`, `requires_solid_below` | false, true. Set `stack_on_same=true` for stackable towers and `requires_solid_below=false` when appropriate. |
 | `coordinate_bounds`, `coordinate_color` | false, false; deterministic position-based variation. |
 | `bounds_padding`, `bounds_offset`, `min_scale`, `max_scale` | 0.0625, 0.1, 0.9, 1.1; coordinate-variation controls. |
@@ -394,7 +403,7 @@ Transform fields: `x/y/z=0`, `yaw/pitch/roll=0` degrees, `scale=1`, `pivot_y=0`.
 | `texture.size(resource_path) -> {width,height}` | Raster size (zero dimensions on missing image). Path-based CPU cache. |
 | `texture.pixel(resource_path,x,y) -> {a,r,g,b}` or `nil,error` | Zero-based pixel coordinates; channels are 0..255 integers. |
 | `texture.bind(texture_id,unit=0) -> boolean` or `nil,error` | Bind custom registry texture ID or raw GL texture ID to valid unit; restores previously active unit. Use supported draw APIs for normal rendering. |
-| `texture.create({width,height,pixels}) -> {id,width,height}` or `nil,error` | Dense row-major ARGB integers; allocates owned texture. Positive dimensions and every pixel required. Keep dimensions bounded. |
+| `texture.create({width,height,pixels}) -> {id,gl_id,width,height}` or `nil,error` | Dense row-major ARGB integers; allocates owned texture. Positive dimensions and every pixel required. Keep dimensions bounded. `id` is the owned registry ID for `update`/`release`/world drawing; `gl_id` is the raw GL texture for `gui.draw_texture`. |
 | `texture.update(owned_id,{width,height,pixels}) -> boolean` or `nil,error` | Replace owned texture's image. Both dimensions and full pixels array required. |
 | `texture.release(owned_id) -> boolean` | Only this mod's created IDs; remove references after release. |
 | `texture.get_pixels(path_or_id) -> {width,height,pixels}/nil` | CPU raster pixels, including owned textures. Requires a live client. |
@@ -480,15 +489,15 @@ Command context: `name`, one-based whitespace-split `args`, original `raw`, rema
 
 ## Event reference
 
-Register with `minecraft.on(name, options, callback)`. Payload is a temporary Lua table; mutation reaches the engine only for the fields listed as writable below. Higher priority runs first. Each callback gets a newly filled table from the current native event, so writable changes flow to later listeners but arbitrary extra Lua fields do not. Cancellation does not stop dispatch automatically. The wrapper returns the original event when your callback returns nil/false. Returning another table replaces readback; returning true/number/string is unsupported for writable events. Callback errors are logged; do not rely on partial event mutations being committed after an error.
+Register with `minecraft.on(name, options, callback)`. Payload is a temporary Lua table; mutation reaches the engine only for the fields listed as writable below. Higher priority runs first. Each callback gets a newly filled table from the current native event, so writable changes flow to later listeners but arbitrary extra Lua fields do not. Cancellation does not stop dispatch automatically. Callbacks must return nil or the same event table. Boolean shortcuts, replacement tables and other return types are errors. Unknown event names and failed registrations raise immediately. Callback errors during create_world, world_open, chunk_generation and world_spawn_search abort the operation; other callback errors are logged. Do not rely on partial event mutations being committed after an error.
 
-Filters are exact field matches unless the option is a predicate, list, or true-valued set. Reserved options: `priority` number (default 0), `once` boolean, `when` predicate returning exactly true. `once` becomes inactive after a successful matching callback; it does not remove the native retained callback and does not guard reentrant calls before completion. No public unsubscription API. Prefer an enabled-setting predicate over installing new hooks repeatedly.
+Filters are exact field matches unless the option is a predicate, list, or true-valued set. Reserved options: `priority` signed 32-bit Lua integer (default 0), `once` boolean, `when` predicate returning exactly true. List/set filters are copied at registration. `once` becomes inactive before the first matching callback invocation, including failures and reentrant dispatch; it does not remove the native retained callback. No public unsubscription API. Prefer an enabled-setting predicate over installing new hooks repeatedly.
 
 ### Shared field groups and sides
 
 **Execution** fields: `side` (`client` or `server`), `remote`, `shader_pack_active`, `shader_pack_name`. Added to the ordinary `runLuaHook` events below and key/mouse input. `remote` is derived from the event world when available, otherwise build/client context. A client executable running an authoritative singleplayer world can report `side="server"` in world events. These are not manifest sides.
 
-**World** fields: `has_world`, `world_name`, `is_overworld`, `is_nether`, `world_seed`, `mod_generation`. Added only where listed. Without a world, name is empty, seed 0, flags false. Generation overrides some fields from its generation context, including the real probe seed. Do not assume every event has World or Execution fields. Direct render/chunk/screen/spawn dispatchers do not all install Execution fields.
+**World** fields: `has_world`, `world_name`, `dimension_id`, `is_overworld`, `is_nether`, `world_seed`, `mod_generation`. Added only where listed. Without a world, name is empty, seed 0, flags false. Generation overrides some fields from its generation context, including the real probe seed. Do not assume every event has World or Execution fields. Direct render/chunk/screen/spawn dispatchers do not all install Execution fields.
 
 **Identity**: `entity_id`, `entity_type` (case-sensitive engine string, e.g. `Player`, `Item`). **Held** when `has_item`: `item_id`, `item_count`, `item_damage`, sometimes `item_max_damage/item_damageable`. These are scalars; they are not inventory stack tables or entity handles.
 
@@ -517,7 +526,7 @@ Use `keybinds.register/consume` for rebindable actions instead of hardcoding phy
 | `world_open` | Execution; `save_name`, `new_world`, `options` string map of saved creation choices. | None; table mutation is not saved. Restore your runtime configuration here. |
 | `world_tick` | Execution; `remote`, `before`. | None. Authoritative simulation: `{remote=false,before=false}`. No guaranteed World group here. |
 | `create_world` | Execution; `save_name`, `seed`, `canceled`, `options` string map. | `canceled`, `options`. `seed` and `save_name` are observations. Namespace option keys, e.g. `my_mod:mode`. |
-| `world_spawn_search` | World; `x/y/z`, `resolved`. | `x/y/z`, `resolved`. Authoritative only. Set `resolved=true` when supplying a valid spawn. |
+| `world_spawn_search` | Execution + World; `x/y/z`, `resolved`. | `x/y/z`, `resolved` until resolved. Authoritative only. A resolved spawn cannot be overwritten by later listeners. |
 | `chat_send` | Execution + World; `message`, `canceled`. | `message`, `canceled`. Remote local chat belongs to the server unless deliberately implementing client commands. |
 | `chat_receive` | Execution + World; `message`, `canceled`. | `message`, `canceled`. |
 
@@ -573,7 +582,7 @@ Writable: `cancel_vanilla`, `star_brightness`, `rain_strength`, `astronomy_enabl
 
 ### 6. Generation and snow (2)
 
-`chunk_generation`: authoritative only, including optional offline probes. Payload: `stage`, `moment`, `cancel_vanilla`, `vanilla_stage_ran`, World fields, `world_seed`, `mod_generation`, `is_overworld`, `chunk_x`, `chunk_z`, `has_chunk`, `chunk`. Stages: `terrain`, `surface`, `carver`, `features`; moments `before/after`. Writable only `cancel_vanilla`; chunk mutation uses colon methods from the API reference in this document. `world_seed/is_overworld/mod_generation` reflect generation context even with no live world. Cancel in `before` and supply complete replacement stage logic; setting it after does not undo terrain. Do not call `world.set_block` as a substitute for raw chunk writes. Keep deterministic generation dependent on seed/coordinates, not wall clock or frame count.
+`chunk_generation`: authoritative only, including optional offline probes. Execution fields and a scoped world/chunk context are installed; nested generation restores its enclosing context. Payload: `stage`, `moment`, `cancel_vanilla`, `vanilla_stage_ran`, World fields, `world_seed`, `mod_generation`, `is_overworld`, `chunk_x`, `chunk_z`, `has_chunk`, `chunk`. Stages: `terrain`, `surface`, `carver`, `features`; moments `before/after`. Writable only `cancel_vanilla`; chunk mutation uses colon methods from the API reference in this document. `world_seed/is_overworld/mod_generation` reflect generation context even with no live world. Cancel in `before` and supply complete replacement stage logic. Cancellation is sticky across listeners; after callbacks see the actual cancellation and native-stage result. After callbacks cannot cancel. Callback failure aborts generation without resuming the native stage. Do not call `world.set_block` as a substitute for raw chunk writes. Keep deterministic generation dependent on seed/coordinates, not wall clock or frame count.
 
 `snow_ice_placement` (Execution): `x/y/z`, `place_snow`, `place_ice`. Writable `place_snow/place_ice`. This controls that placement decision; no separate mutable block ID in this payload.
 
@@ -904,7 +913,7 @@ Final verification on 2026-10-25:
 - Static content and recipes are not a transactional hot-reload system. Same-owner re-registration may retain prior definitions.
 - Custom inventory APIs represent ID/count/damage and do not carry arbitrary item NBT or implement multiplayer container synchronization. Repair-helper opening still assumes a normal empty cursor transition; it is not a general transaction manager for arbitrary screen replacement.
 - NBT writeback is a limited compound/scalar codec, not full typed list/64-bit/cyclic table serialization. Keep data small and signed-32-bit for integer fields.
-- Offline sampling seed currently passes through a signed-int binding. Texture dimensions/large loops also need caller bounds. No engine quota interrupts expensive Lua callbacks.
+- Offline sampling preserves signed 64-bit seeds. Texture dimensions/large loops still need caller bounds. No engine quota interrupts expensive Lua callbacks.
 - Client-only bindings and several client-only event dispatchers are absent/inert on dedicated servers. A `both` manifest alone cannot make client APIs available there.
 
 These restrictions are documented in the agent prompt/reference so a small model can avoid relying on unsupported behavior. They are not claimed as fixed or runtime-validated.

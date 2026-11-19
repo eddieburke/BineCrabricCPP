@@ -63,6 +63,7 @@ bool runVanillaStage(ChunkStage stage, ChunkGenerationContext& context, Fn&& van
   std::forward<Fn>(vanillaStage)();
  }
  ChunkGenerationEvent after(stage, HookMoment::After, context);
+ after.cancelVanilla = before.cancelVanilla;
  after.vanillaStageRan = vanillaRan;
  publishChunkStage(after);
  return vanillaRan;

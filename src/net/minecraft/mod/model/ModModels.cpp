@@ -546,12 +546,22 @@ bool writeBlockQuad(const BlockModelDraw& draw, const EmittedQuad& quad, int tex
   textureId = draw.block->textureId;
  }
  BlockRenderManager& manager = *draw.manager;
- if(!draw.inventory && manager.ctx.textureOverride >= 0) {
+ const bool overridden = !draw.inventory && manager.ctx.textureOverride >= 0;
+ EmittedQuad emitted = quad;
+ TransformedVertex tiled[4];
+ if(overridden) {
   textureId = manager.ctx.textureOverride;
+  const auto tile = client::render::block::tileUvFor(textureId);
+  for(int i = 0; i < 4; ++i) {
+   tiled[i] = quad.vertices[i];
+   tiled[i].u = tile.uMin + quad.vertices[i].u * (tile.uMax - tile.uMin);
+   tiled[i].v = tile.vMin + quad.vertices[i].v * (tile.vMax - tile.vMin);
+  }
+  emitted.vertices = tiled;
  }
  manager.ctx.bindTextureFor(textureId);
  Tessellator& t = draw.inventory ? *manager.ctx.tess : manager.ctx.activeTess(textureId);
- const bool capturing = !draw.inventory && manager.ctx.modMeshes != nullptr;
+ const bool capturing = (!draw.inventory && manager.ctx.modMeshes != nullptr) || (overridden && t.drawing());
  const double baseX = draw.inventory ? 0.0 : static_cast<double>(draw.x);
  const double baseY = draw.inventory ? 0.0 : static_cast<double>(draw.y);
  const double baseZ = draw.inventory ? 0.0 : static_cast<double>(draw.z);
@@ -570,7 +580,7 @@ bool writeBlockQuad(const BlockModelDraw& draw, const EmittedQuad& quad, int tex
                                                            draw.z + kFaceOffsets[quad.cullFace][2]);
  }
  const QuadLightMode lightMode = draw.inventory ? QuadLightMode::Absolute : QuadLightMode::Preserve;
- writeQuad(t, quad, baseX, baseY, baseZ, draw.brightness, 1.0f, lightMode, ao ? &aoSamples : nullptr,
+ writeQuad(t, emitted, baseX, baseY, baseZ, draw.brightness, 1.0f, lightMode, ao ? &aoSamples : nullptr,
            ao ? &manager.ctx.opts : nullptr);
  if(!capturing) {
   t.draw();

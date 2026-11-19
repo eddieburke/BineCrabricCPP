@@ -32,6 +32,7 @@ struct RenderSettings {
  // `renderDistance.chunks()` for the section ring — never a stored copy of either.
  RenderDistance renderDistance{};
  int residentChunkRadius = 15;
+ int preloadChunkMargin = 3;
  bool smoothInput = false;
  bool smoothFps = false;
  float chunkUpdatesSlider = 0.5f;
@@ -40,7 +41,7 @@ struct RenderSettings {
  bool distantTerrain = false;
  int nativeChunkRadius = 16;
  int lodQuality = 1;
- int lodMemoryMiB = 256;
+ int lodMemoryMiB = 512;
  bool renderSky = true;
  bool renderStars = true;
  bool renderClouds = true;
@@ -75,6 +76,7 @@ struct RenderSettings {
 };
 [[nodiscard]] RenderSettings renderSettings(const GameOptions& options);
 [[nodiscard]] bool supportsDistantTerrain(const render::PackDefinition& pack);
+void disableDistantTerrain(RenderSettings& settings);
 void applyShaderPack(RenderSettings& settings, const render::PackDefinition& pack);
 // `pack` is always a real definition - vanillaPackDefinition() when none is loaded - so
 // the directives are applied unconditionally instead of being skipped for vanilla.

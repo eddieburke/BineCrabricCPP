@@ -7,7 +7,7 @@ local config = settings.define("colorful_skies", {
     enabled = {
       type = "bool",
       label = "Enable Colorful Skies",
-      default = true,
+      default = false,
     },
     dynamic_colors = {
       type = "bool",

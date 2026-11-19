@@ -234,7 +234,14 @@ local function add_pixel_quad(packed, cursor, rx, ry, rz, ux, uy, uz,
   return cursor
 end
 
-local function draw_pixel_vertices(event, dx, dy, dz, packed, cursor)
+local function sky_blend_mode(frame)
+  if (frame.sun_altitude_deg or -90.0) > -6.0 then
+    return "additive"
+  end
+  return true
+end
+
+local function draw_pixel_vertices(event, dx, dy, dz, packed, cursor, blend_mode)
   if cursor < 36 then return 0 end
   for index = #packed, cursor + 1, -1 do
     packed[index] = nil
@@ -244,7 +251,7 @@ local function draw_pixel_vertices(event, dx, dy, dz, packed, cursor)
     y = (event.eye_y or 0.0) + dy * SKY_BODY_RADIUS,
     z = (event.eye_z or 0.0) + dz * SKY_BODY_RADIUS,
     world_space = true,
-    blend = true,
+    blend = blend_mode or true,
     cull = false,
     depth_test = false,
     depth_write = false,
@@ -433,12 +440,239 @@ function sky_render.draw_moon(event, frame, alpha, half_size)
   local visibility = moon_contrast_visibility(frame, separation_deg)
   if visibility <= 0.001 then return end
 
-  if visibility < 0.999 then
+  local daylight = smoothstep(-6.0, 10.0, frame.sun_altitude_deg or -90.0)
+  local alpha_scale = visibility * (1.0 - 0.30 * daylight)
+  if alpha_scale < 0.999 then
     for offset = 9, cursor, 9 do
-      packed[offset] = packed[offset] * visibility
+      packed[offset] = packed[offset] * alpha_scale
     end
   end
-  draw_pixel_vertices(event, mdx, mdy, mdz, packed, cursor)
+  draw_pixel_vertices(event, mdx, mdy, mdz, packed, cursor, sky_blend_mode(frame))
+end
+
+local PLANET_GRID = 11
+local PLANET_HALF_GRID = (PLANET_GRID - 1) * 0.5
+local PLANET_RING_TILT_COS = math.cos(0.38)
+local PLANET_RING_TILT_SIN = math.sin(0.38)
+local URANUS_RING_TILT_COS = math.cos(1.18)
+local URANUS_RING_TILT_SIN = math.sin(1.18)
+local planet_packed = {}
+
+local function emit_planet_vertex(packed, cursor, cx, cy, cz, rx, ry, rz, ux, uy, uz,
+    x_scale, y_scale, red, green, blue, alpha)
+  packed[cursor + 1] = cx + rx * x_scale + ux * y_scale
+  packed[cursor + 2] = cy + ry * x_scale + uy * y_scale
+  packed[cursor + 3] = cz + rz * x_scale + uz * y_scale
+  packed[cursor + 4] = 0.0
+  packed[cursor + 5] = 0.0
+  packed[cursor + 6] = red
+  packed[cursor + 7] = green
+  packed[cursor + 8] = blue
+  packed[cursor + 9] = alpha
+  return cursor + 9
+end
+
+local function add_planet_quad(packed, cursor, cx, cy, cz, rx, ry, rz, ux, uy, uz,
+    half_size, grid_x, grid_y, red, green, blue, alpha)
+  local pixel = (half_size * 2.0) / PLANET_GRID
+  local overlap = pixel * 0.018
+  local left = -half_size + grid_x * pixel - overlap
+  local right = -half_size + (grid_x + 1) * pixel + overlap
+  local top = half_size - grid_y * pixel + overlap
+  local bottom = half_size - (grid_y + 1) * pixel - overlap
+
+  cursor = emit_planet_vertex(packed, cursor, cx, cy, cz, rx, ry, rz, ux, uy, uz, left, bottom, red, green, blue, alpha)
+  cursor = emit_planet_vertex(packed, cursor, cx, cy, cz, rx, ry, rz, ux, uy, uz, right, bottom, red, green, blue, alpha)
+  cursor = emit_planet_vertex(packed, cursor, cx, cy, cz, rx, ry, rz, ux, uy, uz, right, top, red, green, blue, alpha)
+  cursor = emit_planet_vertex(packed, cursor, cx, cy, cz, rx, ry, rz, ux, uy, uz, left, top, red, green, blue, alpha)
+  return cursor
+end
+
+local function planet_disc_shade(u, v, z, lx, ly, lz, daylight)
+  local diffuse = math.max(0.0, u * lx + v * ly + z * lz)
+  local limb = 0.72 + 0.28 * z
+  local ambient = 0.28 * (1.0 - 0.86 * daylight)
+  return (ambient + (1.0 - ambient) * diffuse) * limb
+end
+
+local function ring_pixel(nx, ny, c, s, inner_r, outer_r, gap_r, red, green, blue, base_alpha)
+  local px = nx * c + ny * s
+  local py = -nx * s + ny * c
+  local ry = py / 0.30
+  local dist = math.sqrt(px * px + ry * ry)
+  if dist < inner_r or dist > outer_r then
+    return nil
+  end
+  if gap_r > 0.0 and math.abs(dist - gap_r) < 0.045 then
+    return nil
+  end
+  local band = 0.88 + 0.12 * math.sin(dist * 24.0)
+  return red * band, green * band, blue * band, base_alpha, py <= 0.0
+end
+
+local function sample_planet_pixel(id, gx, gy, lx, ly, lz, daylight)
+  local nx = (gx - PLANET_HALF_GRID) / PLANET_HALF_GRID
+  local ny = (PLANET_HALF_GRID - gy) / PLANET_HALF_GRID
+
+  if id == "saturn" or id == "uranus" then
+    local disc_scale = 0.56
+    local u = nx / disc_scale
+    local v = ny / disc_scale
+    local r2 = u * u + v * v
+    local rr, rg, rb, ra, in_front
+    if id == "saturn" then
+      rr, rg, rb, ra, in_front = ring_pixel(nx, ny, PLANET_RING_TILT_COS, PLANET_RING_TILT_SIN,
+        0.68, 1.04, 0.88, 0.92, 0.84, 0.66, 0.88)
+    else
+      rr, rg, rb, ra, in_front = ring_pixel(nx, ny, URANUS_RING_TILT_COS, URANUS_RING_TILT_SIN,
+        0.74, 0.96, 0.0, 0.72, 0.92, 0.96, 0.45)
+    end
+    if rr ~= nil and (in_front or r2 > 1.0) then
+      return rr, rg, rb, ra
+    end
+    if r2 <= 1.0 then
+      local z = math.sqrt(math.max(0.0, 1.0 - r2))
+      local shade = planet_disc_shade(u, v, z, lx, ly, lz, daylight)
+      if id == "saturn" then
+        local band = 0.94 + 0.06 * math.cos(v * 9.0)
+        return clamp(0.92 * band * shade, 0.0, 1.0),
+          clamp(0.81 * band * shade, 0.0, 1.0),
+          clamp(0.58 * band * shade, 0.0, 1.0),
+          1.0
+      else
+        local band = 0.95 + 0.05 * math.sin(v * 5.0)
+        return clamp(0.56 * band * shade, 0.0, 1.0),
+          clamp(0.88 * band * shade, 0.0, 1.0),
+          clamp(0.92 * band * shade, 0.0, 1.0),
+          1.0
+      end
+    end
+    return nil
+  end
+
+  local disc_scale = 0.86
+  local u = nx / disc_scale
+  local v = ny / disc_scale
+  local r2 = u * u + v * v
+  if r2 > 1.0 then
+    return nil
+  end
+
+  local z = math.sqrt(math.max(0.0, 1.0 - r2))
+  local shade = planet_disc_shade(u, v, z, lx, ly, lz, daylight)
+  local r, g, b
+
+  if id == "mercury" then
+    local crater = ((gx * 7 + gy * 13) % 5 == 0) and 0.84 or 1.0
+    r, g, b = 0.70 * crater, 0.67 * crater, 0.63 * crater
+  elseif id == "venus" then
+    local swirl = 0.96 + 0.04 * math.sin(u * 3.2 + v * 2.1)
+    r, g, b = 0.98 * swirl, 0.90 * swirl, 0.69 * swirl
+  elseif id == "mars" then
+    if v > 0.70 and math.abs(u) < 0.45 then
+      r, g, b = 0.95, 0.93, 0.90
+    else
+      local basalt = math.sin(u * 4.5 + 0.6) * math.cos(v * 3.5 - 0.3) > 0.25 and 0.74 or 1.0
+      r, g, b = 0.89 * basalt, 0.42 * basalt, 0.24 * basalt
+    end
+  elseif id == "jupiter" then
+    local du = (u - 0.28) / 0.30
+    local dv = (v + 0.22) / 0.18
+    if du * du + dv * dv <= 1.0 then
+      r, g, b = 0.86, 0.36, 0.24
+    else
+      local stripe = math.cos(v * 11.5)
+      if stripe > 0.35 then
+        r, g, b = 0.94, 0.88, 0.78
+      elseif stripe > -0.25 then
+        r, g, b = 0.85, 0.68, 0.50
+      else
+        r, g, b = 0.74, 0.50, 0.36
+      end
+    end
+  elseif id == "neptune" then
+    if math.abs(v - 0.18) < 0.12 and u > -0.45 and u < 0.35 then
+      r, g, b = 0.52, 0.76, 1.00
+    else
+      local band = 0.94 + 0.06 * math.cos(v * 7.0)
+      r, g, b = 0.27 * band, 0.50 * band, 0.96 * band
+    end
+  else
+    local hu = (u - 0.14) / 0.36
+    local hv = (v + 0.08) / 0.32
+    if hu * hu + hv * hv <= 1.0 then
+      r, g, b = 0.92, 0.88, 0.82
+    elseif v < -0.05 and v > -0.38 and u < 0.0 then
+      r, g, b = 0.48, 0.34, 0.28
+    else
+      r, g, b = 0.80, 0.70, 0.61
+    end
+  end
+
+  return clamp(r * shade, 0.0, 1.0),
+    clamp(g * shade, 0.0, 1.0),
+    clamp(b * shade, 0.0, 1.0),
+    1.0
+end
+
+function sky_render.draw_planets(event, frame, list, count, scale)
+  if count <= 0 then return end
+  local packed = planet_packed
+  local cursor = 0
+  local size_scale = scale or 2.0
+  local sdx = frame.sun_direction_x
+  local sdy = frame.sun_direction_y
+  local sdz = frame.sun_direction_z
+  local daylight = smoothstep(-6.0, 10.0, frame.sun_altitude_deg or -90.0)
+  local day_alpha_scale = 1.0 - 0.18 * daylight
+
+  for i = 1, count do
+    local entry = list[i]
+    local dx, dy, dz, rx, ry, rz, ux, uy, uz = body_basis(entry.dx, entry.dy, entry.dz)
+    local cx = dx * SKY_BODY_RADIUS
+    local cy = dy * SKY_BODY_RADIUS
+    local cz = dz * SKY_BODY_RADIUS
+    local half_size = entry.half_size * size_scale
+    local alpha = entry.alpha * day_alpha_scale
+
+    local sr = dot3(sdx, sdy, sdz, rx, ry, rz)
+    local su = dot3(sdx, sdy, sdz, ux, uy, uz)
+    local proj_len = math.sqrt(sr * sr + su * su)
+    local lr = proj_len > 1.0e-4 and (sr / proj_len) or 1.0
+    local lu = proj_len > 1.0e-4 and (su / proj_len) or 0.0
+    local cos_phase = clamp(2.0 * (entry.illumination or 1.0) - 1.0, -1.0, 1.0)
+    local sin_phase = math.sqrt(math.max(0.0, 1.0 - cos_phase * cos_phase))
+    local lx = lr * sin_phase
+    local ly = lu * sin_phase
+    local lz = cos_phase
+
+    for gy = 0, PLANET_GRID - 1 do
+      for gx = 0, PLANET_GRID - 1 do
+        local r, g, b, pa = sample_planet_pixel(entry.id, gx, gy, lx, ly, lz, daylight)
+        if r ~= nil then
+          cursor = add_planet_quad(packed, cursor, cx, cy, cz,
+            rx, ry, rz, ux, uy, uz, half_size, gx, gy,
+            r, g, b, pa * alpha)
+        end
+      end
+    end
+  end
+
+  if cursor < 36 then return end
+  for index = #packed, cursor + 1, -1 do
+    packed[index] = nil
+  end
+  minecraft.render.quads({
+    x = event.eye_x or 0.0,
+    y = event.eye_y or 0.0,
+    z = event.eye_z or 0.0,
+    world_space = true,
+    blend = sky_blend_mode(frame),
+    cull = false,
+    depth_test = false,
+    depth_write = false,
+    packed = packed,
+  })
 end
 
 return sky_render

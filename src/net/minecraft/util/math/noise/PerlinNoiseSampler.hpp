@@ -5,6 +5,10 @@
 #include <vector>
 #include "net/minecraft/util/math/Types.hpp"
 namespace net::minecraft {
+enum class NoiseGridMode {
+ HorizontalShortcut,
+ Full3D,
+};
 class PerlinNoiseSampler {
  public:
  explicit PerlinNoiseSampler(JavaRandom& random) {
@@ -76,8 +80,9 @@ class PerlinNoiseSampler {
              double scaleX,
              double scaleY,
              double scaleZ,
-             double amplitude) const {
-  if(height == 1) {
+             double amplitude,
+             NoiseGridMode mode = NoiseGridMode::HorizontalShortcut) const {
+  if(height == 1 && mode == NoiseGridMode::HorizontalShortcut) {
    int permA = 0;
    int permAA = 0;
    int permB = 0;

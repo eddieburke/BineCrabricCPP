@@ -237,6 +237,7 @@ Minecraft::~Minecraft() {
  if(serverProcessCoordinator_ != nullptr) {
   serverProcessCoordinator_->shutdown();
  }
+ if(INSTANCE == this) INSTANCE = nullptr;
 }
 void Minecraft::gameCrashed(const net::minecraft::util::crash::CrashReport& crashReport) {
  crashed = true;
@@ -1150,7 +1151,7 @@ void Minecraft::respawnPlayer(bool worldSpawn, int dimension) {
  player->teleportTop();
  interactionManager->preparePlayer(player);
  player->id = playerId;
- world->addPlayer(player);
+ world->addPlayer(player, false);
  player->spawn();
  interactionManager->preparePlayerRespawn(player);
  worldSession_.prepareWorld(*this, "Respawning");

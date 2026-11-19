@@ -50,6 +50,9 @@ struct RenderDistance {
  }
  [[nodiscard]] bool operator==(const RenderDistance&) const noexcept = default;
  static constexpr int kMinChunks = 2;
- static constexpr int kMaxChunks = 80;
+ static constexpr int kMaxChunks = 512;
+ static constexpr int kMaxNativeChunks = 80;
+ static constexpr float kMinRenderScale = 1.0f;
+ static constexpr float kMaxRenderScale = static_cast<float>(kMaxChunks) / 16.0f;
 };
 } // namespace net::minecraft::client::option

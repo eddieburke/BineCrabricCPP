@@ -520,4 +520,130 @@ TEST(LodTransition, FullSlabCanShrinkAReplacementInPlaceAndRecoverFromPressure) 
  EXPECT_TRUE(renderer.slab_.allocate(distant::DistantSlab::kPageVertices * 3).has_value());
  EXPECT_EQ(::glGetError(), 0u);
 }
+TEST(LodTransition, ContinuousWorldEditsPublishIntermediateGenerationsWithoutWaitingForIdle) {
+ distant::DistantRenderer renderer;
+ auto& tile = renderer.tiles_[{4, 0}];
+ tile.stride = 1;
+ tile.wantedStride = 1;
+ tile.chunkMask = 0xFFFFu;
+ tile.builtGeneration = 1;
+ tile.generation = 3;
+ tile.inFlight = true;
+ tile.jobId = 1;
+ renderer.inFlight_ = 1;
+ renderer.wanted_.emplace_back(64, distant::DistantRenderer::TileKey{4, 0});
+ distant::DistantRenderer::Completed result;
+ result.key = {4, 0};
+ result.jobId = 1;
+ result.stride = 1;
+ result.generation = 2;
+ result.chunkMask = 0xFFFFu;
+ result.pinMask = (1ULL << 36) - 1ULL;
+ result.mesh.minY = 10;
+ result.mesh.maxY = 70;
+ renderer.shared_->completed.push_back(std::move(result));
+ renderer.drainCompleted(1024);
+ EXPECT_FALSE(tile.inFlight);
+ EXPECT_EQ(tile.builtGeneration, 2u);
+ EXPECT_EQ(tile.builtPinMask, (1ULL << 36) - 1ULL);
+ EXPECT_EQ(tile.maxY, 70);
+ renderer.collectBuildCandidates();
+ ASSERT_EQ(renderer.buildCandidates_.size(), 1u);
+ EXPECT_EQ(renderer.buildCandidates_[0].second.x, 4);
+}
+TEST(LodTransition, MarkAllChunksLitDirtiesDistantTilesAfterBatchLighting) {
+ ClientWorld world{nullptr, 12345ULL, 0};
+ world.updateChunk(16, 0, true);
+ world.getChunkSource()->markChunkDataReady(16, 0);
+ distant::DistantRenderer renderer;
+ auto& tile = renderer.tiles_[{4, 0}];
+ tile.generation = 1;
+ tile.builtGeneration = 1;
+ TerrainScene scene;
+ scene.world = &world;
+ scene.distant = &renderer;
+ ChunkCompilePipeline pipeline(scene);
+ ChunkSectionSystem sections(scene);
+ sections.setCompilePipeline(pipeline);
+ pipeline.setSectionSystem(sections);
+ sections.chunkAvailable(16, 0);
+ EXPECT_FALSE(sections.columnLightingReady(16, 0));
+ EXPECT_EQ(tile.generation, 1u);
+ sections.markAllChunksLit();
+ EXPECT_TRUE(sections.columnLightingReady(16, 0));
+ EXPECT_EQ(tile.generation, 2u);
+ sections.clearSections();
+}
+TEST(LodTransition, ColumnBuiltTracksNativeReadinessAndUploadsEnterVisibleListImmediately) {
+ TerrainScene scene;
+ ChunkSectionSystem sections(scene);
+ ChunkCompilePipeline pipeline(scene);
+ sections.setCompilePipeline(pipeline);
+ pipeline.setSectionSystem(sections);
+ sections.meshRadius_ = 4;
+ sections.meshCameraX_ = 0;
+ sections.meshCameraZ_ = 0;
+ EXPECT_FALSE(sections.columnBuilt(2, 0));
+ EXPECT_TRUE(sections.columnBuilt(10, 0));
+ auto& column = sections.columns_[{2, 0}];
+ for(int y = 0; y < kChunkSectionCountY; ++y) {
+  column[y] = std::make_shared<chunk::ChunkBuilder>(nullptr, scene.blockEntities, 32, y * 16, 0);
+  column[y]->built = y + 1 < kChunkSectionCountY;
+ }
+ EXPECT_FALSE(sections.columnBuilt(2, 0));
+ column[kChunkSectionCountY - 1]->built = true;
+ EXPECT_TRUE(sections.columnBuilt(2, 0));
+ sections.frustumStamp_ = 5;
+ column[0]->visibleStamp = 5;
+ column[0]->renderLayerEmpty[0] = false;
+ sections.onSectionUploaded(column[0].get(), true);
+ ASSERT_EQ(sections.visibleSections().size(), 1u);
+ EXPECT_EQ(sections.visibleSections()[0], column[0].get());
+ sections.clearSections();
+}
+
+TEST(LodTransition, FadeCoverageRequiresUploadedLodAndTracksActualNativeReadiness) {
+ TerrainScene scene;
+ ChunkSectionSystem sections(scene);
+ ChunkCompilePipeline pipeline(scene);
+ sections.setCompilePipeline(pipeline);
+ pipeline.setSectionSystem(sections);
+ sections.meshRadius_ = 17;
+ sections.meshCameraX_ = -1;
+ sections.meshCameraZ_ = -1;
+ distant::DistantRenderer renderer;
+ renderer.nativeRadius_ = 16;
+ renderer.eyeX_ = -0.25;
+ renderer.eyeZ_ = -8.0;
+ auto& tile = renderer.tiles_[{-4, -1}];
+ tile.stride = 1;
+ tile.chunkMask = 1u << 12;
+ auto& column = sections.columns_[{-16, -1}];
+ for(int y = 0; y < kChunkSectionCountY; ++y) {
+  column[y] = std::make_shared<chunk::ChunkBuilder>(nullptr, scene.blockEntities, -256, y * 16, -16);
+  column[y]->built = true;
+ }
+ const auto coverage = [&] {
+  const int x = static_cast<int>(std::floor((-255.0 - renderer.eyeX_ - renderer.coverageOrigin_[0]) / 16.0));
+  const int z = static_cast<int>(std::floor((-15.0 - renderer.eyeZ_ - renderer.coverageOrigin_[1]) / 16.0));
+  const auto offset = static_cast<std::size_t>((z * renderer.kCoverageSide + x) * 2);
+  return std::array{renderer.transitionCoverage_[offset], renderer.transitionCoverage_[offset + 1]};
+ };
+ renderer.updateTransitionCoverage(sections);
+ EXPECT_EQ(coverage(), (std::array<std::uint8_t, 2>{255, 255}));
+ renderer.coverageDirty_ = false;
+ renderer.updateTransitionCoverage(sections);
+ EXPECT_FALSE(renderer.coverageDirty_);
+ column[0]->built = false;
+ renderer.updateTransitionCoverage(sections);
+ EXPECT_EQ(coverage(), (std::array<std::uint8_t, 2>{255, 0}));
+ EXPECT_TRUE(renderer.coverageDirty_);
+ tile.chunkMask = 0;
+ renderer.updateTransitionCoverage(sections);
+ EXPECT_EQ(coverage(), (std::array<std::uint8_t, 2>{0, 0}));
+ renderer.reset();
+ EXPECT_TRUE(std::all_of(renderer.transitionCoverage_.begin(), renderer.transitionCoverage_.end(),
+                          [](auto value) { return value == 0; }));
+ sections.clearSections();
+}
 }

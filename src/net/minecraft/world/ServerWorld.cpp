@@ -58,6 +58,8 @@ ChunkSource* ServerWorld::createChunkCache() {
   return getChunkSource();
  }
  std::unique_ptr<ChunkStorage> chunkStorage = storage->getChunkStorage(dimension.get());
+ chunkCache = nullptr;
+ setChunkCache(nullptr);
  chunkGeneratorSource_ = dimension->createChunkGenerator();
  auto cache = std::make_unique<world::chunk::ChunkCache>(this, std::move(chunkStorage), chunkGeneratorSource_.get());
  chunkCache = cache.get();

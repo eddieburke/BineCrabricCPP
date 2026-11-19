@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <exception>
 #include <initializer_list>
 #include <string>
 #include <string_view>
@@ -103,6 +104,14 @@ class LuaArgs {
  lua_State* state_;
  LuaApi& api_;
 };
+template <LuaCFunction Function>
+int checkedLuaCall(lua_State* state) {
+ try {
+  return Function(state);
+ } catch(const std::exception& error) {
+  return LuaArgs(state).fail(error.what());
+ }
+}
 [[nodiscard]] bool luaBoolField(lua_State* state, int tableIndex, const char* key, bool fallback);
 [[nodiscard]] float luaFloatField(lua_State* state, int tableIndex, const char* key, float fallback);
 [[nodiscard]] float luaFloatAt(lua_State* state, int tableIndex, int index, float fallback);

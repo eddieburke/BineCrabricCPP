@@ -25,7 +25,7 @@ constexpr std::uint8_t kWaterFlowing = 8;
 constexpr int kLog = 17;
 constexpr int kLeaves = 18;
 constexpr int kSnowLayer = 78;
-constexpr float kContactShade = 0.7f;
+constexpr int kIce = 79;
 
 constexpr std::array<bool, 256> makeSkipTable() {
  std::array<bool, 256> skip{};
@@ -89,7 +89,8 @@ void sampleColumn(const Chunk& chunk, int lx, int lz, int startY, ColumnSample& 
   const int id = chunk.getBlockId(lx, y, lz);
   const bool water = id == kWaterStill || id == kWaterFlowing;
   const bool open = water || (kSkip[static_cast<std::size_t>(id)] &&
-                              (y >= height || chunk.getLight(LightType::Sky, lx, y, lz) > 0));
+                              (y >= height || chunk.getLight(LightType::Sky, lx, y, lz) > 0 ||
+                               chunk.getLight(LightType::Block, lx, y, lz) > 0));
   if(open) {
    if(inRun) {
     close(y);
@@ -101,6 +102,10 @@ void sampleColumn(const Chunk& chunk, int lx, int lz, int startY, ColumnSample& 
    continue;
   }
   const bool solid = !kSkip[static_cast<std::size_t>(id)];
+  if(inRun && solid && run.block != 0 && (id == kIce) != (run.block == kIce)) {
+   close(y);
+   if(sample.runCount == kMaxRuns) break;
+  }
   if(!inRun) {
    inRun = true;
    run = ColumnRun{};
@@ -213,7 +218,7 @@ constexpr SideDir kSideDirs[4] = {{0, -1, DhNormal::NegZ, 0.8f},
                                   {1, 0, DhNormal::PosX, 0.6f}};
 
 void pushSide(std::vector<DhVertex>& out, const SideDir& dir, int x0, int x1, int z0, int z1, int yLow, int yHigh,
-              const Face& face, float baseShade = 1.0f) {
+              const Face& face, float contactShade = 1.0f) {
  const std::uint16_t ys[4] = {u16(yLow), u16(yHigh), u16(yHigh), u16(yLow)};
  std::uint16_t xs[4];
  std::uint16_t zs[4];
@@ -235,11 +240,9 @@ void pushSide(std::vector<DhVertex>& out, const SideDir& dir, int x0, int x1, in
   xs[0] = xs[1] = xs[2] = xs[3] = u16(x1);
  }
  pushQuad(out, xs, ys, zs, face, dir.shade, dir.normal);
- if(baseShade == 1.0f) return;
  for(const std::size_t corner : {out.size() - 4, out.size() - 1}) {
-  for(int channel = 0; channel < 3; ++channel) {
-   out[corner].color[channel] = static_cast<std::uint8_t>(static_cast<float>(out[corner].color[channel]) * baseShade + 0.5f);
-  }
+  for(int channel = 0; channel < 3; ++channel)
+   out[corner].color[channel] = static_cast<std::uint8_t>(out[corner].color[channel] * contactShade + 0.5f);
  }
 }
 
@@ -289,7 +292,7 @@ int tileStride(double distanceBlocks, double nativeBlocks, int quality, int memo
  const double qualityScale = quality == 0 ? 2.0 : quality == 2 ? 0.5 : 1.0;
  const double band = std::max(64.0, nativeBlocks) * qualityScale;
  int stride = 1;
- while(stride < 8 && distanceBlocks >= band * (stride * 2)) stride *= 2;
+ while(stride < kMaxStride && distanceBlocks >= band * (stride * 2)) stride *= 2;
  const double pressureBand = std::max(static_cast<double>(kTileBlocks * 2), nativeBlocks * 0.5) * qualityScale;
  int pressureStride = 1;
  while(pressureStride < std::min(memoryStride, kMaxStride) &&
@@ -354,7 +357,7 @@ BlockPalette defaultPalette() {
  b.same(73, 0x8a6e6e, DhMaterial::Stone);
  b.same(74, 0x8a6e6e, DhMaterial::Stone);
  b.same(78, 0xeefbfb, DhMaterial::Snow);
- b.same(79, 0x7dadff, DhMaterial::Snow);
+ b.set(79, 0x7dadff, 0x7dadff, DhMaterial::Unknown, true, 160);
  b.same(80, 0xf0fbfb, DhMaterial::Snow);
  b.set(81, 0x0d6b1d, 0x0e6d1e, DhMaterial::Grass);
  b.same(82, 0xa0a6b4, DhMaterial::Dirt);
@@ -372,11 +375,12 @@ BlockPalette defaultPalette() {
 void updatePaletteFromAtlas(BlockPalette& palette, const client::texture::RasterImage& atlas) {
  if(atlas.width < 16 || atlas.height < 16 ||
     atlas.argb.size() < static_cast<std::size_t>(atlas.width) * static_cast<std::size_t>(atlas.height)) return;
- std::array<std::array<std::uint8_t, 3>, 256> colors{};
+ std::array<std::array<std::uint8_t, 4>, 256> colors{};
  std::array<bool, 256> present{};
  for(int tile = 0; tile < 256; ++tile) {
   std::uint64_t channels[3]{};
   std::uint64_t weight = 0;
+  std::uint64_t count = 0;
   for(int y = (tile / 16) * atlas.height / 16; y < (tile / 16 + 1) * atlas.height / 16; ++y) {
    for(int x = (tile % 16) * atlas.width / 16; x < (tile % 16 + 1) * atlas.width / 16; ++x) {
     const std::uint32_t pixel = atlas.argb[static_cast<std::size_t>(y) * atlas.width + x];
@@ -385,12 +389,14 @@ void updatePaletteFromAtlas(BlockPalette& palette, const client::texture::Raster
     channels[1] += ((pixel >> 8) & 255u) * alpha;
     channels[2] += (pixel & 255u) * alpha;
     weight += alpha;
+    ++count;
    }
   }
   if(weight > 0) {
    present[tile] = true;
    for(int channel = 0; channel < 3; ++channel)
     colors[tile][channel] = static_cast<std::uint8_t>((channels[channel] + weight / 2) / weight);
+   colors[tile][3] = static_cast<std::uint8_t>((weight + count / 2) / count);
   }
  }
  for(int id = 1; id < 256; ++id) {
@@ -399,8 +405,10 @@ void updatePaletteFromAtlas(BlockPalette& palette, const client::texture::Raster
   PaletteEntry& entry = palette.entries[static_cast<std::size_t>(id)];
   const int top = id == 2 ? registeredBlock->getTextureId(nullptr, 0, 0, 0, 1) : registeredBlock->getTexture(1, 0);
   const int side = registeredBlock->getTexture(2, 0);
-  if(top >= 0 && top < 256 && present[top]) std::copy(colors[top].begin(), colors[top].end(), entry.top);
-  if(side >= 0 && side < 256 && present[side]) std::copy(colors[side].begin(), colors[side].end(), entry.side);
+  if(top >= 0 && top < 256 && present[top])
+   std::copy_n(colors[top].begin(), entry.translucent ? 4 : 3, entry.top);
+  if(side >= 0 && side < 256 && present[side])
+   std::copy_n(colors[side].begin(), entry.translucent ? 4 : 3, entry.side);
  }
 }
 
@@ -527,11 +535,13 @@ bool extractTile(const ChunkLookup& chunks, int tileX, int tileZ, int stride, Ti
  return true;
 }
 
-void meshTile(const TileCells& cells, const BlockPalette& palette, TileMesh& out) {
+void meshTile(const TileCells& cells, const BlockPalette& palette, TileMesh& out, float ambientOcclusion) {
  out.opaque.clear();
  out.water.clear();
+ out.ice.clear();
  const int side = cells.side;
  const int stride = cells.stride;
+ const float ao = std::clamp(ambientOcclusion, 0.0f, 1.0f) / static_cast<float>(stride);
  const PaletteEntry& water = palette.entries[kWaterStill];
  std::uint8_t scratch[3];
  std::uint8_t neighborScratch[3];
@@ -559,7 +569,8 @@ void meshTile(const TileCells& cells, const BlockPalette& palette, TileMesh& out
     }
     ++end;
    }
-   pushTop(out.opaque, cx * stride, end * stride, cz * stride, (cz + 1) * stride, r.top,
+   pushTop(r.block == kIce ? out.ice : out.opaque,
+           cx * stride, end * stride, cz * stride, (cz + 1) * stride, r.top,
            Face{entry.top, tint, entry.material, r.topLight});
    cx = end;
   }
@@ -575,20 +586,23 @@ void meshTile(const TileCells& cells, const BlockPalette& palette, TileMesh& out
    for(int index = 0; index < c.runCount; ++index) {
     const ColumnRun& r = c.runs[static_cast<std::size_t>(index)];
     const PaletteEntry& entry = palette.entries[r.block];
-    if(index > 0) {
-     pushTop(out.opaque, x0, x0 + stride, z0, z0 + stride, r.top,
+    auto& vertices = r.block == kIce ? out.ice : out.opaque;
+    if(index > 0 && (c.runs[static_cast<std::size_t>(index - 1)].bottom != r.top ||
+                      c.runs[static_cast<std::size_t>(index - 1)].block == kIce)) {
+     pushTop(vertices, x0, x0 + stride, z0, z0 + stride, r.top,
              Face{entry.top, tintFor(entry, c, r, true, scratch), entry.material, r.topLight});
     }
     const std::uint8_t* sideTint = tintFor(entry, c, r, false, scratch);
     const auto emitSide = [&](const SideDir& dir, int low, int high) {
      const auto& neighbor = cells.at(cx + dir.dx, cz + dir.dz);
-     const float contact = neighbor.present && high - low <= 2 * stride ? kContactShade : 1.0f;
+     const float contact = r.block != kIce && neighbor.present && high - low <= 2 * stride
+                               ? 1.0f - 0.1f * ao : 1.0f;
      const auto emit = [&](int bottom, int top, const PaletteEntry& material, const std::uint8_t* tint) {
       while(bottom < top) {
        const std::uint8_t light = neighbor.present ? neighbor.light[static_cast<std::size_t>(bottom)] : r.topLight;
        int end = bottom + 1;
        while(end < top && (!neighbor.present || neighbor.light[static_cast<std::size_t>(end)] == light)) ++end;
-       pushSide(out.opaque, dir, x0, x0 + stride, z0, z0 + stride, bottom, end,
+       pushSide(vertices, dir, x0, x0 + stride, z0, z0 + stride, bottom, end,
                 Face{material.side, tint, material.material, light}, bottom == low ? contact : 1.0f);
        bottom = end;
       }
@@ -615,8 +629,9 @@ void meshTile(const TileCells& cells, const BlockPalette& palette, TileMesh& out
       if(layerTop <= low) break;
      }
     };
-    if(r.bottom > 0) {
-     pushBottom(out.opaque, x0, x0 + stride, z0, z0 + stride, r.bottom,
+    if(r.bottom > 0 && (index + 1 == c.runCount ||
+                        c.runs[static_cast<std::size_t>(index + 1)].top != r.bottom)) {
+     pushBottom(vertices, x0, x0 + stride, z0, z0 + stride, r.bottom,
                 Face{entry.side, sideTint, entry.material, r.bottomLight});
     }
     for(const SideDir& dir : kSideDirs) {
@@ -628,6 +643,7 @@ void meshTile(const TileCells& cells, const BlockPalette& palette, TileMesh& out
      int cursor = r.top;
      for(int k = 0; k < n.runCount && cursor > r.bottom; ++k) {
       const ColumnRun& nr = n.runs[static_cast<std::size_t>(k)];
+      if(r.block != kIce && nr.block == kIce) continue;
       if(nr.top <= r.bottom) {
        break;
       }
@@ -664,6 +680,9 @@ void meshTile(const TileCells& cells, const BlockPalette& palette, TileMesh& out
    }
    pushTop(out.water, cx * stride, end * stride, cz * stride, (cz + 1) * stride, c.waterTop,
            Face{water.top, kNoTint, DhMaterial::Water, c.waterLight});
+   for(std::size_t corner = out.water.size() - 4; corner < out.water.size(); ++corner) {
+    out.water[corner].meta |= 0x0800u;
+   }
    cx = end;
   }
  }
@@ -680,13 +699,17 @@ void meshTile(const TileCells& cells, const BlockPalette& palette, TileMesh& out
     }
     pushSide(out.water, dir, cx * stride, (cx + 1) * stride, cz * stride, (cz + 1) * stride, floor, c.waterTop,
              Face{water.side, kNoTint, DhMaterial::Water, c.waterLight});
+    if(c.waterTop > floor) {
+     out.water[out.water.size() - 3].meta |= 0x0800u;
+     out.water[out.water.size() - 2].meta |= 0x0800u;
+    }
    }
   }
  }
  bool any = false;
  int minY = 0;
  int maxY = 0;
- for(const std::vector<DhVertex>* list : {&out.opaque, &out.water}) {
+ for(const std::vector<DhVertex>* list : {&out.opaque, &out.water, &out.ice}) {
   for(const DhVertex& vertex : *list) {
    if(!any) {
     minY = maxY = vertex.y;

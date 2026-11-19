@@ -112,6 +112,89 @@ int luaChunkGetHeight(lua_State* state) {
  api.pushinteger(state, LuaChunkContext::getHeight(localX, localZ));
  return 1;
 }
+int luaChunkGetTopSolidY(lua_State* state) {
+ LuaApi& api = luaApi();
+ LuaArgs args(state);
+ const int argOffset = 1;
+ int localX = 0;
+ int localZ = 0;
+ if(!LuaChunkContext::hasActiveChunk() || !args.integer(1 + argOffset, localX) ||
+    !args.integer(2 + argOffset, localZ)) {
+  api.pushinteger(state, -1);
+  return 1;
+ }
+ api.pushinteger(state, LuaChunkContext::getTopSolidY(localX, localZ));
+ return 1;
+}
+int luaChunkGetTemperature(lua_State* state) {
+ LuaApi& api = luaApi();
+ LuaArgs args(state);
+ const int argOffset = 1;
+ int localX = 0;
+ int localZ = 0;
+ if(!LuaChunkContext::hasActiveChunk() || !args.integer(1 + argOffset, localX) ||
+    !args.integer(2 + argOffset, localZ)) {
+  api.pushnumber(state, 0.5);
+  return 1;
+ }
+ api.pushnumber(state, LuaChunkContext::getTemperature(localX, localZ));
+ return 1;
+}
+int luaChunkGetDownfall(lua_State* state) {
+ LuaApi& api = luaApi();
+ LuaArgs args(state);
+ const int argOffset = 1;
+ int localX = 0;
+ int localZ = 0;
+ if(!LuaChunkContext::hasActiveChunk() || !args.integer(1 + argOffset, localX) ||
+    !args.integer(2 + argOffset, localZ)) {
+  api.pushnumber(state, 0.5);
+  return 1;
+ }
+ api.pushnumber(state, LuaChunkContext::getDownfall(localX, localZ));
+ return 1;
+}
+int luaChunkGetBiome(lua_State* state) {
+ LuaApi& api = luaApi();
+ LuaArgs args(state);
+ const int argOffset = 1;
+ int localX = 0;
+ int localZ = 0;
+ if(!LuaChunkContext::hasActiveChunk() || !args.integer(1 + argOffset, localX) ||
+    !args.integer(2 + argOffset, localZ)) {
+  api.pushnil(state);
+  return 1;
+ }
+ const std::string_view biome = LuaChunkContext::getBiomeName(localX, localZ);
+ api.pushlstring(state, biome.data(), biome.size());
+ return 1;
+}
+int luaChunkFillDensity(lua_State* state) {
+ LuaApi& api = luaApi();
+ LuaArgs args(state);
+ const int argOffset = 1;
+ static constexpr std::size_t kDensityCount = 5 * 5 * 17;
+ if(!LuaChunkContext::hasActiveChunk() || !args.table(1 + argOffset)) {
+  return args.fail("chunk:fill_density expects a 425-element (5x17x5) density table");
+ }
+ int seaLevel = 64;
+ if(args.count() >= 2 + argOffset && !args.integer(2 + argOffset, seaLevel)) {
+  return args.fail("chunk:fill_density sea_level must be an integer");
+ }
+ double density[kDensityCount]{};
+ for(std::size_t i = 0; i < kDensityCount; ++i) {
+  api.rawgeti(state, 1 + argOffset, static_cast<long long>(i + 1));
+  int isNum = 0;
+  const double value = api.tonumberx(state, -1, &isNum);
+  api.settop(state, -2);
+  if(isNum == 0 || !std::isfinite(value)) {
+   return args.fail("chunk:fill_density requires 425 finite numeric density values");
+  }
+  density[i] = value;
+ }
+ api.pushboolean(state, LuaChunkContext::fillDensity(density, kDensityCount, seaLevel) ? 1 : 0);
+ return 1;
+}
 [[nodiscard]] World* luaActiveWorld() {
  World* world = LuaChunkContext::activeWorld();
  if(world == nullptr) {
@@ -592,13 +675,18 @@ int luaItemIds(lua_State* state) {
 } // namespace
 void pushChunkObject(lua_State* state) {
  LuaApi& api = luaApi();
- api.createtable(state, 0, 4);
+ api.createtable(state, 0, 9);
  bindFunctions(state,
                {
-                   {"set_block", luaChunkSetBlock},
-                   {"fill", luaChunkFillBlock},
-                   {"get_block", luaChunkGetBlock},
-                   {"get_height", luaChunkGetHeight},
+                   {"set_block", checkedLuaCall<luaChunkSetBlock>},
+                   {"fill", checkedLuaCall<luaChunkFillBlock>},
+                   {"fill_density", checkedLuaCall<luaChunkFillDensity>},
+                   {"get_block", checkedLuaCall<luaChunkGetBlock>},
+                   {"get_height", checkedLuaCall<luaChunkGetHeight>},
+                   {"top_solid_y", checkedLuaCall<luaChunkGetTopSolidY>},
+                   {"get_temperature", checkedLuaCall<luaChunkGetTemperature>},
+                   {"get_downfall", checkedLuaCall<luaChunkGetDownfall>},
+                   {"get_biome", checkedLuaCall<luaChunkGetBiome>},
                });
 }
 void installWorldApi(lua_State* state, ModHost::LoadedLuaMod& mod) {
@@ -606,28 +694,28 @@ void installWorldApi(lua_State* state, ModHost::LoadedLuaMod& mod) {
  (void)mod;
  pushFunctionTable(state,
                    {
-                       {"block_id", luaWorldBlockId},
-                       {"get_block", luaWorldGetBlock},
-                       {"get_block_meta", luaWorldGetBlockMeta},
-                       {"set_block", luaWorldSetBlock},
-                       {"harvest_block", luaWorldHarvestBlock},
-                       {"random", luaWorldRandom},
-                       {"is_night", luaWorldIsNight},
-                       {"get_time", luaWorldGetTime},
-                       {"get_top_y", luaWorldTopSolidY},
-                       {"get_heightmap", luaWorldGetHeightmap},
-                       {"player", luaWorldPlayer},
-                       {"spawn_entity", luaWorldSpawnEntity},
-                       {"count_entities", luaWorldCountEntities},
-                       {"set_time", luaWorldSetTime},
-                       {"get_difficulty", luaWorldGetDifficulty},
-                       {"set_difficulty", luaWorldSetDifficulty},
-                       {"get_weather", luaWorldGetWeather},
-                       {"set_weather", luaWorldSetWeather},
-                       {"get_biome", luaWorldGetBiome},
-                       {"dimensions", luaWorldDimensions},
-                       {"set_spawn", luaWorldSetSpawn},
-                       {"get_spawn", luaWorldGetSpawn},
+                       {"block_id", checkedLuaCall<luaWorldBlockId>},
+                       {"get_block", checkedLuaCall<luaWorldGetBlock>},
+                       {"get_block_meta", checkedLuaCall<luaWorldGetBlockMeta>},
+                       {"set_block", checkedLuaCall<luaWorldSetBlock>},
+                       {"harvest_block", checkedLuaCall<luaWorldHarvestBlock>},
+                       {"random", checkedLuaCall<luaWorldRandom>},
+                       {"is_night", checkedLuaCall<luaWorldIsNight>},
+                       {"get_time", checkedLuaCall<luaWorldGetTime>},
+                       {"get_top_y", checkedLuaCall<luaWorldTopSolidY>},
+                       {"get_heightmap", checkedLuaCall<luaWorldGetHeightmap>},
+                       {"player", checkedLuaCall<luaWorldPlayer>},
+                       {"spawn_entity", checkedLuaCall<luaWorldSpawnEntity>},
+                       {"count_entities", checkedLuaCall<luaWorldCountEntities>},
+                       {"set_time", checkedLuaCall<luaWorldSetTime>},
+                       {"get_difficulty", checkedLuaCall<luaWorldGetDifficulty>},
+                       {"set_difficulty", checkedLuaCall<luaWorldSetDifficulty>},
+                       {"get_weather", checkedLuaCall<luaWorldGetWeather>},
+                       {"set_weather", checkedLuaCall<luaWorldSetWeather>},
+                       {"get_biome", checkedLuaCall<luaWorldGetBiome>},
+                       {"dimensions", checkedLuaCall<luaWorldDimensions>},
+                       {"set_spawn", checkedLuaCall<luaWorldSetSpawn>},
+                       {"get_spawn", checkedLuaCall<luaWorldGetSpawn>},
                    });
  api.setfield(state, -2, "world");
  pushFunctionTable(state, {{"spawn", luaParticlesSpawn}});
